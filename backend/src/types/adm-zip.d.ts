@@ -1,1 +1,1 @@
-declare module 'adm-zip';
+declare module "adm-zip";

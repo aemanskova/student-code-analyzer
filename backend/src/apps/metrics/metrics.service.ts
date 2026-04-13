@@ -1,6 +1,6 @@
-import { Injectable } from '@nestjs/common';
-import { DirectionMetricProvider, MetricComputeContext, MetricValues } from './metrics.types';
-import { HtmlCssMetricProvider } from './html-css/html-css-metric.provider';
+import { Injectable } from "@nestjs/common";
+import { DirectionMetricProvider, MetricComputeContext, MetricValues } from "./metrics.types";
+import { HtmlCssMetricProvider } from "./html-css/html-css-metric.provider";
 
 @Injectable()
 export class MetricsService {
@@ -19,7 +19,11 @@ export class MetricsService {
     return provider ? provider.supportedMetrics : [];
   }
 
-  async compute(direction: string, context: MetricComputeContext, metrics: string[]): Promise<MetricValues> {
+  async compute(
+    direction: string,
+    context: MetricComputeContext,
+    metrics: string[]
+  ): Promise<MetricValues> {
     const provider = this.providers.get(direction);
     if (!provider) {
       throw new Error(`Unsupported direction: ${direction}`);
@@ -27,7 +31,7 @@ export class MetricsService {
 
     const unsupported = metrics.filter((metric) => !provider.supportedMetrics.includes(metric));
     if (unsupported.length > 0) {
-      throw new Error(`Unsupported metrics for ${direction}: ${unsupported.join(', ')}`);
+      throw new Error(`Unsupported metrics for ${direction}: ${unsupported.join(", ")}`);
     }
 
     return provider.computeSelected(context, metrics);

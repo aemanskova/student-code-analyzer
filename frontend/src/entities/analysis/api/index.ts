@@ -4,8 +4,8 @@ export {
   useGetSavedAnalysisListQuery,
   useGetSavedResultsByRunIdQuery,
   useGetSavedResultsQuery,
-  useRunS3AsyncMutation,
-} from './analysisApi';
+  useRunS3AsyncMutation
+} from "./analysisApi"
 export type {
   AnalysisJobResultPayload,
   AnalysisJobStatusResponse,
@@ -19,5 +19,5 @@ export type {
   SavedResultItem,
   SavedResultsQuery,
   SavedResultsResponse,
-  SavedRunResultsResponse,
-} from './types';
+  SavedRunResultsResponse
+} from "./types"

@@ -1,1 +1,1 @@
-declare module 'css-tree';
+declare module "css-tree";

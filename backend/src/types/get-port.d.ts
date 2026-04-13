@@ -1,1 +1,1 @@
-declare module 'get-port';
+declare module "get-port";

@@ -1,11 +1,11 @@
-import { ActionIcon, Button, Group, Tooltip } from '@mantine/core';
-import { routes } from '@shared/config';
-import { useAuth, useAuthContext } from '@shared/lib';
-import { NavLink } from 'react-router';
+import { ActionIcon, Button, Group, Tooltip } from "@mantine/core"
+import { routes } from "@shared/config"
+import { useAuth, useAuthContext } from "@shared/lib"
+import { NavLink } from "react-router"
 
 export function ProfileHeaderActions() {
-  const { isAuthenticated } = useAuth();
-  const { logout } = useAuthContext();
+  const { isAuthenticated } = useAuth()
+  const { logout } = useAuthContext()
 
   return (
     <Group gap="sm">
@@ -55,5 +55,5 @@ export function ProfileHeaderActions() {
         </Button>
       )}
     </Group>
-  );
+  )
 }

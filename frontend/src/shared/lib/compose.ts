@@ -1,8 +1,8 @@
-import type { ComponentType } from 'react';
+import type { ComponentType } from "react"
 
-type Enhancer = (component: ComponentType<any>) => ComponentType<any>;
+type Enhancer = (component: ComponentType) => ComponentType
 
 export const compose =
   (...enhancers: Enhancer[]) =>
-  (component: ComponentType<any>): ComponentType<any> =>
-    enhancers.reduceRight<ComponentType<any>>((acc, enhancer) => enhancer(acc), component);
+  (component: ComponentType): ComponentType =>
+    enhancers.reduceRight<ComponentType>((acc, enhancer) => enhancer(acc), component)

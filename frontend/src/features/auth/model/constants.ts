@@ -1,6 +1,6 @@
-import type { LoginFormValues } from './types';
+import type { LoginFormValues } from "./types"
 
 export const DEFAULT_VALUES: LoginFormValues = {
-  identifier: '',
-  password: '',
-};
+  identifier: "",
+  password: ""
+}

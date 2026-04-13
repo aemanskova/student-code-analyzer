@@ -1,28 +1,24 @@
-import { Injectable, OnModuleDestroy } from '@nestjs/common';
-import * as fs from 'node:fs/promises';
-import * as path from 'node:path';
-import * as http from 'node:http';
-import { spawn } from 'node:child_process';
-import * as fg from 'fast-glob';
-import * as parse5 from 'parse5';
-import * as csstree from 'css-tree';
-import getPort from 'get-port';
-import { chromium } from 'playwright-core';
+import { Injectable, OnModuleDestroy } from "@nestjs/common";
+import * as fs from "node:fs/promises";
+import * as path from "node:path";
+import * as http from "node:http";
+import { spawn } from "node:child_process";
+import * as fg from "fast-glob";
+import * as parse5 from "parse5";
+import * as csstree from "css-tree";
+import getPort from "get-port";
+import { chromium } from "playwright-core";
 // eslint-disable-next-line @typescript-eslint/no-var-requires
-const serveHandler = require('serve-handler');
+const serveHandler = require("serve-handler");
 // eslint-disable-next-line @typescript-eslint/no-var-requires
-const axeCoreModule = require('axe-core');
+const axeCoreModule = require("axe-core");
 const axeCoreRuntime = axeCoreModule?.default ?? axeCoreModule;
 
 interface AnalyzerOptions {
   depth?: number;
   recursiveMode?: boolean;
   metrics?: string[];
-  onWorkProgress?: (
-    completed: number,
-    total: number,
-    currentPath: string,
-  ) => Promise<void> | void;
+  onWorkProgress?: (completed: number, total: number, currentPath: string) => Promise<void> | void;
 }
 
 interface WorkAggregate {
@@ -37,95 +33,95 @@ export class HtmlCssFullAnalyzerService implements OnModuleDestroy {
   private sharedBrowserPromise: Promise<any> | null = null;
 
   readonly supportedMetrics: string[] = [
-    'html_files',
-    'css_files',
-    'html_bytes_total',
-    'css_bytes_total',
-    'image_files_total',
-    'image_bytes_total',
-    'avg_image_size_bytes',
-    'font_files_total',
-    'font_bytes_total',
-    'avg_font_size_bytes',
-    'uses_avif',
-    'uses_webp',
-    'dom_nodes_avg',
-    'max_dom_depth_max',
-    'semantic_ratio_avg',
-    'semantic_elements_total',
-    'nonsemantic_containers_total',
-    'semantic_element_usage_ratio_overall',
-    'heading_order_violations_total',
-    'img_missing_alt_total',
-    'img_total',
-    'img_missing_alt_ratio',
-    'form_controls_missing_label_total',
-    'form_controls_total',
-    'form_controls_missing_label_ratio',
-    'duplicate_ids_total',
-    'duplicate_id_values_total',
-    'vnu_files_checked',
-    'vnu_errors_total',
-    'vnu_warnings_total',
-    'vnu_unparsed_files',
-    'rules_total',
-    'selectors_total',
-    'avg_declarations_per_rule_avg',
-    'max_declarations_per_rule_max',
-    'import_count_total',
-    'avg_specificity_avg',
-    'max_specificity_max',
-    'specificity_variance_overall',
-    'complex_selectors_ratio_avg',
-    'total_selector_complexity_total',
-    'avg_selector_complexity_overall',
-    'max_selector_complexity_max',
-    'unique_css_properties_work',
-    'unique_css_properties_avg',
-    'dup_decl_ratio_avg',
-    'axe_violations_total',
-    'axe_critical',
-    'axe_serious',
-    'axe_moderate',
-    'axe_minor',
+    "html_files",
+    "css_files",
+    "html_bytes_total",
+    "css_bytes_total",
+    "image_files_total",
+    "image_bytes_total",
+    "avg_image_size_bytes",
+    "font_files_total",
+    "font_bytes_total",
+    "avg_font_size_bytes",
+    "uses_avif",
+    "uses_webp",
+    "dom_nodes_avg",
+    "max_dom_depth_max",
+    "semantic_ratio_avg",
+    "semantic_elements_total",
+    "nonsemantic_containers_total",
+    "semantic_element_usage_ratio_overall",
+    "heading_order_violations_total",
+    "img_missing_alt_total",
+    "img_total",
+    "img_missing_alt_ratio",
+    "form_controls_missing_label_total",
+    "form_controls_total",
+    "form_controls_missing_label_ratio",
+    "duplicate_ids_total",
+    "duplicate_id_values_total",
+    "vnu_files_checked",
+    "vnu_errors_total",
+    "vnu_warnings_total",
+    "vnu_unparsed_files",
+    "rules_total",
+    "selectors_total",
+    "avg_declarations_per_rule_avg",
+    "max_declarations_per_rule_max",
+    "import_count_total",
+    "avg_specificity_avg",
+    "max_specificity_max",
+    "specificity_variance_overall",
+    "complex_selectors_ratio_avg",
+    "total_selector_complexity_total",
+    "avg_selector_complexity_overall",
+    "max_selector_complexity_max",
+    "unique_css_properties_work",
+    "unique_css_properties_avg",
+    "dup_decl_ratio_avg",
+    "axe_violations_total",
+    "axe_critical",
+    "axe_serious",
+    "axe_moderate",
+    "axe_minor"
   ];
 
   private readonly IGNORE = [
-    '**/bootstrap/**',
-    '**/.git/**',
-    '**/.github/**',
-    '**/.vscode/**',
-    '**/images/**',
-    '**/node_modules/**',
-    '**/__MACOSX/**',
-    '**/._*',
+    "**/bootstrap/**",
+    "**/.git/**",
+    "**/.github/**",
+    "**/.vscode/**",
+    "**/images/**",
+    "**/node_modules/**",
+    "**/__MACOSX/**",
+    "**/._*"
   ];
 
   private readonly ASSET_IGNORE = [
-    '**/bootstrap/**',
-    '**/.git/**',
-    '**/.github/**',
-    '**/.vscode/**',
-    '**/node_modules/**',
-    '**/__MACOSX/**',
-    '**/._*',
+    "**/bootstrap/**",
+    "**/.git/**",
+    "**/.github/**",
+    "**/.vscode/**",
+    "**/node_modules/**",
+    "**/__MACOSX/**",
+    "**/._*"
   ];
 
   private readonly IMAGE_EXTENSIONS = [
-    '.png',
-    '.jpg',
-    '.jpeg',
-    '.gif',
-    '.svg',
-    '.webp',
-    '.avif',
-    '.bmp',
-    '.ico',
-    '.tif',
-    '.tiff',
+    ".png",
+    ".jpg",
+    ".jpeg",
+    ".gif",
+    ".svg",
+    ".webp",
+    ".avif",
+    ".bmp",
+    ".ico",
+    ".tif",
+    ".tiff"
   ];
 
-  private readonly FONT_EXTENSIONS = ['.woff', '.woff2', '.ttf', '.otf', '.eot'];
+  private readonly FONT_EXTENSIONS = [".woff", ".woff2", ".ttf", ".otf", ".eot"];
 
   async onModuleDestroy(): Promise<void> {
     if (!this.sharedBrowserPromise) {
@@ -143,14 +139,14 @@ export class HtmlCssFullAnalyzerService implements OnModuleDestroy {
 
   private shouldRunMetricGroup(
     selectedMetrics: Set<string> | null,
-    namesOrPrefixes: string[],
+    namesOrPrefixes: string[]
   ): boolean {
     if (!selectedMetrics) {
       return true;
     }
     for (const candidate of selectedMetrics) {
       for (const matcher of namesOrPrefixes) {
-        if (matcher.endsWith('*')) {
+        if (matcher.endsWith("*")) {
           const prefix = matcher.slice(0, -1);
           if (candidate.startsWith(prefix)) {
             return true;
@@ -167,7 +163,7 @@ export class HtmlCssFullAnalyzerService implements OnModuleDestroy {
     const workDirs = await this.collectRepoDirs(
       rootDir,
       Boolean(options.recursiveMode),
-      options.depth,
+      options.depth
     );
     const selectedMetrics =
       options.metrics && options.metrics.length > 0 ? new Set(options.metrics) : null;
@@ -185,8 +181,8 @@ export class HtmlCssFullAnalyzerService implements OnModuleDestroy {
             return null;
           }
           return {
-            path: this.normalizePath(path.relative(rootDir, workDir) || '.'),
-            ...agg,
+            path: this.normalizePath(path.relative(rootDir, workDir) || "."),
+            ...agg
           } as WorkAggregate;
         } finally {
           completedWorks += 1;
@@ -194,22 +190,22 @@ export class HtmlCssFullAnalyzerService implements OnModuleDestroy {
             await options.onWorkProgress(
               completedWorks,
               totalWorks,
-              this.normalizePath(path.relative(rootDir, workDir) || '.'),
+              this.normalizePath(path.relative(rootDir, workDir) || ".")
             );
           }
         }
-      },
+      }
     );
 
     return rows.filter((row): row is WorkAggregate => Boolean(row));
   }
 
   private normalizePath(value: string): string {
-    return value.replace(/\\/g, '/');
+    return value.replace(/\\/g, "/");
   }
 
   private async readText(filePath: string): Promise<string> {
-    return fs.readFile(filePath, 'utf8');
+    return fs.readFile(filePath, "utf8");
   }
 
   private async exists(filePath: string): Promise<boolean> {
@@ -224,12 +220,12 @@ export class HtmlCssFullAnalyzerService implements OnModuleDestroy {
   private isElementNode(node: any): boolean {
     return (
       node &&
-      typeof node === 'object' &&
+      typeof node === "object" &&
       node.nodeName &&
-      node.nodeName !== '#text' &&
-      node.nodeName !== '#document' &&
-      node.nodeName !== '#document-fragment' &&
-      node.nodeName !== '#documentType'
+      node.nodeName !== "#text" &&
+      node.nodeName !== "#document" &&
+      node.nodeName !== "#document-fragment" &&
+      node.nodeName !== "#documentType"
     );
   }
 
@@ -251,30 +247,22 @@ export class HtmlCssFullAnalyzerService implements OnModuleDestroy {
   }
 
   private avg(arr: Array<Record<string, unknown>>, key: string): number {
-    const vals = arr
-      .map((x) => Number(x[key]))
-      .filter((v) => Number.isFinite(v));
+    const vals = arr.map((x) => Number(x[key])).filter((v) => Number.isFinite(v));
     return vals.length ? vals.reduce(this.sum.bind(this), 0) / vals.length : 0;
   }
 
   private max(arr: Array<Record<string, unknown>>, key: string): number {
-    const vals = arr
-      .map((x) => Number(x[key]))
-      .filter((v) => Number.isFinite(v));
+    const vals = arr.map((x) => Number(x[key])).filter((v) => Number.isFinite(v));
     return vals.length ? Math.max(...vals) : 0;
   }
 
   private min(arr: Array<Record<string, unknown>>, key: string): number {
-    const vals = arr
-      .map((x) => Number(x[key]))
-      .filter((v) => Number.isFinite(v));
+    const vals = arr.map((x) => Number(x[key])).filter((v) => Number.isFinite(v));
     return vals.length ? Math.min(...vals) : 0;
   }
 
   private total(arr: Array<Record<string, unknown>>, key: string): number {
-    const vals = arr
-      .map((x) => Number(x[key]))
-      .filter((v) => Number.isFinite(v));
+    const vals = arr.map((x) => Number(x[key])).filter((v) => Number.isFinite(v));
     return vals.length ? vals.reduce(this.sum.bind(this), 0) : 0;
   }
 
@@ -290,7 +278,7 @@ export class HtmlCssFullAnalyzerService implements OnModuleDestroy {
   private async withTimeout<T>(
     run: () => Promise<T>,
     timeoutMs: number,
-    label: string,
+    label: string
   ): Promise<T> {
     if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
       return run();
@@ -309,7 +297,7 @@ export class HtmlCssFullAnalyzerService implements OnModuleDestroy {
   private async runWithConcurrency<T, R>(
     items: T[],
     concurrency: number,
-    worker: (item: T, index: number) => Promise<R>,
+    worker: (item: T, index: number) => Promise<R>
   ): Promise<R[]> {
     const maxWorkers = Math.max(1, Math.trunc(concurrency || 1));
     const results = new Array<R>(items.length);
@@ -327,7 +315,7 @@ export class HtmlCssFullAnalyzerService implements OnModuleDestroy {
     };
 
     await Promise.all(
-      Array.from({ length: Math.min(maxWorkers, items.length) }, () => runWorker()),
+      Array.from({ length: Math.min(maxWorkers, items.length) }, () => runWorker())
     );
 
     return results;
@@ -359,14 +347,29 @@ export class HtmlCssFullAnalyzerService implements OnModuleDestroy {
 
   private analyzeHtmlAst(ast: any) {
     const SEMANTIC_TAGS = new Set([
-      'header', 'nav', 'main', 'article', 'section', 'aside', 'footer', 'figure', 'figcaption',
-      'time', 'address', 'details', 'summary',
+      "header",
+      "nav",
+      "main",
+      "article",
+      "section",
+      "aside",
+      "footer",
+      "figure",
+      "figcaption",
+      "time",
+      "address",
+      "details",
+      "summary"
     ]);
-    const LANDMARKS = ['header', 'nav', 'main', 'footer', 'aside'];
+    const LANDMARKS = ["header", "nav", "main", "footer", "aside"];
     const ROLE_LANDMARKS = new Set([
-      'banner', 'navigation', 'main', 'contentinfo', 'complementary',
+      "banner",
+      "navigation",
+      "main",
+      "contentinfo",
+      "complementary"
     ]);
-    const NON_SEMANTIC_CONTAINERS = new Set(['div', 'span']);
+    const NON_SEMANTIC_CONTAINERS = new Set(["div", "span"]);
 
     let elements = 0;
     let semantic = 0;
@@ -389,8 +392,8 @@ export class HtmlCssFullAnalyzerService implements OnModuleDestroy {
 
     this.walk(ast, (node) => {
       if (!this.isElementNode(node)) return;
-      if (node.nodeName === 'label') {
-        const f = this.getAttr(node, 'for');
+      if (node.nodeName === "label") {
+        const f = this.getAttr(node, "for");
         if (f) labelFor.add(f);
       }
     });
@@ -407,7 +410,7 @@ export class HtmlCssFullAnalyzerService implements OnModuleDestroy {
       if (NON_SEMANTIC_CONTAINERS.has(tag)) nonsemanticContainers++;
       if (LANDMARKS.includes(tag)) landmarksPresent.add(tag);
 
-      const role = (this.getAttr(node, 'role') || '').toLowerCase();
+      const role = (this.getAttr(node, "role") || "").toLowerCase();
       if (ROLE_LANDMARKS.has(role)) landmarksPresent.add(`role:${role}`);
 
       if (/^h[1-6]$/.test(tag)) {
@@ -419,31 +422,31 @@ export class HtmlCssFullAnalyzerService implements OnModuleDestroy {
         prevHeading = level;
       }
 
-      if (tag === 'img') {
+      if (tag === "img") {
         imgTotal++;
-        const alt = this.getAttr(node, 'alt');
-        if (alt === null || alt.trim() === '') imgMissingAlt++;
+        const alt = this.getAttr(node, "alt");
+        if (alt === null || alt.trim() === "") imgMissingAlt++;
       }
 
-      const id = this.getAttr(node, 'id');
+      const id = this.getAttr(node, "id");
       if (id) {
         const prev = idMap.get(id) || 0;
         if (prev >= 1) duplicateIdOccurrences++;
         idMap.set(id, prev + 1);
       }
 
-      if (['input', 'select', 'textarea'].includes(tag)) {
-        const type = (this.getAttr(node, 'type') || '').toLowerCase();
-        const ignore = ['hidden', 'submit', 'button', 'reset', 'image'].includes(type);
+      if (["input", "select", "textarea"].includes(tag)) {
+        const type = (this.getAttr(node, "type") || "").toLowerCase();
+        const ignore = ["hidden", "submit", "button", "reset", "image"].includes(type);
         if (!ignore) {
           formControlsTotal++;
-          const cid = this.getAttr(node, 'id');
-          const ariaLabel = this.getAttr(node, 'aria-label');
-          const ariaLabelledBy = this.getAttr(node, 'aria-labelledby');
+          const cid = this.getAttr(node, "id");
+          const ariaLabel = this.getAttr(node, "aria-label");
+          const ariaLabelledBy = this.getAttr(node, "aria-labelledby");
           const hasLabel =
             (cid && labelFor.has(cid)) ||
-            (ariaLabel && ariaLabel.trim() !== '') ||
-            (ariaLabelledBy && ariaLabelledBy.trim() !== '');
+            (ariaLabel && ariaLabel.trim() !== "") ||
+            (ariaLabelledBy && ariaLabelledBy.trim() !== "");
           if (!hasLabel) formControlsMissingLabel++;
         }
       }
@@ -456,9 +459,7 @@ export class HtmlCssFullAnalyzerService implements OnModuleDestroy {
     const avgDepth = domNodes > 0 ? depthSum / domNodes : 0;
     const semanticRatio = elements > 0 ? semantic / elements : 0;
     const semanticElementUsageRatio =
-      semantic + nonsemanticContainers > 0
-        ? semantic / (semantic + nonsemanticContainers)
-        : 0;
+      semantic + nonsemanticContainers > 0 ? semantic / (semantic + nonsemanticContainers) : 0;
 
     return {
       dom_nodes: domNodes,
@@ -476,27 +477,30 @@ export class HtmlCssFullAnalyzerService implements OnModuleDestroy {
       form_controls_total: formControlsTotal,
       form_controls_missing_label: formControlsMissingLabel,
       duplicate_ids: duplicateIdOccurrences,
-      duplicate_id_values: duplicateIdValues,
+      duplicate_id_values: duplicateIdValues
     };
   }
 
   private specificityFromSelectorAst(sel: any) {
-    let A = 0; let B = 0; let C = 0;
+    let A = 0;
+    let B = 0;
+    let C = 0;
     (csstree as any).walk(sel, {
       enter: (node: any) => {
-        if (node.type === 'IdSelector') A++;
+        if (node.type === "IdSelector") A++;
         else if (
-          node.type === 'ClassSelector' ||
-          node.type === 'AttributeSelector' ||
-          node.type === 'PseudoClassSelector'
+          node.type === "ClassSelector" ||
+          node.type === "AttributeSelector" ||
+          node.type === "PseudoClassSelector"
         ) {
           if (
-            node.type === 'PseudoClassSelector' &&
-            String(node.name || '').toLowerCase() === 'where'
-          ) return;
+            node.type === "PseudoClassSelector" &&
+            String(node.name || "").toLowerCase() === "where"
+          )
+            return;
           B++;
-        } else if (node.type === 'TypeSelector' || node.type === 'PseudoElementSelector') C++;
-      },
+        } else if (node.type === "TypeSelector" || node.type === "PseudoElementSelector") C++;
+      }
     });
     return { value: A * 100 + B * 10 + C };
   }
@@ -507,11 +511,17 @@ export class HtmlCssFullAnalyzerService implements OnModuleDestroy {
       enter: (node: any) => {
         if (
           [
-            'TypeSelector', 'ClassSelector', 'IdSelector', 'AttributeSelector',
-            'PseudoClassSelector', 'PseudoElementSelector', 'Combinator',
+            "TypeSelector",
+            "ClassSelector",
+            "IdSelector",
+            "AttributeSelector",
+            "PseudoClassSelector",
+            "PseudoElementSelector",
+            "Combinator"
           ].includes(node.type)
-        ) complexity++;
-      },
+        )
+          complexity++;
+      }
     });
     return complexity;
   }
@@ -519,7 +529,7 @@ export class HtmlCssFullAnalyzerService implements OnModuleDestroy {
   private analyzeCssText(cssText: string) {
     const ast = (csstree as any).parse(cssText, {
       parseValue: true,
-      parseRulePrelude: true,
+      parseRulePrelude: true
     });
 
     let rulesCount = 0;
@@ -541,12 +551,12 @@ export class HtmlCssFullAnalyzerService implements OnModuleDestroy {
 
     (csstree as any).walk(ast, {
       enter: (node: any) => {
-        if (node.type === 'Atrule' && node.name === 'import') importCount++;
+        if (node.type === "Atrule" && node.name === "import") importCount++;
 
-        if (node.type === 'Rule') {
+        if (node.type === "Rule") {
           rulesCount++;
 
-          if (node.prelude && node.prelude.type === 'SelectorList') {
+          if (node.prelude && node.prelude.type === "SelectorList") {
             const selectors: any[] = [];
             node.prelude.children?.forEach?.((sel: any) => selectors.push(sel));
             selectorsCount += selectors.length;
@@ -569,7 +579,7 @@ export class HtmlCssFullAnalyzerService implements OnModuleDestroy {
           if (node.block?.children?.forEach) {
             let declsInRule = 0;
             node.block.children.forEach((d: any) => {
-              if (d.type === 'Declaration') {
+              if (d.type === "Declaration") {
                 declsInRule++;
                 declCount++;
                 uniqueProperties.add(String(d.property).trim().toLowerCase());
@@ -581,7 +591,7 @@ export class HtmlCssFullAnalyzerService implements OnModuleDestroy {
             maxDeclarationsInRule = Math.max(maxDeclarationsInRule, declsInRule);
           }
         }
-      },
+      }
     });
 
     const avgDecl = rulesCount > 0 ? declarationsTotal / rulesCount : 0;
@@ -611,7 +621,7 @@ export class HtmlCssFullAnalyzerService implements OnModuleDestroy {
       dup_decl_ratio: Number(dupDeclRatio.toFixed(3)),
       _specificity_values: specificityValues,
       _selector_complexities: selectorComplexities,
-      _unique_properties: Array.from(uniqueProperties),
+      _unique_properties: Array.from(uniqueProperties)
     };
   }
 
@@ -634,12 +644,12 @@ export class HtmlCssFullAnalyzerService implements OnModuleDestroy {
   }
 
   private async analyzeAssetFiles(workDir: string, depth?: number) {
-    const allFiles = (await fg(['**/*'], {
+    const allFiles = (await fg(["**/*"], {
       cwd: workDir,
       dot: false,
       onlyFiles: true,
       ignore: this.ASSET_IGNORE,
-      deep: depth && depth > 0 ? depth : undefined,
+      deep: depth && depth > 0 ? depth : undefined
     })) as string[];
 
     const imageFiles = allFiles.filter((f: string) => this.hasExtension(f, this.IMAGE_EXTENSIONS));
@@ -656,32 +666,35 @@ export class HtmlCssFullAnalyzerService implements OnModuleDestroy {
       font_bytes_total: fontBytesTotal,
       avg_font_size_bytes:
         fontFiles.length > 0 ? Number((fontBytesTotal / fontFiles.length).toFixed(3)) : 0,
-      has_avif_files: imageFiles.some((f: string) => path.extname(f).toLowerCase() === '.avif'),
-      has_webp_files: imageFiles.some((f: string) => path.extname(f).toLowerCase() === '.webp'),
+      has_avif_files: imageFiles.some((f: string) => path.extname(f).toLowerCase() === ".avif"),
+      has_webp_files: imageFiles.some((f: string) => path.extname(f).toLowerCase() === ".webp")
     };
   }
 
-  private execCapture(cmd: string, args: string[]): Promise<{ code: number | null; out: string; err: string }> {
+  private execCapture(
+    cmd: string,
+    args: string[]
+  ): Promise<{ code: number | null; out: string; err: string }> {
     return new Promise((resolve, reject) => {
-      const p = spawn(cmd, args, { stdio: ['ignore', 'pipe', 'pipe'] });
-      let out = '';
-      let err = '';
-      p.stdout.on('data', (d) => (out += d.toString('utf8')));
-      p.stderr.on('data', (d) => (err += d.toString('utf8')));
-      p.on('error', reject);
-      p.on('close', (code) => resolve({ code, out, err }));
+      const p = spawn(cmd, args, { stdio: ["ignore", "pipe", "pipe"] });
+      let out = "";
+      let err = "";
+      p.stdout.on("data", (d) => (out += d.toString("utf8")));
+      p.stderr.on("data", (d) => (err += d.toString("utf8")));
+      p.on("error", reject);
+      p.on("close", (code) => resolve({ code, out, err }));
     });
   }
 
   private extractJsonObject(text: string | undefined | null): any {
-    if (!text || typeof text !== 'string') return null;
+    if (!text || typeof text !== "string") return null;
     const trimmed = text.trim();
     if (!trimmed) return null;
     try {
       return JSON.parse(trimmed);
     } catch {}
-    const firstBrace = trimmed.indexOf('{');
-    const firstBracket = trimmed.indexOf('[');
+    const firstBrace = trimmed.indexOf("{");
+    const firstBracket = trimmed.indexOf("[");
     let start = -1;
     if (firstBrace >= 0 && firstBracket >= 0) start = Math.min(firstBrace, firstBracket);
     else start = Math.max(firstBrace, firstBracket);
@@ -702,21 +715,24 @@ export class HtmlCssFullAnalyzerService implements OnModuleDestroy {
         files_checked: 0,
         errors_total: 0,
         warnings_total: 0,
-        unparsed_files: 0,
+        unparsed_files: 0
       };
     }
 
     const jar = process.env.VNU_JAR;
-    if (!jar) return { enabled: false, error: 'VNU_JAR is not set' };
+    if (!jar) return { enabled: false, error: "VNU_JAR is not set" };
     const jarExists = await this.exists(jar);
     if (!jarExists) return { enabled: false, error: `VNU_JAR does not exist: ${jar}` };
 
     const { code, out, err } = await this.withGlobalHeavyLimit(() =>
-      this.execCapture('java', ['-jar', jar, '--format', 'json', ...absHtmlPaths]),
+      this.execCapture("java", ["-jar", jar, "--format", "json", ...absHtmlPaths])
     );
 
-    const combined = [out, err].filter(Boolean).join('\n').trim();
-    const parsed = this.extractJsonObject(out) || this.extractJsonObject(err) || this.extractJsonObject(combined);
+    const combined = [out, err].filter(Boolean).join("\n").trim();
+    const parsed =
+      this.extractJsonObject(out) ||
+      this.extractJsonObject(err) ||
+      this.extractJsonObject(combined);
 
     if (!parsed) {
       return {
@@ -726,14 +742,14 @@ export class HtmlCssFullAnalyzerService implements OnModuleDestroy {
         warnings_total: null,
         unparsed_files: absHtmlPaths.length,
         exit_code: code,
-        raw_error: combined.slice(0, 4000) || `No parseable JSON from VNU (exit ${code})`,
+        raw_error: combined.slice(0, 4000) || `No parseable JSON from VNU (exit ${code})`
       };
     }
 
     const messages = Array.isArray(parsed.messages) ? parsed.messages : [];
-    const errors = messages.filter((m: any) => m.type === 'error').length;
+    const errors = messages.filter((m: any) => m.type === "error").length;
     const warnings = messages.filter(
-      (m: any) => m.type === 'info' || m.type === 'warning' || m.subType === 'warning',
+      (m: any) => m.type === "info" || m.type === "warning" || m.subType === "warning"
     ).length;
 
     return {
@@ -742,7 +758,7 @@ export class HtmlCssFullAnalyzerService implements OnModuleDestroy {
       errors_total: errors,
       warnings_total: warnings,
       unparsed_files: 0,
-      exit_code: code,
+      exit_code: code
     };
   }
 
@@ -754,7 +770,7 @@ export class HtmlCssFullAnalyzerService implements OnModuleDestroy {
       } catch {
         if (!res.headersSent) {
           res.statusCode = 500;
-          res.end('static server error');
+          res.end("static server error");
         } else {
           res.end();
         }
@@ -762,12 +778,12 @@ export class HtmlCssFullAnalyzerService implements OnModuleDestroy {
     });
 
     await new Promise<void>((resolve, reject) => {
-      server.listen(port, '127.0.0.1', (e?: unknown) => (e ? reject(e) : resolve()));
+      server.listen(port, "127.0.0.1", (e?: unknown) => (e ? reject(e) : resolve()));
     });
 
     return {
       baseUrl: `http://127.0.0.1:${port}`,
-      close: () => new Promise<void>((resolve) => server.close(() => resolve())),
+      close: () => new Promise<void>((resolve) => server.close(() => resolve()))
     };
   }
 
@@ -775,30 +791,38 @@ export class HtmlCssFullAnalyzerService implements OnModuleDestroy {
     const timeoutMs = Number(process.env.AXE_TIMEOUT_MS ?? 60000);
 
     try {
-      const results = await this.withTimeout(async () => {
-        await page.route('**/*', (route: any) => {
-          const type = route.request().resourceType();
-          if (type === 'image' || type === 'font' || type === 'media') {
-            return route.abort();
-          }
-          return route.continue();
-        });
-        await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 45_000 });
-        await page.addScriptTag({ content: axeCoreRuntime.source });
+      const results = await this.withTimeout(
+        async () => {
+          await page.route("**/*", (route: any) => {
+            const type = route.request().resourceType();
+            if (type === "image" || type === "font" || type === "media") {
+              return route.abort();
+            }
+            return route.continue();
+          });
+          await page.goto(url, { waitUntil: "domcontentloaded", timeout: 45_000 });
+          await page.addScriptTag({ content: axeCoreRuntime.source });
 
-        return page.evaluate(async () => {
-          // @ts-ignore
-          return await axe.run(document, { resultTypes: ['violations'] });
-        });
-      }, timeoutMs, 'axe');
+          return page.evaluate(async () => {
+            // @ts-ignore
+            return await axe.run(document, { resultTypes: ["violations"] });
+          });
+        },
+        timeoutMs,
+        "axe"
+      );
 
       const violations = results?.violations || [];
       const byImpact: Record<string, number> = {
-        minor: 0, moderate: 0, serious: 0, critical: 0, unknown: 0,
+        minor: 0,
+        moderate: 0,
+        serious: 0,
+        critical: 0,
+        unknown: 0
       };
 
       for (const v of violations) {
-        const impact = v.impact || 'unknown';
+        const impact = v.impact || "unknown";
         if (impact in byImpact) byImpact[impact] += 1;
         else byImpact.unknown += 1;
       }
@@ -840,14 +864,17 @@ export class HtmlCssFullAnalyzerService implements OnModuleDestroy {
 
   private async getSharedBrowser(): Promise<any> {
     if (!this.sharedBrowserPromise) {
-      this.sharedBrowserPromise = chromium.launch({
-        executablePath: process.env.PLAYWRIGHT_CHROMIUM_PATH || process.env.CHROME_PATH || undefined,
-        args: ['--no-sandbox', '--disable-gpu'],
-        headless: true,
-      }).catch((error: unknown) => {
-        this.sharedBrowserPromise = null;
-        throw error;
-      });
+      this.sharedBrowserPromise = chromium
+        .launch({
+          executablePath:
+            process.env.PLAYWRIGHT_CHROMIUM_PATH || process.env.CHROME_PATH || undefined,
+          args: ["--no-sandbox", "--disable-gpu"],
+          headless: true
+        })
+        .catch((error: unknown) => {
+          this.sharedBrowserPromise = null;
+          throw error;
+        });
     }
 
     try {
@@ -866,59 +893,59 @@ export class HtmlCssFullAnalyzerService implements OnModuleDestroy {
   private async analyzeWork(
     workDir: string,
     depth?: number,
-    selectedMetrics: Set<string> | null = null,
+    selectedMetrics: Set<string> | null = null
   ): Promise<Record<string, unknown> | null> {
-    const allFiles = (await fg(['**/*'], {
+    const allFiles = (await fg(["**/*"], {
       cwd: workDir,
       dot: false,
       onlyFiles: true,
       ignore: this.IGNORE,
-      deep: depth && depth > 0 ? depth : undefined,
+      deep: depth && depth > 0 ? depth : undefined
     })) as string[];
     const htmlFiles = allFiles.filter((f) => {
       const ext = path.extname(f).toLowerCase();
-      return ext === '.html' || ext === '.htm';
+      return ext === ".html" || ext === ".htm";
     });
-    const cssFiles = allFiles.filter((f) => path.extname(f).toLowerCase() === '.css');
+    const cssFiles = allFiles.filter((f) => path.extname(f).toLowerCase() === ".css");
 
     if (!htmlFiles.length && !cssFiles.length) return null;
 
     const htmlParseConcurrency = Number(process.env.HTML_PARSE_CONCURRENCY ?? 8);
     const cssParseConcurrency = Number(process.env.CSS_PARSE_CONCURRENCY ?? 8);
     const shouldRunVnu = this.shouldRunMetricGroup(selectedMetrics, [
-      'vnu_files_checked',
-      'vnu_errors_total',
-      'vnu_warnings_total',
-      'vnu_unparsed_files',
+      "vnu_files_checked",
+      "vnu_errors_total",
+      "vnu_warnings_total",
+      "vnu_unparsed_files"
     ]);
     const shouldRunAssetMetrics = this.shouldRunMetricGroup(selectedMetrics, [
-      'image_files_total',
-      'image_bytes_total',
-      'avg_image_size_bytes',
-      'font_files_total',
-      'font_bytes_total',
-      'avg_font_size_bytes',
-      'uses_avif',
-      'uses_webp',
+      "image_files_total",
+      "image_bytes_total",
+      "avg_image_size_bytes",
+      "font_files_total",
+      "font_bytes_total",
+      "avg_font_size_bytes",
+      "uses_avif",
+      "uses_webp"
     ]);
     const shouldRunHtmlAstMetrics = this.shouldRunMetricGroup(selectedMetrics, [
-      'dom_nodes_avg',
-      'max_dom_depth_max',
-      'semantic_ratio_avg',
-      'semantic_elements_total',
-      'nonsemantic_containers_total',
-      'semantic_element_usage_ratio_overall',
-      'heading_order_violations_total',
-      'img_missing_alt_total',
-      'img_total',
-      'img_missing_alt_ratio',
-      'form_controls_missing_label_total',
-      'form_controls_total',
-      'form_controls_missing_label_ratio',
-      'duplicate_ids_total',
-      'duplicate_id_values_total',
+      "dom_nodes_avg",
+      "max_dom_depth_max",
+      "semantic_ratio_avg",
+      "semantic_elements_total",
+      "nonsemantic_containers_total",
+      "semantic_element_usage_ratio_overall",
+      "heading_order_violations_total",
+      "img_missing_alt_total",
+      "img_total",
+      "img_missing_alt_ratio",
+      "form_controls_missing_label_total",
+      "form_controls_total",
+      "form_controls_missing_label_ratio",
+      "duplicate_ids_total",
+      "duplicate_id_values_total"
     ]);
-    const shouldRunAxe = this.shouldRunMetricGroup(selectedMetrics, ['axe_*']);
+    const shouldRunAxe = this.shouldRunMetricGroup(selectedMetrics, ["axe_*"]);
     const shouldParseHtml = shouldRunHtmlAstMetrics || shouldRunVnu || shouldRunAxe;
 
     const htmlResults = await this.runWithConcurrency(
@@ -927,7 +954,7 @@ export class HtmlCssFullAnalyzerService implements OnModuleDestroy {
       async (rel) => {
         const abs = path.join(workDir, rel);
         const txt = await this.readText(abs);
-        const bytes = Buffer.byteLength(txt, 'utf8');
+        const bytes = Buffer.byteLength(txt, "utf8");
         const hasAvifRef = /\.avif(\?|#|["')\s]|$)/i.test(txt);
         const hasWebpRef = /\.webp(\?|#|["')\s]|$)/i.test(txt);
         if (!shouldParseHtml) {
@@ -936,7 +963,7 @@ export class HtmlCssFullAnalyzerService implements OnModuleDestroy {
             abs,
             html_size_bytes: bytes,
             _has_avif_ref: hasAvifRef,
-            _has_webp_ref: hasWebpRef,
+            _has_webp_ref: hasWebpRef
           } as Record<string, unknown>;
         }
         try {
@@ -948,7 +975,7 @@ export class HtmlCssFullAnalyzerService implements OnModuleDestroy {
             html_size_bytes: bytes,
             _has_avif_ref: hasAvifRef,
             _has_webp_ref: hasWebpRef,
-            ...metrics,
+            ...metrics
           } as Record<string, unknown>;
         } catch (e) {
           return {
@@ -958,60 +985,56 @@ export class HtmlCssFullAnalyzerService implements OnModuleDestroy {
             _has_avif_ref: hasAvifRef,
             _has_webp_ref: hasWebpRef,
             parse_error: String(e),
-            vnu: { enabled: false, error: 'parse5 failed; skipped VNU' },
+            vnu: { enabled: false, error: "parse5 failed; skipped VNU" }
           } as Record<string, unknown>;
         }
-      },
+      }
     );
     const htmlBytesTotal = htmlResults.reduce(
       (sum, row) => sum + (Number(row.html_size_bytes) || 0),
-      0,
+      0
     );
 
     const vnuSummaryPromise = shouldRunVnu
       ? this.runVnuOnFiles(
-        htmlResults
-          .filter((row) => !row.parse_error)
-          .map((row) => String(row.abs || ''))
-          .filter(Boolean),
-      )
+          htmlResults
+            .filter((row) => !row.parse_error)
+            .map((row) => String(row.abs || ""))
+            .filter(Boolean)
+        )
       : Promise.resolve({
-        enabled: false,
-        skipped: true,
-        files_checked: 0,
-        errors_total: 0,
-        warnings_total: 0,
-        unparsed_files: 0,
-      });
+          enabled: false,
+          skipped: true,
+          files_checked: 0,
+          errors_total: 0,
+          warnings_total: 0,
+          unparsed_files: 0
+        });
 
-    const cssPromise = this.runWithConcurrency(
-      cssFiles,
-      cssParseConcurrency,
-      async (rel) => {
-        const abs = path.join(workDir, rel);
-        const txt = await this.readText(abs);
-        const bytes = Buffer.byteLength(txt, 'utf8');
-        const hasAvifRef = /\.avif(\?|#|["')\s]|$)/i.test(txt);
-        const hasWebpRef = /\.webp(\?|#|["')\s]|$)/i.test(txt);
-        try {
-          return {
-            file: rel,
-            css_size_bytes: bytes,
-            _has_avif_ref: hasAvifRef,
-            _has_webp_ref: hasWebpRef,
-            ...this.analyzeCssText(txt),
-          };
-        } catch (e) {
-          return {
-            file: rel,
-            css_size_bytes: bytes,
-            _has_avif_ref: hasAvifRef,
-            _has_webp_ref: hasWebpRef,
-            parse_error: String(e),
-          };
-        }
-      },
-    );
+    const cssPromise = this.runWithConcurrency(cssFiles, cssParseConcurrency, async (rel) => {
+      const abs = path.join(workDir, rel);
+      const txt = await this.readText(abs);
+      const bytes = Buffer.byteLength(txt, "utf8");
+      const hasAvifRef = /\.avif(\?|#|["')\s]|$)/i.test(txt);
+      const hasWebpRef = /\.webp(\?|#|["')\s]|$)/i.test(txt);
+      try {
+        return {
+          file: rel,
+          css_size_bytes: bytes,
+          _has_avif_ref: hasAvifRef,
+          _has_webp_ref: hasWebpRef,
+          ...this.analyzeCssText(txt)
+        };
+      } catch (e) {
+        return {
+          file: rel,
+          css_size_bytes: bytes,
+          _has_avif_ref: hasAvifRef,
+          _has_webp_ref: hasWebpRef,
+          parse_error: String(e)
+        };
+      }
+    });
 
     const assetPromise = shouldRunAssetMetrics
       ? (async () => {
@@ -1029,8 +1052,8 @@ export class HtmlCssFullAnalyzerService implements OnModuleDestroy {
             font_bytes_total: fontBytesTotal,
             avg_font_size_bytes:
               fontFiles.length > 0 ? Number((fontBytesTotal / fontFiles.length).toFixed(3)) : 0,
-            has_avif_files: imageFiles.some((f) => path.extname(f).toLowerCase() === '.avif'),
-            has_webp_files: imageFiles.some((f) => path.extname(f).toLowerCase() === '.webp'),
+            has_avif_files: imageFiles.some((f) => path.extname(f).toLowerCase() === ".avif"),
+            has_webp_files: imageFiles.some((f) => path.extname(f).toLowerCase() === ".webp")
           };
         })()
       : Promise.resolve({
@@ -1041,7 +1064,7 @@ export class HtmlCssFullAnalyzerService implements OnModuleDestroy {
           font_bytes_total: 0,
           avg_font_size_bytes: 0,
           has_avif_files: false,
-          has_webp_files: false,
+          has_webp_files: false
         });
     const axePromise = (async (): Promise<any[]> => {
       if (!htmlFiles.length || !shouldRunAxe) {
@@ -1051,13 +1074,13 @@ export class HtmlCssFullAnalyzerService implements OnModuleDestroy {
       try {
         const urlsByFile = htmlFiles.map((rel: string) => ({
           file: rel,
-          url: `${server.baseUrl}/${this.normalizePath(rel)}`,
+          url: `${server.baseUrl}/${this.normalizePath(rel)}`
         }));
         const axeResults = await this.runAxeBatch(urlsByFile.map((x: { url: string }) => x.url));
         return urlsByFile.map((item) => ({
           file: item.file,
           url: item.url,
-          axe: axeResults.get(item.url) || { enabled: true, error: 'axe result missing' },
+          axe: axeResults.get(item.url) || { enabled: true, error: "axe result missing" }
         }));
       } finally {
         await server.close();
@@ -1068,8 +1091,13 @@ export class HtmlCssFullAnalyzerService implements OnModuleDestroy {
       cssPromise,
       assetPromise,
       axePromise,
-      vnuSummaryPromise,
-    ]).then((values) => [values[0] as any[], values[1] as any, values[2] as any[], values[3] as any]);
+      vnuSummaryPromise
+    ]).then((values) => [
+      values[0] as any[],
+      values[1] as any,
+      values[2] as any[],
+      values[3] as any
+    ]);
 
     const formatUsage = {
       avif_referenced:
@@ -1077,12 +1105,12 @@ export class HtmlCssFullAnalyzerService implements OnModuleDestroy {
         cssResults.some((row: Record<string, unknown>) => Boolean(row._has_avif_ref)),
       webp_referenced:
         htmlResults.some((row) => Boolean(row._has_webp_ref)) ||
-        cssResults.some((row: Record<string, unknown>) => Boolean(row._has_webp_ref)),
+        cssResults.some((row: Record<string, unknown>) => Boolean(row._has_webp_ref))
     };
 
     const cssBytesTotal = cssResults.reduce(
       (sum: number, row: Record<string, unknown>) => sum + (Number(row.css_size_bytes) || 0),
-      0,
+      0
     );
 
     for (const row of htmlResults) {
@@ -1108,34 +1136,39 @@ export class HtmlCssFullAnalyzerService implements OnModuleDestroy {
       avg_font_size_bytes: assetMetrics.avg_font_size_bytes,
       uses_avif: Boolean(assetMetrics.has_avif_files || formatUsage.avif_referenced),
       uses_webp: Boolean(assetMetrics.has_webp_files || formatUsage.webp_referenced),
-      dom_nodes_avg: Number(this.avg(htmlResults, 'dom_nodes').toFixed(3)),
-      max_dom_depth_max: this.max(htmlResults, 'max_dom_depth'),
-      semantic_ratio_avg: Number(this.avg(htmlResults, 'semantic_ratio').toFixed(3)),
-      semantic_elements_total: this.total(htmlResults, 'semantic_elements_count'),
-      nonsemantic_containers_total: this.total(htmlResults, 'nonsemantic_container_count'),
-      heading_order_violations_total: this.total(htmlResults, 'heading_order_violations'),
-      img_missing_alt_total: this.total(htmlResults, 'img_missing_alt'),
-      img_total: this.total(htmlResults, 'img_total'),
-      form_controls_missing_label_total: this.total(htmlResults, 'form_controls_missing_label'),
-      form_controls_total: this.total(htmlResults, 'form_controls_total'),
-      duplicate_ids_total: this.total(htmlResults, 'duplicate_ids'),
-      duplicate_id_values_total: this.total(htmlResults, 'duplicate_id_values'),
-      rules_total: this.total(cssResults, 'rules_count'),
-      selectors_total: this.total(cssResults, 'selectors_count'),
-      avg_declarations_per_rule_avg: Number(this.avg(cssResults, 'avg_declarations_per_rule').toFixed(3)),
-      max_declarations_per_rule_max: this.max(cssResults, 'max_declarations_per_rule'),
-      import_count_total: this.total(cssResults, 'import_count'),
-      avg_specificity_avg: Number(this.avg(cssResults, 'avg_specificity').toFixed(3)),
-      max_specificity_max: this.max(cssResults, 'max_specificity'),
-      complex_selectors_ratio_avg: Number(this.avg(cssResults, 'complex_selectors_ratio').toFixed(3)),
-      unique_css_properties_avg: Number(this.avg(cssResults, 'unique_css_properties_used').toFixed(3)),
-      dup_decl_ratio_avg: Number(this.avg(cssResults, 'dup_decl_ratio').toFixed(3)),
+      dom_nodes_avg: Number(this.avg(htmlResults, "dom_nodes").toFixed(3)),
+      max_dom_depth_max: this.max(htmlResults, "max_dom_depth"),
+      semantic_ratio_avg: Number(this.avg(htmlResults, "semantic_ratio").toFixed(3)),
+      semantic_elements_total: this.total(htmlResults, "semantic_elements_count"),
+      nonsemantic_containers_total: this.total(htmlResults, "nonsemantic_container_count"),
+      heading_order_violations_total: this.total(htmlResults, "heading_order_violations"),
+      img_missing_alt_total: this.total(htmlResults, "img_missing_alt"),
+      img_total: this.total(htmlResults, "img_total"),
+      form_controls_missing_label_total: this.total(htmlResults, "form_controls_missing_label"),
+      form_controls_total: this.total(htmlResults, "form_controls_total"),
+      duplicate_ids_total: this.total(htmlResults, "duplicate_ids"),
+      duplicate_id_values_total: this.total(htmlResults, "duplicate_id_values"),
+      rules_total: this.total(cssResults, "rules_count"),
+      selectors_total: this.total(cssResults, "selectors_count"),
+      avg_declarations_per_rule_avg: Number(
+        this.avg(cssResults, "avg_declarations_per_rule").toFixed(3)
+      ),
+      max_declarations_per_rule_max: this.max(cssResults, "max_declarations_per_rule"),
+      import_count_total: this.total(cssResults, "import_count"),
+      avg_specificity_avg: Number(this.avg(cssResults, "avg_specificity").toFixed(3)),
+      max_specificity_max: this.max(cssResults, "max_specificity"),
+      complex_selectors_ratio_avg: Number(
+        this.avg(cssResults, "complex_selectors_ratio").toFixed(3)
+      ),
+      unique_css_properties_avg: Number(
+        this.avg(cssResults, "unique_css_properties_used").toFixed(3)
+      ),
+      dup_decl_ratio_avg: Number(this.avg(cssResults, "dup_decl_ratio").toFixed(3))
     };
 
     const semTotal = Number(agg.semantic_elements_total) + Number(agg.nonsemantic_containers_total);
-    agg.semantic_element_usage_ratio_overall = semTotal > 0
-      ? Number((Number(agg.semantic_elements_total) / semTotal).toFixed(3))
-      : 0;
+    agg.semantic_element_usage_ratio_overall =
+      semTotal > 0 ? Number((Number(agg.semantic_elements_total) / semTotal).toFixed(3)) : 0;
     agg.img_missing_alt_ratio =
       Number(agg.img_total) > 0
         ? Number((Number(agg.img_missing_alt_total) / Number(agg.img_total)).toFixed(6))
@@ -1143,11 +1176,10 @@ export class HtmlCssFullAnalyzerService implements OnModuleDestroy {
     agg.form_controls_missing_label_ratio =
       Number(agg.form_controls_total) > 0
         ? Number(
-          (
-            Number(agg.form_controls_missing_label_total) /
-            Number(agg.form_controls_total)
-          ).toFixed(6),
-        )
+            (
+              Number(agg.form_controls_missing_label_total) / Number(agg.form_controls_total)
+            ).toFixed(6)
+          )
         : 0;
 
     agg.vnu_files_checked = Number(vnuSummary?.files_checked) || 0;
@@ -1156,14 +1188,17 @@ export class HtmlCssFullAnalyzerService implements OnModuleDestroy {
     agg.vnu_unparsed_files = Number(vnuSummary?.unparsed_files) || 0;
 
     const allSpecificityValues = cssResults.flatMap((r: any) =>
-      Array.isArray(r._specificity_values) ? r._specificity_values : [],
+      Array.isArray(r._specificity_values) ? r._specificity_values : []
     );
     agg.specificity_variance_overall = Number(this.variance(allSpecificityValues).toFixed(3));
 
     const allSelectorComplexities = cssResults.flatMap((r: any) =>
-      Array.isArray(r._selector_complexities) ? r._selector_complexities : [],
+      Array.isArray(r._selector_complexities) ? r._selector_complexities : []
     );
-    const totalSelectorComplexity = allSelectorComplexities.reduce((a: number, b: number) => a + b, 0);
+    const totalSelectorComplexity = allSelectorComplexities.reduce(
+      (a: number, b: number) => a + b,
+      0
+    );
     agg.total_selector_complexity_total = totalSelectorComplexity;
     agg.avg_selector_complexity_overall =
       allSelectorComplexities.length > 0
@@ -1173,7 +1208,9 @@ export class HtmlCssFullAnalyzerService implements OnModuleDestroy {
       allSelectorComplexities.length > 0 ? Math.max(...allSelectorComplexities) : 0;
 
     const uniquePropsWork = new Set(
-      cssResults.flatMap((r: any) => (Array.isArray(r._unique_properties) ? r._unique_properties : [])),
+      cssResults.flatMap((r: any) =>
+        Array.isArray(r._unique_properties) ? r._unique_properties : []
+      )
     );
     agg.unique_css_properties_work = uniquePropsWork.size;
 
@@ -1182,23 +1219,23 @@ export class HtmlCssFullAnalyzerService implements OnModuleDestroy {
       .filter((x: Record<string, unknown> | undefined) => Boolean(x && x.enabled));
     agg.axe_violations_total = axeOk.reduce(
       (s: number, a: Record<string, unknown>) => s + (Number(a.violations_total) || 0),
-      0,
+      0
     );
     agg.axe_critical = axeOk.reduce(
       (s: number, a: Record<string, any>) => s + (Number(a.by_impact?.critical) || 0),
-      0,
+      0
     );
     agg.axe_serious = axeOk.reduce(
       (s: number, a: Record<string, any>) => s + (Number(a.by_impact?.serious) || 0),
-      0,
+      0
     );
     agg.axe_moderate = axeOk.reduce(
       (s: number, a: Record<string, any>) => s + (Number(a.by_impact?.moderate) || 0),
-      0,
+      0
     );
     agg.axe_minor = axeOk.reduce(
       (s: number, a: Record<string, any>) => s + (Number(a.by_impact?.minor) || 0),
-      0,
+      0
     );
 
     return agg;
@@ -1206,42 +1243,48 @@ export class HtmlCssFullAnalyzerService implements OnModuleDestroy {
 
   private async hasHtmlOrCssFiles(dir: string): Promise<boolean> {
     const matches = await fg(
-      ['**/*.html', '**/*.HTML', '**/*.htm', '**/*.HTM', '**/*.css', '**/*.CSS'],
+      ["**/*.html", "**/*.HTML", "**/*.htm", "**/*.HTM", "**/*.css", "**/*.CSS"],
       {
         cwd: dir,
         dot: false,
         onlyFiles: true,
-        ignore: this.IGNORE,
-      },
+        ignore: this.IGNORE
+      }
     );
     return matches.length > 0;
   }
 
   private async hasDirectHtmlOrCssFiles(dir: string): Promise<boolean> {
-    const matches = await fg(['*.html', '*.HTML', '*.htm', '*.HTM', '*.css', '*.CSS'], {
+    const matches = await fg(["*.html", "*.HTML", "*.htm", "*.HTM", "*.css", "*.CSS"], {
       cwd: dir,
       dot: false,
       onlyFiles: true,
-      ignore: this.IGNORE,
+      ignore: this.IGNORE
     });
     return matches.length > 0;
   }
 
   private isIgnoredDirName(name: string): boolean {
     return [
-      '.git', '.github', '.vscode', 'node_modules', 'bootstrap', 'images', '__MACOSX',
+      ".git",
+      ".github",
+      ".vscode",
+      "node_modules",
+      "bootstrap",
+      "images",
+      "__MACOSX"
     ].includes(name);
   }
 
   private async collectRepoDirs(
     rootDir: string,
     recursiveMode: boolean,
-    maxDepth?: number,
+    maxDepth?: number
   ): Promise<string[]> {
     if (!recursiveMode) return [rootDir];
 
     const normalizedMaxDepth =
-      typeof maxDepth === 'number' && Number.isFinite(maxDepth) && maxDepth > 0
+      typeof maxDepth === "number" && Number.isFinite(maxDepth) && maxDepth > 0
         ? Math.trunc(maxDepth)
         : null;
     const repos = new Set<string>();
@@ -1256,7 +1299,7 @@ export class HtmlCssFullAnalyzerService implements OnModuleDestroy {
         if (!entry.isDirectory()) {
           continue;
         }
-        if (entry.name.startsWith('.') || this.isIgnoredDirName(entry.name)) {
+        if (entry.name.startsWith(".") || this.isIgnoredDirName(entry.name)) {
           continue;
         }
 

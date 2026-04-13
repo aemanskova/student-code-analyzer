@@ -1,0 +1,10 @@
+{
+  "name": "student-code-analyzer",
+  "private": true,
+  "scripts": {
+    "prepare": "husky"
+  },
+  "devDependencies": {
+    "husky": "^9.1.7"
+  }
+}

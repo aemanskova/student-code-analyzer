@@ -1,8 +1,9 @@
 export type AuthInfo = {
-  accessToken: string;
-};
+  accessToken: string
+  refreshToken: string
+}
 
 export type AuthContextModel = AuthInfo & {
-  login: (accessToken: string) => void;
-  logout: VoidFunction;
-};
+  login: (accessToken: string, refreshToken: string) => void
+  logout: VoidFunction
+}

@@ -1,4 +1,4 @@
-import { IsArray, IsBoolean, IsInt, IsOptional, IsString, Min } from 'class-validator';
+import { IsArray, IsBoolean, IsInt, IsOptional, IsString, Min } from "class-validator";
 
 export class RunAnalysisDto {
   @IsString()
@@ -38,6 +38,6 @@ export class RunAnalysisDto {
   onAnalyzeProgress?: (
     completed: number,
     total: number,
-    currentPath: string,
+    currentPath: string
   ) => Promise<void> | void;
 }

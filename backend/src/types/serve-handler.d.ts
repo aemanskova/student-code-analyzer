@@ -1,1 +1,1 @@
-declare module 'serve-handler';
+declare module "serve-handler";

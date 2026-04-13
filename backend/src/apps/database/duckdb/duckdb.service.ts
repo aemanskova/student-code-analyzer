@@ -1,14 +1,14 @@
-import { Injectable, OnModuleDestroy } from '@nestjs/common';
-import * as fs from 'node:fs';
-import * as path from 'node:path';
-import * as duckdb from 'duckdb';
+import { Injectable, OnModuleDestroy } from "@nestjs/common";
+import * as fs from "node:fs";
+import * as path from "node:path";
+import * as duckdb from "duckdb";
 
 @Injectable()
 export class DuckdbService implements OnModuleDestroy {
   private readonly db: duckdb.Database;
 
   constructor() {
-    const dbPath = process.env.DUCKDB_PATH || '/app/data/duckdb/analysis.duckdb';
+    const dbPath = process.env.DUCKDB_PATH || "/app/data/duckdb/analysis.duckdb";
     fs.mkdirSync(path.dirname(dbPath), { recursive: true });
     this.db = new duckdb.Database(dbPath);
   }

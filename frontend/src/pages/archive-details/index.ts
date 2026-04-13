@@ -1,1 +1,1 @@
-export { ArchiveDetailsPage } from './ui/ArchiveDetailsPage';
+export { ArchiveDetailsPage } from "./ui/ArchiveDetailsPage"

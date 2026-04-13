@@ -1,1 +1,1 @@
-export type { AuthContextModel, AuthInfo } from './auth';
+export type { AuthContextModel, AuthInfo } from "./auth"

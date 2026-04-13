@@ -1,16 +1,16 @@
-import { Card, Container, Pagination, Stack, Table, Text, Title } from '@mantine/core';
-import type { AnalysisListItem } from '@entities/analysis/api';
-import { useGetSavedAnalysisListQuery } from '@entities/analysis/api';
-import { useState } from 'react';
-import { NavLink } from 'react-router';
+import type { AnalysisListItem } from "@entities/analysis/api"
+import { useGetSavedAnalysisListQuery } from "@entities/analysis/api"
+import { Card, Container, Pagination, Stack, Table, Text, Title } from "@mantine/core"
+import { useState } from "react"
+import { NavLink } from "react-router"
 
-const PAGE_SIZE = 10;
+const PAGE_SIZE = 10
 
 export function ArchivePage() {
-  const [page, setPage] = useState(1);
-  const { data, isFetching } = useGetSavedAnalysisListQuery({ page, size: PAGE_SIZE });
-  const rows = data?.data || [];
-  const totalPages = Math.max(1, Math.ceil((data?.total || 0) / PAGE_SIZE));
+  const [page, setPage] = useState(1)
+  const { data, isFetching } = useGetSavedAnalysisListQuery({ page, size: PAGE_SIZE })
+  const rows = data?.data || []
+  const totalPages = Math.max(1, Math.ceil((data?.total || 0) / PAGE_SIZE))
 
   return (
     <Container size="xl">
@@ -54,5 +54,5 @@ export function ArchivePage() {
         </Card>
       </Stack>
     </Container>
-  );
+  )
 }
