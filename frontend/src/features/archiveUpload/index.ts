@@ -1,3 +1,2 @@
-export { ArchiveUploadStep } from './ui/ArchiveUploadStep';
-export type { UploadedArchiveInfo } from './model';
-
+export type { UploadedArchiveInfo } from "./model"
+export { ArchiveUploadStep } from "./ui/ArchiveUploadStep"

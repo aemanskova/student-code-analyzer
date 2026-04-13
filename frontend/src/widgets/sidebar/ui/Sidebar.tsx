@@ -1,14 +1,14 @@
-import {  NavLink, Stack } from '@mantine/core';
-import { NavLink as RouterNavLink } from 'react-router';
+import { NavLink, Stack } from "@mantine/core"
+import { NavLink as RouterNavLink } from "react-router"
 
 type SidebarLink = {
-  label: string;
-  to: string;
-};
+  label: string
+  to: string
+}
 
 type Props = {
-  links: SidebarLink[];
-};
+  links: SidebarLink[]
+}
 
 export function Sidebar({ links }: Props) {
   return (
@@ -19,5 +19,5 @@ export function Sidebar({ links }: Props) {
         ))}
       </Stack>
     </Stack>
-  );
+  )
 }

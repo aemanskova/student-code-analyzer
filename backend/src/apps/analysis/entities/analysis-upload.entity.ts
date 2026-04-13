@@ -6,40 +6,40 @@ import {
   ManyToOne,
   PrimaryColumn,
   Relation,
-  UpdateDateColumn,
-} from 'typeorm';
-import { User } from '../../auth/entities/user.entity';
+  UpdateDateColumn
+} from "typeorm";
+import { User } from "../../auth/entities/user.entity";
 
-export type AnalysisUploadStatus = 'uploaded' | 'processing' | 'done' | 'failed';
+export type AnalysisUploadStatus = "uploaded" | "processing" | "done" | "failed";
 
-@Entity('analysis_upload')
+@Entity("analysis_upload")
 export class AnalysisUpload {
-  @PrimaryColumn({ type: 'text' })
+  @PrimaryColumn({ type: "text" })
   id!: string;
 
-  @ManyToOne(() => User, { nullable: false, onDelete: 'CASCADE' })
-  @JoinColumn({ name: 'userId' })
+  @ManyToOne(() => User, { nullable: false, onDelete: "CASCADE" })
+  @JoinColumn({ name: "userId" })
   user!: Relation<User>;
 
   @Column()
   userId!: number;
 
-  @Column({ type: 'text' })
+  @Column({ type: "text" })
   originalName!: string;
 
-  @Column({ type: 'text' })
+  @Column({ type: "text" })
   storedPath!: string;
 
-  @Column({ type: 'integer' })
+  @Column({ type: "integer" })
   size!: number;
 
-  @Column({ type: 'text', nullable: true })
+  @Column({ type: "text", nullable: true })
   mimeType!: string | null;
 
-  @Column({ type: 'text' })
+  @Column({ type: "text" })
   status!: AnalysisUploadStatus;
 
-  @Column({ type: 'datetime', nullable: true })
+  @Column({ type: "datetime", nullable: true })
   consumedAt!: Date | null;
 
   @CreateDateColumn()

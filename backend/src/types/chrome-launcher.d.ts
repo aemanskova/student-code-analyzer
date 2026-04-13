@@ -1,1 +1,1 @@
-declare module 'chrome-launcher';
+declare module "chrome-launcher";

@@ -1,38 +1,35 @@
-import { AnalysisCharts, AnalysisTable } from '@entities/analysis';
-import { Card, Container, Stack, Title } from '@mantine/core';
-import type { Direction } from '@entities/analysis/api';
-import { useGetSavedResultsQuery } from '@entities/analysis/api';
-import { useMemo } from 'react';
-import { useParams, useSearchParams } from 'react-router';
+import { AnalysisCharts, AnalysisTable } from "@entities/analysis"
+import type { Direction } from "@entities/analysis/api"
+import { useGetSavedResultsQuery } from "@entities/analysis/api"
+import { Card, Container, Stack, Title } from "@mantine/core"
+import { useMemo } from "react"
+import { useParams, useSearchParams } from "react-router"
 
 export function ArchiveDetailsPage() {
-  const params = useParams<{ encodedPath: string }>();
-  const [searchParams] = useSearchParams();
-  const direction = (searchParams.get('direction') || 'html_css') as Direction;
-  const pathValue = decodeURIComponent(params.encodedPath || '');
+  const params = useParams<{ encodedPath: string }>()
+  const [searchParams] = useSearchParams()
+  const direction = (searchParams.get("direction") || "html_css") as Direction
+  const pathValue = decodeURIComponent(params.encodedPath || "")
 
-  const { data } = useGetSavedResultsQuery(
-    { direction, path: pathValue },
-    { skip: !pathValue },
-  );
+  const { data } = useGetSavedResultsQuery({ direction, path: pathValue }, { skip: !pathValue })
 
   const latestRunRows = useMemo(() => {
-    const rows = data?.data || [];
+    const rows = data?.data || []
     if (rows.length === 0) {
-      return [];
+      return []
     }
-    const runId = rows[0].runId;
-    return rows.filter((row) => row.runId === runId);
-  }, [data]);
+    const runId = rows[0].runId
+    return rows.filter((row) => row.runId === runId)
+  }, [data])
 
   const metrics = useMemo(() => {
     if (latestRunRows.length === 0) {
-      return [];
+      return []
     }
     return Object.keys(latestRunRows[0]).filter(
-      (key) => !['runId', 'createdAt', 'path', 'group', 'student'].includes(key),
-    );
-  }, [latestRunRows]);
+      (key) => !["runId", "createdAt", "path", "group", "student"].includes(key)
+    )
+  }, [latestRunRows])
 
   return (
     <Container size="xl">
@@ -48,5 +45,5 @@ export function ArchiveDetailsPage() {
         </Card>
       </Stack>
     </Container>
-  );
+  )
 }

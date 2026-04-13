@@ -1,1 +1,1 @@
-declare module 'parse5';
+declare module "parse5";

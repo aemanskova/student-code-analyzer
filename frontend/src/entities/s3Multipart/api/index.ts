@@ -3,9 +3,8 @@ export {
   useCompleteS3MultipartUploadMutation,
   useInitS3MultipartUploadMutation,
   usePresignS3MultipartPartMutation,
-  useUploadS3PartMutation,
-} from './s3MultipartApi';
-
+  useUploadS3PartMutation
+} from "./s3MultipartApi"
 export type {
   CompleteS3MultipartUploadRequest,
   CompleteS3MultipartUploadResponse,
@@ -14,6 +13,5 @@ export type {
   PresignS3PartRequest,
   PresignS3PartResponse,
   UploadS3PartRequest,
-  UploadS3PartResponse,
-} from './types';
-
+  UploadS3PartResponse
+} from "./types"

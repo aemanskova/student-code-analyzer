@@ -1,13 +1,13 @@
-import { TextInput } from '@mantine/core';
-import { Controller, useFormContext } from 'react-hook-form';
+import { TextInput } from "@mantine/core"
+import { Controller, useFormContext } from "react-hook-form"
 
-import type { LoginFormValues } from '../model';
+import type { LoginFormValues } from "../model"
 
 export function Identifier() {
   const {
     control,
-    formState: { errors },
-  } = useFormContext<LoginFormValues>();
+    formState: { errors }
+  } = useFormContext<LoginFormValues>()
 
   return (
     <Controller
@@ -23,5 +23,5 @@ export function Identifier() {
         />
       )}
     />
-  );
+  )
 }

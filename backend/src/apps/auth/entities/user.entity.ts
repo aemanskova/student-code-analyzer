@@ -1,13 +1,7 @@
-import {
-  Column,
-  Entity,
-  PrimaryGeneratedColumn,
-  ManyToOne,
-  Relation,
-} from 'typeorm';
-import { Role } from './role.entity';
+import { Column, Entity, PrimaryGeneratedColumn, ManyToOne, Relation } from "typeorm";
+import { Role } from "./role.entity";
 
-@Entity('user')
+@Entity("user")
 export class User {
   @PrimaryGeneratedColumn()
   id!: number;
@@ -24,7 +18,7 @@ export class User {
   @Column()
   surname!: string;
 
-  @Column({ unique: true, nullable: true, type: 'text' })
+  @Column({ unique: true, nullable: true, type: "text" })
   github!: string | null;
 
   @Column()
@@ -36,10 +30,10 @@ export class User {
   @Column()
   updatedAt!: Date;
 
-  @Column({ type: 'text', nullable: true })
+  @Column({ type: "text", nullable: true })
   refreshTokenHash!: string | null;
 
-  @Column({ type: 'datetime', nullable: true })
+  @Column({ type: "datetime", nullable: true })
   refreshTokenExpiresAt!: Date | null;
 
   @ManyToOne(() => Role, (role) => role.users, { eager: true })

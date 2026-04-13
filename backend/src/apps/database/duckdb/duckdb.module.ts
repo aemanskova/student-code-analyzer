@@ -1,8 +1,8 @@
-import { Module } from '@nestjs/common';
-import { DuckdbService } from './duckdb.service';
+import { Module } from "@nestjs/common";
+import { DuckdbService } from "./duckdb.service";
 
 @Module({
   providers: [DuckdbService],
-  exports: [DuckdbService],
+  exports: [DuckdbService]
 })
 export class DuckdbModule {}

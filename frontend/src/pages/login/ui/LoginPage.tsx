@@ -1,5 +1,5 @@
-import { LoginForm } from '@features/auth';
-import { Card, Container } from '@mantine/core';
+import { LoginForm } from "@features/auth"
+import { Card, Container } from "@mantine/core"
 
 export function LoginPage() {
   return (
@@ -8,5 +8,5 @@ export function LoginPage() {
         <LoginForm />
       </Card>
     </Container>
-  );
+  )
 }

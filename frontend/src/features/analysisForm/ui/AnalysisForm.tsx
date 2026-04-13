@@ -1,12 +1,13 @@
+import { useRunS3AsyncMutation } from "@entities/analysis/api"
 import {
-  DIRECTION_OPTIONS,
-  METRICS_BY_DIRECTION,
-  analysisSchema,
   type AnalysisFormValues,
   type AnalysisRunResult,
-} from '@features/analysisForm/model';
-import { ArchiveUploadStep, type UploadedArchiveInfo } from '@features/archiveUpload';
-import { zodResolver } from '@hookform/resolvers/zod';
+  analysisSchema,
+  DIRECTION_OPTIONS,
+  METRICS_BY_DIRECTION
+} from "@features/analysisForm/model"
+import { ArchiveUploadStep, type UploadedArchiveInfo } from "@features/archiveUpload"
+import { zodResolver } from "@hookform/resolvers/zod"
 import {
   Alert,
   Button,
@@ -16,61 +17,61 @@ import {
   MultiSelect,
   NumberInput,
   Select,
-  Stack,
-} from '@mantine/core';
-import { useRunS3AsyncMutation } from '@entities/analysis/api';
-import { getApiErrorMessage } from '@shared/lib';
-import { Controller, useForm } from 'react-hook-form';
-import { useState } from 'react';
+  Stack
+} from "@mantine/core"
+import { getApiErrorMessage } from "@shared/lib"
+import { useState } from "react"
+import { Controller, useForm } from "react-hook-form"
 
 type Props = {
-  onSuccess: (result: AnalysisRunResult) => void;
-};
+  onSuccess: (result: AnalysisRunResult) => void
+}
 
 export function AnalysisForm({ onSuccess }: Props) {
-  const [runS3Async, { isLoading: isAnalyzing, error: analyzeError }] = useRunS3AsyncMutation();
-  const [uploadedArchive, setUploadedArchive] = useState<UploadedArchiveInfo | null>(null);
-  const [runFormError, setRunFormError] = useState<string | null>(null);
+  const [runS3Async, { isLoading: isAnalyzing, error: analyzeError }] = useRunS3AsyncMutation()
+  const [uploadedArchive, setUploadedArchive] = useState<UploadedArchiveInfo | null>(null)
+  const [runFormError, setRunFormError] = useState<string | null>(null)
 
   const form = useForm<AnalysisFormValues>({
     resolver: zodResolver(analysisSchema),
-    mode: 'onBlur',
+    mode: "onBlur",
     defaultValues: {
       archive: null,
-      direction: 'html_css',
+      direction: "html_css",
       metrics: [],
       recursive: false,
-      depth: undefined,
-    },
-  });
+      depth: undefined
+    }
+  })
 
-  const direction = form.watch('direction');
-  const recursive = form.watch('recursive');
-  const archive = form.watch('archive');
+  const direction = form.watch("direction")
+  const recursive = form.watch("recursive")
+  const archive = form.watch("archive")
 
   const onSubmit = form.handleSubmit(async (values) => {
     if (!uploadedArchive || isAnalyzing) {
-      setRunFormError('Сначала загрузите архив в хранилище.');
-      return;
+      setRunFormError("Сначала загрузите архив в хранилище.")
+      return
     }
 
-    setRunFormError(null);
+    setRunFormError(null)
     try {
       const request = {
         key: uploadedArchive.key,
         direction: values.direction,
         metrics: values.metrics.length > 0 ? values.metrics : undefined,
         r: values.recursive,
-        depth: values.recursive ? values.depth : undefined,
-      };
-      const response = await runS3Async(request).unwrap();
+        depth: values.recursive ? values.depth : undefined
+      }
+      const response = await runS3Async(request).unwrap()
       onSuccess({
         response,
-        request,
-      });
-    } catch {
+        request
+      })
+    } catch (e) {
+      console.error(e)
     }
-  });
+  })
 
   return (
     <Stack gap="md">
@@ -85,9 +86,9 @@ export function AnalysisForm({ onSuccess }: Props) {
             placeholder="Выберите архив"
             value={field.value}
             onChange={(value) => {
-              field.onChange(value);
-              setUploadedArchive(null);
-              setRunFormError(null);
+              field.onChange(value)
+              setUploadedArchive(null)
+              setRunFormError(null)
             }}
           />
         )}
@@ -97,8 +98,8 @@ export function AnalysisForm({ onSuccess }: Props) {
         disabled={isAnalyzing}
         file={archive}
         onUploaded={(uploaded) => {
-          setUploadedArchive(uploaded);
-          setRunFormError(null);
+          setUploadedArchive(uploaded)
+          setRunFormError(null)
         }}
       />
 
@@ -110,7 +111,7 @@ export function AnalysisForm({ onSuccess }: Props) {
             data={DIRECTION_OPTIONS}
             label="Направление"
             value={field.value}
-            onChange={(value) => field.onChange(value || 'html_css')}
+            onChange={(value) => field.onChange(value || "html_css")}
           />
         )}
       />
@@ -153,7 +154,7 @@ export function AnalysisForm({ onSuccess }: Props) {
               label="Глубина"
               min={1}
               value={field.value}
-              onChange={(value) => field.onChange(typeof value === 'number' ? value : undefined)}
+              onChange={(value) => field.onChange(typeof value === "number" ? value : undefined)}
             />
           )}
         />
@@ -162,7 +163,7 @@ export function AnalysisForm({ onSuccess }: Props) {
       {runFormError && <Alert color="red">{runFormError}</Alert>}
       {analyzeError && (
         <Alert color="red">
-          {getApiErrorMessage(analyzeError, 'Не удалось запустить анализ. Повторите попытку.')}
+          {getApiErrorMessage(analyzeError, "Не удалось запустить анализ. Повторите попытку.")}
         </Alert>
       )}
 
@@ -172,5 +173,5 @@ export function AnalysisForm({ onSuccess }: Props) {
         </Button>
       </Group>
     </Stack>
-  );
+  )
 }

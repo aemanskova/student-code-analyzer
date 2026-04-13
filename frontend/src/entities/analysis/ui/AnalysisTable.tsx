@@ -1,10 +1,10 @@
-import type { AnalysisRow } from '@entities/analysis/api';
-import { ScrollArea, Table } from '@mantine/core';
+import type { AnalysisRow } from "@entities/analysis/api"
+import { ScrollArea, Table } from "@mantine/core"
 
 type Props = {
-  rows: AnalysisRow[];
-  metrics: string[];
-};
+  rows: AnalysisRow[]
+  metrics: string[]
+}
 
 export function AnalysisTable({ rows, metrics }: Props) {
   return (
@@ -23,12 +23,12 @@ export function AnalysisTable({ rows, metrics }: Props) {
             <Table.Tr key={row.path}>
               <Table.Td>{row.path}</Table.Td>
               {metrics.map((metric) => (
-                <Table.Td key={`${row.path}:${metric}`}>{String(row[metric] ?? '')}</Table.Td>
+                <Table.Td key={`${row.path}:${metric}`}>{String(row[metric] ?? "")}</Table.Td>
               ))}
             </Table.Tr>
           ))}
         </Table.Tbody>
       </Table>
     </ScrollArea>
-  );
+  )
 }

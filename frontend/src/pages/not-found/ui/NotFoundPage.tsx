@@ -1,6 +1,6 @@
-import { Button, Center, Stack, Text, Title } from '@mantine/core';
-import { routes } from '@shared/config';
-import { NavLink } from 'react-router';
+import { Button, Center, Stack, Text, Title } from "@mantine/core"
+import { routes } from "@shared/config"
+import { NavLink } from "react-router"
 
 export function NotFoundPage() {
   return (
@@ -13,5 +13,5 @@ export function NotFoundPage() {
         </Button>
       </Stack>
     </Center>
-  );
+  )
 }

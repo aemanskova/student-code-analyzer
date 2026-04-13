@@ -1,37 +1,34 @@
-import { Injectable } from '@nestjs/common';
-import * as fs from 'node:fs/promises';
-import * as path from 'node:path';
-import * as parse5 from 'parse5';
-import * as csstree from 'css-tree';
-import { DirectionMetricProvider, MetricComputeContext, MetricValues } from '../metrics.types';
+import { Injectable } from "@nestjs/common";
+import * as fs from "node:fs/promises";
+import * as path from "node:path";
+import * as parse5 from "parse5";
+import * as csstree from "css-tree";
+import { DirectionMetricProvider, MetricComputeContext, MetricValues } from "../metrics.types";
 
 @Injectable()
 export class HtmlCssMetricProvider implements DirectionMetricProvider {
-  readonly direction = 'html_css';
-  readonly supportedMetrics = ['tag_count', 'css_specificity', 'unused_classes'];
+  readonly direction = "html_css";
+  readonly supportedMetrics = ["tag_count", "css_specificity", "unused_classes"];
 
-  async computeSelected(
-    context: MetricComputeContext,
-    metrics: string[],
-  ): Promise<MetricValues> {
-    const htmlText = await fs.readFile(context.absolutePath, 'utf8');
+  async computeSelected(context: MetricComputeContext, metrics: string[]): Promise<MetricValues> {
+    const htmlText = await fs.readFile(context.absolutePath, "utf8");
     const htmlAst = parse5.parse(htmlText);
 
     const values: MetricValues = {};
 
-    if (metrics.includes('tag_count')) {
+    if (metrics.includes("tag_count")) {
       values.tag_count = this.countTags(htmlAst);
     }
 
-    if (metrics.includes('css_specificity') || metrics.includes('unused_classes')) {
+    if (metrics.includes("css_specificity") || metrics.includes("unused_classes")) {
       const cssTexts = await this.collectCssTexts(context.absolutePath, htmlAst, htmlText);
       const selectorData = this.extractSelectorData(cssTexts);
 
-      if (metrics.includes('css_specificity')) {
+      if (metrics.includes("css_specificity")) {
         values.css_specificity = selectorData.averageSpecificity;
       }
 
-      if (metrics.includes('unused_classes')) {
+      if (metrics.includes("unused_classes")) {
         const usedClasses = this.extractHtmlClasses(htmlText);
         const uniqueSelectors = new Set(selectorData.classSelectors);
         const unused = Array.from(uniqueSelectors).filter((cssClass) => !usedClasses.has(cssClass));
@@ -62,13 +59,13 @@ export class HtmlCssMetricProvider implements DirectionMetricProvider {
   private async collectCssTexts(
     absoluteHtmlPath: string,
     document: any,
-    htmlText: string,
+    htmlText: string
   ): Promise<string[]> {
     const texts: string[] = [];
 
     const styleTexts = htmlText.match(/<style[^>]*>([\s\S]*?)<\/style>/gi) || [];
     for (const styleTag of styleTexts) {
-      const content = styleTag.replace(/<style[^>]*>/i, '').replace(/<\/style>/i, '');
+      const content = styleTag.replace(/<style[^>]*>/i, "").replace(/<\/style>/i, "");
       texts.push(content);
     }
 
@@ -76,7 +73,7 @@ export class HtmlCssMetricProvider implements DirectionMetricProvider {
     for (const href of hrefs) {
       const filePath = path.resolve(path.dirname(absoluteHtmlPath), href);
       try {
-        const css = await fs.readFile(filePath, 'utf8');
+        const css = await fs.readFile(filePath, "utf8");
         texts.push(css);
       } catch {
         continue;
@@ -91,10 +88,10 @@ export class HtmlCssMetricProvider implements DirectionMetricProvider {
 
     const walk = (node: any) => {
       const element = node;
-      if (element.tagName === 'link' && Array.isArray(element.attrs)) {
-        const rel = element.attrs.find((attr: any) => attr.name === 'rel')?.value;
-        const href = element.attrs.find((attr: any) => attr.name === 'href')?.value;
-        if (rel?.toLowerCase() === 'stylesheet' && href && !href.startsWith('http')) {
+      if (element.tagName === "link" && Array.isArray(element.attrs)) {
+        const rel = element.attrs.find((attr: any) => attr.name === "rel")?.value;
+        const href = element.attrs.find((attr: any) => attr.name === "href")?.value;
+        if (rel?.toLowerCase() === "stylesheet" && href && !href.startsWith("http")) {
           hrefs.push(href);
         }
       }
@@ -115,8 +112,8 @@ export class HtmlCssMetricProvider implements DirectionMetricProvider {
 
     for (const match of classMatches) {
       const values = match
-        .replace(/class\s*=\s*['\"]/i, '')
-        .replace(/['\"]$/, '')
+        .replace(/class\s*=\s*['\"]/i, "")
+        .replace(/['\"]$/, "")
         .split(/\s+/)
         .filter(Boolean);
       for (const value of values) {
@@ -139,16 +136,16 @@ export class HtmlCssMetricProvider implements DirectionMetricProvider {
       try {
         ast = (csstree as any).parse(cssText, {
           parseRulePrelude: true,
-          parseValue: false,
+          parseValue: false
         });
       } catch {
         continue;
       }
 
       (csstree as any).walk(ast, {
-        visit: 'Rule',
+        visit: "Rule",
         enter: (node: any) => {
-          if (node.type !== 'Rule' || !node.prelude || node.prelude.type !== 'SelectorList') {
+          if (node.type !== "Rule" || !node.prelude || node.prelude.type !== "SelectorList") {
             return;
           }
 
@@ -158,13 +155,13 @@ export class HtmlCssMetricProvider implements DirectionMetricProvider {
 
             (csstree as any).walk(selectorNode, {
               enter: (child: any) => {
-                if (child.type === 'ClassSelector') {
+                if (child.type === "ClassSelector") {
                   classSelectors.push(String(child.name));
                 }
-              },
+              }
             });
           });
-        },
+        }
       });
     }
 
@@ -174,7 +171,7 @@ export class HtmlCssMetricProvider implements DirectionMetricProvider {
             (
               specificityValues.reduce((acc, current) => acc + current, 0) /
               specificityValues.length
-            ).toFixed(3),
+            ).toFixed(3)
           )
         : 0;
 
@@ -188,22 +185,22 @@ export class HtmlCssMetricProvider implements DirectionMetricProvider {
 
     (csstree as any).walk(selectorNode, {
       enter: (node: any) => {
-        if (node.type === 'IdSelector') {
+        if (node.type === "IdSelector") {
           a += 1;
           return;
         }
         if (
-          node.type === 'ClassSelector' ||
-          node.type === 'AttributeSelector' ||
-          node.type === 'PseudoClassSelector'
+          node.type === "ClassSelector" ||
+          node.type === "AttributeSelector" ||
+          node.type === "PseudoClassSelector"
         ) {
           b += 1;
           return;
         }
-        if (node.type === 'TypeSelector' || node.type === 'PseudoElementSelector') {
+        if (node.type === "TypeSelector" || node.type === "PseudoElementSelector") {
           c += 1;
         }
-      },
+      }
     });
 
     return a * 100 + b * 10 + c;

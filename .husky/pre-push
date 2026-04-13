@@ -1,0 +1,9 @@
+#!/usr/bin/env sh
+
+MATCHES=$(grep -RIn --exclude-dir=node_modules --exclude-dir=dist --exclude-dir=.git "console\.log" frontend/src backend/src 2>/dev/null || true)
+
+if [ -n "$MATCHES" ]; then
+  echo "[pre-push] Found console.log statements. Remove them before push:"
+  echo "$MATCHES"
+  exit 1
+fi

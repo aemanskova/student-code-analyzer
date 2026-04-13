@@ -1,1 +1,1 @@
-export { withReduxToolkit } from './withReduxToolkit';
+export { withReduxToolkit } from "./withReduxToolkit"

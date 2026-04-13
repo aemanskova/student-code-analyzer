@@ -1,12 +1,18 @@
-import { BadRequestException, Injectable, Logger, NotFoundException, OnModuleInit } from '@nestjs/common';
-import { createReadStream, createWriteStream } from 'node:fs';
-import * as fs from 'node:fs/promises';
-import * as os from 'node:os';
-import * as path from 'node:path';
-import { randomUUID } from 'node:crypto';
-import { once } from 'node:events';
-import { pipeline } from 'node:stream/promises';
-import * as unzipper from 'unzipper';
+import {
+  BadRequestException,
+  Injectable,
+  Logger,
+  NotFoundException,
+  OnModuleInit
+} from "@nestjs/common";
+import { createReadStream, createWriteStream } from "node:fs";
+import * as fs from "node:fs/promises";
+import * as os from "node:os";
+import * as path from "node:path";
+import { randomUUID } from "node:crypto";
+import { once } from "node:events";
+import { pipeline } from "node:stream/promises";
+import * as unzipper from "unzipper";
 import {
   CompleteMultipartUploadCommand,
   CreateBucketCommand,
@@ -15,20 +21,20 @@ import {
   HeadBucketCommand,
   HeadObjectCommand,
   S3Client,
-  UploadPartCommand,
-} from '@aws-sdk/client-s3';
-import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
-import { InjectRepository } from '@nestjs/typeorm';
-import { In, Like, Repository } from 'typeorm';
-import { DuckdbService } from '../database/duckdb/duckdb.service';
-import { MetricsService } from '../metrics/metrics.service';
-import { PathParserService } from '../utils/path-parser/path-parser.service';
-import { RunAnalysisDto } from './dto/run-analysis.dto';
-import { AnalysisResponse, AnalysisRow } from './analysis.types';
-import { HtmlCssFullAnalyzerService } from './html-css-full-analyzer.service';
-import { AnalysisJob, AnalysisJobStatus } from './entities/analysis-job.entity';
-import { AnalysisResult } from './entities/analysis-result.entity';
-import { AnalysisUpload } from './entities/analysis-upload.entity';
+  UploadPartCommand
+} from "@aws-sdk/client-s3";
+import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
+import { InjectRepository } from "@nestjs/typeorm";
+import { In, Like, Repository } from "typeorm";
+import { DuckdbService } from "../database/duckdb/duckdb.service";
+import { MetricsService } from "../metrics/metrics.service";
+import { PathParserService } from "../utils/path-parser/path-parser.service";
+import { RunAnalysisDto } from "./dto/run-analysis.dto";
+import { AnalysisResponse, AnalysisRow } from "./analysis.types";
+import { HtmlCssFullAnalyzerService } from "./html-css-full-analyzer.service";
+import { AnalysisJob, AnalysisJobStatus } from "./entities/analysis-job.entity";
+import { AnalysisResult } from "./entities/analysis-result.entity";
+import { AnalysisUpload } from "./entities/analysis-upload.entity";
 
 interface ZipAnalysisInput {
   userId: number;
@@ -70,39 +76,39 @@ type QueuedJob = QueuedZipJob | QueuedS3Job;
 @Injectable()
 export class AnalysisService implements OnModuleInit {
   private readonly logger = new Logger(AnalysisService.name);
-  private readonly csvRoot = process.env.CSV_ROOT || '/app/csv';
-  private readonly worksRoot = process.env.WORKS_ROOT || '/app/works';
+  private readonly csvRoot = process.env.CSV_ROOT || "/app/csv";
+  private readonly worksRoot = process.env.WORKS_ROOT || "/app/works";
   private readonly ignoredDirNames = new Set([
-    '.git',
-    '.github',
-    '.vscode',
-    'node_modules',
-    'bootstrap',
-    'images',
-    '__MACOSX',
+    ".git",
+    ".github",
+    ".vscode",
+    "node_modules",
+    "bootstrap",
+    "images",
+    "__MACOSX"
   ]);
   private readonly heavyFullMetrics = new Set<string>([
-    'vnu_files_checked',
-    'vnu_errors_total',
-    'vnu_warnings_total',
-    'vnu_unparsed_files',
-    'axe_violations_total',
-    'axe_critical',
-    'axe_serious',
-    'axe_moderate',
-    'axe_minor',
+    "vnu_files_checked",
+    "vnu_errors_total",
+    "vnu_warnings_total",
+    "vnu_unparsed_files",
+    "axe_violations_total",
+    "axe_critical",
+    "axe_serious",
+    "axe_moderate",
+    "axe_minor"
   ]);
   private readonly asyncConcurrency = Math.max(
     1,
-    Number(process.env.ANALYSIS_ASYNC_CONCURRENCY || 1),
+    Number(process.env.ANALYSIS_ASYNC_CONCURRENCY || 1)
   );
-  private readonly s3Bucket = String(process.env.S3_BUCKET || '').trim();
-  private readonly s3Endpoint = String(process.env.S3_ENDPOINT || '').trim();
-  private readonly s3PublicEndpoint = String(process.env.S3_PUBLIC_ENDPOINT || '').trim();
-  private readonly s3Region = String(process.env.S3_REGION || 'us-east-1').trim();
-  private readonly s3AccessKeyId = String(process.env.S3_ACCESS_KEY_ID || '').trim();
-  private readonly s3SecretAccessKey = String(process.env.S3_SECRET_ACCESS_KEY || '').trim();
-  private readonly s3ForcePathStyle = String(process.env.S3_FORCE_PATH_STYLE || 'true') === 'true';
+  private readonly s3Bucket = String(process.env.S3_BUCKET || "").trim();
+  private readonly s3Endpoint = String(process.env.S3_ENDPOINT || "").trim();
+  private readonly s3PublicEndpoint = String(process.env.S3_PUBLIC_ENDPOINT || "").trim();
+  private readonly s3Region = String(process.env.S3_REGION || "us-east-1").trim();
+  private readonly s3AccessKeyId = String(process.env.S3_ACCESS_KEY_ID || "").trim();
+  private readonly s3SecretAccessKey = String(process.env.S3_SECRET_ACCESS_KEY || "").trim();
+  private readonly s3ForcePathStyle = String(process.env.S3_FORCE_PATH_STYLE || "true") === "true";
   private s3Client: S3Client | null = null;
   private s3PresignClient: S3Client | null = null;
   private s3BucketEnsured = false;
@@ -119,7 +125,7 @@ export class AnalysisService implements OnModuleInit {
     @InjectRepository(AnalysisUpload)
     private readonly analysisUploadRepo: Repository<AnalysisUpload>,
     @InjectRepository(AnalysisResult)
-    private readonly analysisResultRepo: Repository<AnalysisResult>,
+    private readonly analysisResultRepo: Repository<AnalysisResult>
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -127,8 +133,8 @@ export class AnalysisService implements OnModuleInit {
   }
 
   private getDefaultFullMetrics(fullMetrics: string[]): string[] {
-    const includeHeavyByDefault = String(process.env.HTML_CSS_HEAVY_METRICS_BY_DEFAULT || 'false')
-      .toLowerCase() === 'true';
+    const includeHeavyByDefault =
+      String(process.env.HTML_CSS_HEAVY_METRICS_BY_DEFAULT || "false").toLowerCase() === "true";
     if (includeHeavyByDefault) {
       return fullMetrics;
     }
@@ -141,12 +147,12 @@ export class AnalysisService implements OnModuleInit {
     }
 
     if (dto.depth !== undefined && dto.depth < 1) {
-      throw new BadRequestException('depth must be >= 1');
+      throw new BadRequestException("depth must be >= 1");
     }
 
     const basicMetrics = this.metricsService.getSupportedMetrics(dto.direction);
 
-    if (dto.rootPath && dto.direction === 'html_css') {
+    if (dto.rootPath && dto.direction === "html_css") {
       const fullMetrics = this.fullAnalyzer.supportedMetrics;
       const selectedMetrics = dto.metrics?.length
         ? dto.metrics
@@ -156,7 +162,7 @@ export class AnalysisService implements OnModuleInit {
       const invalidMetrics = selectedMetrics.filter((metric) => !allAllowed.has(metric));
       if (invalidMetrics.length > 0) {
         throw new BadRequestException(
-          `Unsupported metrics for ${dto.direction}: ${invalidMetrics.join(', ')}`,
+          `Unsupported metrics for ${dto.direction}: ${invalidMetrics.join(", ")}`
         );
       }
 
@@ -173,15 +179,13 @@ export class AnalysisService implements OnModuleInit {
     const selectedMetrics = dto.metrics?.length ? dto.metrics : basicMetrics;
 
     if (!selectedMetrics.length) {
-      throw new BadRequestException('No available metrics for selected direction');
+      throw new BadRequestException("No available metrics for selected direction");
     }
 
-    const invalidMetrics = selectedMetrics.filter(
-      (metric) => !basicMetrics.includes(metric),
-    );
+    const invalidMetrics = selectedMetrics.filter((metric) => !basicMetrics.includes(metric));
     if (invalidMetrics.length > 0) {
       throw new BadRequestException(
-        `Unsupported metrics for ${dto.direction}: ${invalidMetrics.join(', ')}`,
+        `Unsupported metrics for ${dto.direction}: ${invalidMetrics.join(", ")}`
       );
     }
 
@@ -199,33 +203,33 @@ export class AnalysisService implements OnModuleInit {
 
   async runFromZip(input: ZipAnalysisInput): Promise<AnalysisResponse> {
     if (!Number.isFinite(input.userId) || input.userId <= 0) {
-      throw new BadRequestException('userId is required');
+      throw new BadRequestException("userId is required");
     }
     if (!input.archive) {
-      throw new BadRequestException('archive is required');
+      throw new BadRequestException("archive is required");
     }
     if (!input.direction) {
-      throw new BadRequestException('direction is required');
+      throw new BadRequestException("direction is required");
     }
     if (input.depth !== undefined && input.depth < 1) {
-      throw new BadRequestException('depth must be >= 1');
+      throw new BadRequestException("depth must be >= 1");
     }
-    const archiveName = (input.archive.originalname || '').toLowerCase();
-    if (!archiveName.endsWith('.zip')) {
-      throw new BadRequestException('archive must be a .zip file');
+    const archiveName = (input.archive.originalname || "").toLowerCase();
+    if (!archiveName.endsWith(".zip")) {
+      throw new BadRequestException("archive must be a .zip file");
     }
 
     if (!input.archive.buffer && !input.archive.path) {
-      throw new BadRequestException('archive content is empty');
+      throw new BadRequestException("archive content is empty");
     }
 
     const selectedMetrics = this.resolveSelectedMetrics(input.direction, input.metrics);
-    const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'analysis-zip-'));
+    const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "analysis-zip-"));
     let archivePath = input.archive.path;
     try {
-      await input.onProgress?.('Подготовка данных', 3);
+      await input.onProgress?.("Подготовка данных", 3);
       if (!archivePath) {
-        const tempZipFile = path.join(tempRoot, 'upload.zip');
+        const tempZipFile = path.join(tempRoot, "upload.zip");
         await fs.writeFile(tempZipFile, input.archive.buffer as Buffer);
         archivePath = tempZipFile;
       }
@@ -235,21 +239,21 @@ export class AnalysisService implements OnModuleInit {
         input.userId,
         input.direction,
         selectedMetrics,
-        cacheKey,
+        cacheKey
       );
       if (cached) {
-        await input.onProgress?.('Кэш', 100);
+        await input.onProgress?.("Кэш", 100);
         return cached;
       }
 
       const extractedFiles = await this.extractZipToDir(archivePath, tempRoot, (extractProgress) =>
-        input.onProgress?.('Подготовка файлов к проверке', 5 + Math.floor(extractProgress * 0.45)),
+        input.onProgress?.("Подготовка файлов к проверке", 5 + Math.floor(extractProgress * 0.45))
       );
       if (!extractedFiles) {
-        throw new BadRequestException('zip archive is empty');
+        throw new BadRequestException("zip archive is empty");
       }
 
-      await input.onProgress?.('Запуск проверки работ', 55);
+      await input.onProgress?.("Запуск проверки работ", 55);
       const result = await this.run({
         direction: input.direction,
         metrics: selectedMetrics,
@@ -268,16 +272,16 @@ export class AnalysisService implements OnModuleInit {
           const workLabel = this.extractWorkLabel(currentPath);
           await input.onProgress(
             `Проверяем папку: ${workLabel} (${completed}/${safeTotal})`,
-            progress,
+            progress
           );
-        },
+        }
       });
-      await input.onProgress?.('Сохранение', 92);
+      await input.onProgress?.("Сохранение", 92);
       const runId = await this.saveResultsForUser(input.userId, result, cacheKey);
-      await input.onProgress?.('Готово', 100);
+      await input.onProgress?.("Готово", 100);
       return {
         ...result,
-        runId,
+        runId
       };
     } finally {
       if (archivePath && input.cleanupArchivePath !== false) {
@@ -289,30 +293,30 @@ export class AnalysisService implements OnModuleInit {
 
   async enqueueRunFromZip(
     input: ZipAnalysisInput,
-    callbacks?: { onSuccess?: () => Promise<void>; onError?: (message: string) => Promise<void> },
+    callbacks?: { onSuccess?: () => Promise<void>; onError?: (message: string) => Promise<void> }
   ) {
     if (!input.archive?.path) {
-      throw new BadRequestException('archive path is required for async processing');
+      throw new BadRequestException("archive path is required for async processing");
     }
     const jobId = randomUUID();
     const created = this.analysisJobRepo.create({
       id: jobId,
       userId: input.userId,
       direction: input.direction,
-      status: 'queued',
+      status: "queued",
       archiveName: input.archive.originalname || null,
       progressPercent: 0,
-      stage: 'Ожидание',
+      stage: "Ожидание",
       errorMessage: null,
       requestPayload: {
         metrics: input.metrics || [],
         r: Boolean(input.r),
-        depth: input.depth ?? null,
+        depth: input.depth ?? null
       },
       resultPayload: null,
       startedAt: null,
       finishedAt: null,
-      heartbeatAt: null,
+      heartbeatAt: null
     });
     await this.analysisJobRepo.save(created);
 
@@ -320,30 +324,30 @@ export class AnalysisService implements OnModuleInit {
       jobId,
       input,
       onSuccess: callbacks?.onSuccess,
-      onError: callbacks?.onError,
+      onError: callbacks?.onError
     });
     void this.processQueue();
 
     return {
       jobId,
-      status: 'queued' as AnalysisJobStatus,
-      createdAt: created.createdAt,
+      status: "queued" as AnalysisJobStatus,
+      createdAt: created.createdAt
     };
   }
 
   async saveUploadedZip(
     userId: number,
-    archive: { originalname?: string; path?: string; size?: number; mimetype?: string },
+    archive: { originalname?: string; path?: string; size?: number; mimetype?: string }
   ) {
     if (!archive.path) {
-      throw new BadRequestException('archive path is required');
+      throw new BadRequestException("archive path is required");
     }
     await this.ensureFileExists(archive.path);
 
-    const originalName = String(archive.originalname || '').trim();
-    if (!originalName.toLowerCase().endsWith('.zip')) {
+    const originalName = String(archive.originalname || "").trim();
+    if (!originalName.toLowerCase().endsWith(".zip")) {
       await fs.rm(archive.path, { force: true });
-      throw new BadRequestException('archive must be a .zip file');
+      throw new BadRequestException("archive must be a .zip file");
     }
 
     const upload = this.analysisUploadRepo.create({
@@ -353,8 +357,8 @@ export class AnalysisService implements OnModuleInit {
       storedPath: archive.path,
       size: Number.isFinite(archive.size as number) ? Number(archive.size) : 0,
       mimeType: archive.mimetype ? String(archive.mimetype) : null,
-      status: 'uploaded',
-      consumedAt: null,
+      status: "uploaded",
+      consumedAt: null
     });
     await this.analysisUploadRepo.save(upload);
 
@@ -363,7 +367,7 @@ export class AnalysisService implements OnModuleInit {
       fileName: upload.originalName,
       size: upload.size,
       status: upload.status,
-      createdAt: upload.createdAt,
+      createdAt: upload.createdAt
     };
   }
 
@@ -377,25 +381,25 @@ export class AnalysisService implements OnModuleInit {
     r?: boolean;
     depth?: number;
   }) {
-    const uploadId = String(input.uploadId || '').trim();
+    const uploadId = String(input.uploadId || "").trim();
     if (!uploadId) {
-      throw new BadRequestException('uploadId is required');
+      throw new BadRequestException("uploadId is required");
     }
     const upload = await this.analysisUploadRepo.findOne({
-      where: { id: uploadId, userId: input.userId },
+      where: { id: uploadId, userId: input.userId }
     });
     if (!upload) {
-      throw new NotFoundException('Загруженный архив не найден');
+      throw new NotFoundException("Загруженный архив не найден");
     }
-    if (upload.status === 'processing') {
-      throw new BadRequestException('Этот архив уже обрабатывается');
+    if (upload.status === "processing") {
+      throw new BadRequestException("Этот архив уже обрабатывается");
     }
-    if (upload.status === 'done') {
-      throw new BadRequestException('Этот архив уже был обработан');
+    if (upload.status === "done") {
+      throw new BadRequestException("Этот архив уже был обработан");
     }
 
     await this.ensureFileExists(upload.storedPath);
-    upload.status = 'processing';
+    upload.status = "processing";
     await this.analysisUploadRepo.save(upload);
 
     return this.enqueueRunFromZip(
@@ -404,7 +408,7 @@ export class AnalysisService implements OnModuleInit {
         archive: {
           originalname: upload.originalName,
           path: upload.storedPath,
-          size: upload.size,
+          size: upload.size
         },
         cleanupArchivePath: true,
         direction: input.direction,
@@ -412,34 +416,34 @@ export class AnalysisService implements OnModuleInit {
         group: input.group,
         student: input.student,
         r: input.r,
-        depth: input.depth,
+        depth: input.depth
       },
       {
         onSuccess: async () => {
-          upload.status = 'done';
+          upload.status = "done";
           upload.consumedAt = new Date();
           await this.analysisUploadRepo.save(upload);
         },
         onError: async () => {
-          upload.status = 'failed';
+          upload.status = "failed";
           upload.consumedAt = new Date();
           await this.analysisUploadRepo.save(upload);
-        },
-      },
+        }
+      }
     );
   }
 
   async getUploadStatus(userId: number, uploadId: string) {
-    const normalizedUploadId = String(uploadId || '').trim();
+    const normalizedUploadId = String(uploadId || "").trim();
     if (!normalizedUploadId) {
-      throw new BadRequestException('uploadId is required');
+      throw new BadRequestException("uploadId is required");
     }
 
     const upload = await this.analysisUploadRepo.findOne({
-      where: { id: normalizedUploadId, userId },
+      where: { id: normalizedUploadId, userId }
     });
     if (!upload) {
-      throw new NotFoundException('Загрузка не найдена');
+      throw new NotFoundException("Загрузка не найдена");
     }
 
     return {
@@ -450,34 +454,30 @@ export class AnalysisService implements OnModuleInit {
       status: upload.status,
       createdAt: upload.createdAt,
       updatedAt: upload.updatedAt,
-      consumedAt: upload.consumedAt,
+      consumedAt: upload.consumedAt
     };
   }
 
-  async initS3MultipartUpload(input: {
-    userId: number;
-    fileName: string;
-    contentType?: string;
-  }) {
+  async initS3MultipartUpload(input: { userId: number; fileName: string; contentType?: string }) {
     await this.ensureS3BucketExists();
-    const safeFileName = this.sanitizeObjectName(input.fileName || 'archive.zip');
+    const safeFileName = this.sanitizeObjectName(input.fileName || "archive.zip");
     const objectKey = `uploads/${input.userId}/${Date.now()}-${randomUUID()}-${safeFileName}`;
 
     const command = new CreateMultipartUploadCommand({
       Bucket: this.getS3Bucket(),
       Key: objectKey,
-      ContentType: input.contentType || 'application/zip',
+      ContentType: input.contentType || "application/zip"
     });
     const response = await this.getS3Client().send(command);
 
     if (!response.UploadId) {
-      throw new BadRequestException('Не удалось инициализировать multipart upload');
+      throw new BadRequestException("Не удалось инициализировать multipart upload");
     }
 
     return {
       bucket: this.getS3Bucket(),
       key: objectKey,
-      uploadId: response.UploadId,
+      uploadId: response.UploadId
     };
   }
 
@@ -491,20 +491,20 @@ export class AnalysisService implements OnModuleInit {
     await this.ensureS3BucketExists();
     this.assertOwnedObjectKey(input.userId, input.key);
     if (!input.uploadId) {
-      throw new BadRequestException('uploadId is required');
+      throw new BadRequestException("uploadId is required");
     }
     if (!Number.isFinite(input.partNumber) || input.partNumber < 1 || input.partNumber > 10000) {
-      throw new BadRequestException('partNumber must be in range 1..10000');
+      throw new BadRequestException("partNumber must be in range 1..10000");
     }
 
     const command = new UploadPartCommand({
       Bucket: this.getS3Bucket(),
       Key: input.key,
       UploadId: input.uploadId,
-      PartNumber: Math.trunc(input.partNumber),
+      PartNumber: Math.trunc(input.partNumber)
     });
     const url = await getSignedUrl(this.getS3PresignClient(), command, {
-      expiresIn: Math.max(60, Math.min(3600, input.expiresInSeconds || 900)),
+      expiresIn: Math.max(60, Math.min(3600, input.expiresInSeconds || 900))
     });
 
     return {
@@ -512,7 +512,7 @@ export class AnalysisService implements OnModuleInit {
       key: input.key,
       uploadId: input.uploadId,
       partNumber: Math.trunc(input.partNumber),
-      expiresInSeconds: Math.max(60, Math.min(3600, input.expiresInSeconds || 900)),
+      expiresInSeconds: Math.max(60, Math.min(3600, input.expiresInSeconds || 900))
     };
   }
 
@@ -525,29 +525,31 @@ export class AnalysisService implements OnModuleInit {
     await this.ensureS3BucketExists();
     this.assertOwnedObjectKey(input.userId, input.key);
     if (!input.uploadId) {
-      throw new BadRequestException('uploadId is required');
+      throw new BadRequestException("uploadId is required");
     }
     if (!Array.isArray(input.parts) || input.parts.length === 0) {
-      throw new BadRequestException('parts are required');
+      throw new BadRequestException("parts are required");
     }
 
     const uniqueSortedParts = [...input.parts]
       .map((part) => ({
         PartNumber: Math.trunc(Number(part.partNumber)),
-        ETag: String(part.etag || '').trim(),
+        ETag: String(part.etag || "").trim()
       }))
-      .filter((part) => Number.isFinite(part.PartNumber) && part.PartNumber > 0 && Boolean(part.ETag))
+      .filter(
+        (part) => Number.isFinite(part.PartNumber) && part.PartNumber > 0 && Boolean(part.ETag)
+      )
       .sort((a, b) => a.PartNumber - b.PartNumber);
 
     if (!uniqueSortedParts.length) {
-      throw new BadRequestException('parts are invalid');
+      throw new BadRequestException("parts are invalid");
     }
 
     const command = new CompleteMultipartUploadCommand({
       Bucket: this.getS3Bucket(),
       Key: input.key,
       UploadId: input.uploadId,
-      MultipartUpload: { Parts: uniqueSortedParts },
+      MultipartUpload: { Parts: uniqueSortedParts }
     });
     const response = await this.getS3Client().send(command);
 
@@ -555,7 +557,7 @@ export class AnalysisService implements OnModuleInit {
       bucket: this.getS3Bucket(),
       key: input.key,
       location: response.Location || null,
-      etag: response.ETag || null,
+      etag: response.ETag || null
     };
   }
 
@@ -570,9 +572,9 @@ export class AnalysisService implements OnModuleInit {
     depth?: number;
   }) {
     await this.ensureS3BucketExists();
-    const key = String(input.key || '').trim();
+    const key = String(input.key || "").trim();
     if (!key) {
-      throw new BadRequestException('key is required');
+      throw new BadRequestException("key is required");
     }
     this.assertOwnedObjectKey(input.userId, key);
     const jobId = randomUUID();
@@ -580,21 +582,21 @@ export class AnalysisService implements OnModuleInit {
       id: jobId,
       userId: input.userId,
       direction: input.direction,
-      status: 'queued',
+      status: "queued",
       archiveName: path.basename(key),
       progressPercent: 0,
-      stage: 'Ожидание',
+      stage: "Ожидание",
       errorMessage: null,
       requestPayload: {
         key,
         metrics: input.metrics || [],
         r: Boolean(input.r),
-        depth: input.depth ?? null,
+        depth: input.depth ?? null
       },
       resultPayload: null,
       startedAt: null,
       finishedAt: null,
-      heartbeatAt: null,
+      heartbeatAt: null
     });
     await this.analysisJobRepo.save(created);
 
@@ -608,15 +610,15 @@ export class AnalysisService implements OnModuleInit {
         group: input.group,
         student: input.student,
         r: input.r,
-        depth: input.depth,
-      },
+        depth: input.depth
+      }
     });
     void this.processQueue();
 
     return {
       jobId,
-      status: 'queued' as AnalysisJobStatus,
-      createdAt: created.createdAt,
+      status: "queued" as AnalysisJobStatus,
+      createdAt: created.createdAt
     };
   }
 
@@ -630,23 +632,23 @@ export class AnalysisService implements OnModuleInit {
     r?: boolean;
     depth?: number;
   }) {
-    const zipPathRaw = String(input.zipPath || '').trim();
+    const zipPathRaw = String(input.zipPath || "").trim();
     if (!zipPathRaw) {
-      throw new BadRequestException('zipPath is required');
+      throw new BadRequestException("zipPath is required");
     }
     const absoluteZipPath = path.isAbsolute(zipPathRaw)
       ? zipPathRaw
       : path.resolve(this.worksRoot, zipPathRaw);
     await this.ensureFileExists(absoluteZipPath);
-    if (!absoluteZipPath.toLowerCase().endsWith('.zip')) {
-      throw new BadRequestException('zipPath must point to a .zip file');
+    if (!absoluteZipPath.toLowerCase().endsWith(".zip")) {
+      throw new BadRequestException("zipPath must point to a .zip file");
     }
 
     return this.enqueueRunFromZip({
       userId: input.userId,
       archive: {
         originalname: path.basename(absoluteZipPath),
-        path: absoluteZipPath,
+        path: absoluteZipPath
       },
       cleanupArchivePath: false,
       direction: input.direction,
@@ -654,16 +656,16 @@ export class AnalysisService implements OnModuleInit {
       group: input.group,
       student: input.student,
       r: input.r,
-      depth: input.depth,
+      depth: input.depth
     });
   }
 
   async getAnalysisJobStatus(userId: number, jobId: string) {
     const job = await this.analysisJobRepo.findOne({
-      where: { id: jobId, userId },
+      where: { id: jobId, userId }
     });
     if (!job) {
-      throw new NotFoundException('Задача анализа не найдена');
+      throw new NotFoundException("Задача анализа не найдена");
     }
 
     const now = Date.now();
@@ -671,10 +673,7 @@ export class AnalysisService implements OnModuleInit {
     const finishedAtMs = job.finishedAt ? new Date(job.finishedAt).getTime() : null;
     const elapsedSeconds =
       startedAtMs !== null
-        ? Math.max(
-            0,
-            Math.floor(((finishedAtMs ?? now) - startedAtMs) / 1000),
-          )
+        ? Math.max(0, Math.floor(((finishedAtMs ?? now) - startedAtMs) / 1000))
         : 0;
 
     const historicalEstimate = await this.estimateJobDurationSeconds(job);
@@ -686,7 +685,7 @@ export class AnalysisService implements OnModuleInit {
     let estimatedTotalSeconds = historicalEstimate;
     if (
       estimatedTotalSeconds === null &&
-      job.status === 'running' &&
+      job.status === "running" &&
       persistedProgress !== null &&
       persistedProgress > 0 &&
       persistedProgress < 100 &&
@@ -696,18 +695,18 @@ export class AnalysisService implements OnModuleInit {
     }
 
     const estimatedRemainingSeconds =
-      job.status === 'success'
+      job.status === "success"
         ? 0
         : estimatedTotalSeconds !== null
           ? Math.max(0, estimatedTotalSeconds - elapsedSeconds)
           : null;
 
     const progressPercent =
-      job.status === 'success'
+      job.status === "success"
         ? 100
         : persistedProgress !== null
           ? persistedProgress
-          : job.status === 'running' && estimatedTotalSeconds && estimatedTotalSeconds > 0
+          : job.status === "running" && estimatedTotalSeconds && estimatedTotalSeconds > 0
             ? Math.max(1, Math.min(95, Math.floor((elapsedSeconds / estimatedTotalSeconds) * 100)))
             : null;
 
@@ -726,7 +725,7 @@ export class AnalysisService implements OnModuleInit {
       createdAt: job.createdAt,
       heartbeatAt: job.heartbeatAt,
       startedAt: job.startedAt,
-      finishedAt: job.finishedAt,
+      finishedAt: job.finishedAt
     };
   }
 
@@ -735,22 +734,22 @@ export class AnalysisService implements OnModuleInit {
   }
 
   async getSavedResults(userId: number, direction: string, pathValue: string) {
-    const normalizedDirection = String(direction || '').trim();
-    const normalizedPath = this.normalizePath(String(pathValue || '').trim()).replace(/^\/+/, '');
+    const normalizedDirection = String(direction || "").trim();
+    const normalizedPath = this.normalizePath(String(pathValue || "").trim()).replace(/^\/+/, "");
     if (!normalizedDirection) {
-      throw new BadRequestException('direction query parameter is required');
+      throw new BadRequestException("direction query parameter is required");
     }
     if (!normalizedPath) {
-      throw new BadRequestException('path query parameter is required');
+      throw new BadRequestException("path query parameter is required");
     }
 
     const rows = await this.analysisResultRepo.find({
       where: {
         userId,
         direction: normalizedDirection,
-        path: Like(`${normalizedPath}%`),
+        path: Like(`${normalizedPath}%`)
       },
-      order: { createdAt: 'DESC', id: 'DESC' },
+      order: { createdAt: "DESC", id: "DESC" }
     });
 
     return {
@@ -762,24 +761,24 @@ export class AnalysisService implements OnModuleInit {
         path: row.path,
         group: row.groupValue,
         student: row.studentValue,
-        ...row.metrics,
-      })),
+        ...row.metrics
+      }))
     };
   }
 
   async getSavedResultsByRunId(userId: number, runId: string) {
-    const normalizedRunId = String(runId || '').trim();
+    const normalizedRunId = String(runId || "").trim();
     if (!normalizedRunId) {
-      throw new BadRequestException('runId path parameter is required');
+      throw new BadRequestException("runId path parameter is required");
     }
 
     const rows = await this.analysisResultRepo.find({
       where: { userId, runId: normalizedRunId },
-      order: { id: 'ASC' },
+      order: { id: "ASC" }
     });
 
     if (!rows.length) {
-      throw new NotFoundException('Результаты запуска не найдены');
+      throw new NotFoundException("Результаты запуска не найдены");
     }
 
     return {
@@ -792,21 +791,18 @@ export class AnalysisService implements OnModuleInit {
         path: row.path,
         group: row.groupValue,
         student: row.studentValue,
-        ...row.metrics,
-      })),
+        ...row.metrics
+      }))
     };
   }
 
   async getSavedAnalysisList(userId: number, page: number, size: number) {
     const rows = await this.analysisResultRepo.find({
       where: { userId },
-      order: { createdAt: 'DESC', id: 'DESC' },
+      order: { createdAt: "DESC", id: "DESC" }
     });
 
-    const byRun = new Map<
-      string,
-      { direction: string; createdAt: Date; paths: string[] }
-    >();
+    const byRun = new Map<string, { direction: string; createdAt: Date; paths: string[] }>();
 
     for (const row of rows) {
       const existing = byRun.get(row.runId);
@@ -814,11 +810,11 @@ export class AnalysisService implements OnModuleInit {
         byRun.set(row.runId, {
           direction: row.direction,
           createdAt: row.createdAt,
-          paths: [this.normalizePath(String(row.path || ''))],
+          paths: [this.normalizePath(String(row.path || ""))]
         });
         continue;
       }
-      existing.paths.push(this.normalizePath(String(row.path || '')));
+      existing.paths.push(this.normalizePath(String(row.path || "")));
       if (row.createdAt > existing.createdAt) {
         existing.createdAt = row.createdAt;
       }
@@ -828,7 +824,7 @@ export class AnalysisService implements OnModuleInit {
       .map((run) => ({
         path: this.extractRunPath(run.paths),
         date: run.createdAt.toISOString(),
-        direction: run.direction,
+        direction: run.direction
       }))
       .sort((a, b) => b.date.localeCompare(a.date));
 
@@ -840,13 +836,13 @@ export class AnalysisService implements OnModuleInit {
       page,
       size,
       total,
-      data,
+      data
     };
   }
 
   private async runFromCsv(
     dto: RunAnalysisDto,
-    selectedMetrics: string[],
+    selectedMetrics: string[]
   ): Promise<AnalysisResponse> {
     const csvAbsolutePath = this.resolveCsvPath(dto.csvFile);
     await this.ensureFileExists(csvAbsolutePath);
@@ -854,20 +850,16 @@ export class AnalysisService implements OnModuleInit {
 
     const whereClauses: string[] = [];
     if (dto.group) {
-      whereClauses.push(
-        `split_part(path, '/', 1) = '${dto.group.replace(/'/g, "''")}'`,
-      );
+      whereClauses.push(`split_part(path, '/', 1) = '${dto.group.replace(/'/g, "''")}'`);
     }
     if (dto.student) {
-      whereClauses.push(
-        `split_part(path, '/', 2) = '${dto.student.replace(/'/g, "''")}'`,
-      );
+      whereClauses.push(`split_part(path, '/', 2) = '${dto.student.replace(/'/g, "''")}'`);
     }
 
     const query = `
       SELECT path
       FROM read_csv_auto('${escapedCsvPath}', header = true)
-      ${whereClauses.length > 0 ? `WHERE ${whereClauses.join(' AND ')}` : ''}
+      ${whereClauses.length > 0 ? `WHERE ${whereClauses.join(" AND ")}` : ""}
       ORDER BY path;
     `;
 
@@ -882,27 +874,27 @@ export class AnalysisService implements OnModuleInit {
         dto.direction,
         selectedMetrics,
         absoluteSubmissionPath,
-        parsed.path,
+        parsed.path
       );
 
       data.push({
         path: parsed.path,
         group: parsed.group,
         student: parsed.student,
-        ...metricValues,
+        ...metricValues
       });
     }
 
     return {
       direction: dto.direction,
       metrics: selectedMetrics,
-      data,
+      data
     };
   }
 
   private async runFromFolderFull(
     dto: RunAnalysisDto,
-    selectedMetrics: string[],
+    selectedMetrics: string[]
   ): Promise<AnalysisResponse> {
     const rootAbsolutePath = this.resolveRootPath(dto.rootPath as string);
     await this.ensureDirectoryExists(rootAbsolutePath);
@@ -911,12 +903,12 @@ export class AnalysisService implements OnModuleInit {
       recursiveMode: Boolean(dto.r),
       depth: dto.depth,
       metrics: selectedMetrics,
-      onWorkProgress: dto.onAnalyzeProgress,
+      onWorkProgress: dto.onAnalyzeProgress
     });
 
     const data: AnalysisRow[] = [];
     for (const row of aggregates) {
-      const parsed = this.pathParserService.parse(String(row.path || ''));
+      const parsed = this.pathParserService.parse(String(row.path || ""));
 
       if (dto.group && parsed.group !== dto.group) {
         continue;
@@ -929,27 +921,27 @@ export class AnalysisService implements OnModuleInit {
       for (const metric of selectedMetrics) {
         const raw = row[metric];
         filteredMetrics[metric] =
-          typeof raw === 'boolean' ? (raw ? 1 : 0) : (raw as string | number | null);
+          typeof raw === "boolean" ? (raw ? 1 : 0) : (raw as string | number | null);
       }
 
       data.push({
-        path: String(row.path || ''),
+        path: String(row.path || ""),
         group: parsed.group,
         student: parsed.student,
-        ...filteredMetrics,
+        ...filteredMetrics
       });
     }
 
     return {
       direction: dto.direction,
       metrics: selectedMetrics,
-      data,
+      data
     };
   }
 
   private async runFromFolderBasic(
     dto: RunAnalysisDto,
-    selectedMetrics: string[],
+    selectedMetrics: string[]
   ): Promise<AnalysisResponse> {
     const rootAbsolutePath = this.resolveRootPath(dto.rootPath as string);
     await this.ensureDirectoryExists(rootAbsolutePath);
@@ -958,13 +950,11 @@ export class AnalysisService implements OnModuleInit {
     const data: AnalysisRow[] = [];
 
     for (const workDir of workDirs) {
-      const htmlFiles = await this.collectFilesByExtension(workDir, ['.html', '.htm'], dto.depth);
+      const htmlFiles = await this.collectFilesByExtension(workDir, [".html", ".htm"], dto.depth);
 
       for (const absoluteHtmlPath of htmlFiles) {
-        const relativePath = this.normalizePath(
-          path.relative(rootAbsolutePath, absoluteHtmlPath),
-        );
-        if (!relativePath || relativePath.startsWith('..')) {
+        const relativePath = this.normalizePath(path.relative(rootAbsolutePath, absoluteHtmlPath));
+        if (!relativePath || relativePath.startsWith("..")) {
           continue;
         }
 
@@ -980,14 +970,14 @@ export class AnalysisService implements OnModuleInit {
           dto.direction,
           selectedMetrics,
           absoluteHtmlPath,
-          relativePath,
+          relativePath
         );
 
         data.push({
           path: relativePath,
           group: parsed.group,
           student: parsed.student,
-          ...metricValues,
+          ...metricValues
         });
       }
     }
@@ -995,7 +985,7 @@ export class AnalysisService implements OnModuleInit {
     return {
       direction: dto.direction,
       metrics: selectedMetrics,
-      data,
+      data
     };
   }
 
@@ -1003,7 +993,7 @@ export class AnalysisService implements OnModuleInit {
     direction: string,
     metrics: string[],
     absolutePath: string,
-    relativePath: string,
+    relativePath: string
   ) {
     try {
       await this.ensureFileExists(absolutePath);
@@ -1011,9 +1001,9 @@ export class AnalysisService implements OnModuleInit {
         direction,
         {
           absolutePath,
-          relativePath,
+          relativePath
         },
-        metrics,
+        metrics
       );
     } catch {
       const empty: Record<string, null> = {};
@@ -1025,7 +1015,7 @@ export class AnalysisService implements OnModuleInit {
   }
 
   private resolveCsvPath(csvFile?: string): string {
-    const relative = csvFile || 'submissions.csv';
+    const relative = csvFile || "submissions.csv";
     if (path.isAbsolute(relative)) {
       return relative;
     }
@@ -1063,7 +1053,7 @@ export class AnalysisService implements OnModuleInit {
 
   private async collectWorkDirs(
     rootAbsolutePath: string,
-    recursiveMode: boolean,
+    recursiveMode: boolean
   ): Promise<string[]> {
     if (!recursiveMode) {
       return [rootAbsolutePath];
@@ -1072,7 +1062,7 @@ export class AnalysisService implements OnModuleInit {
     const entries = await fs.readdir(rootAbsolutePath, { withFileTypes: true });
     const dirs = entries
       .filter((entry) => entry.isDirectory())
-      .filter((entry) => !entry.name.startsWith('.'))
+      .filter((entry) => !entry.name.startsWith("."))
       .filter((entry) => !this.ignoredDirNames.has(entry.name))
       .map((entry) => path.join(rootAbsolutePath, entry.name));
 
@@ -1087,18 +1077,14 @@ export class AnalysisService implements OnModuleInit {
   }
 
   private async hasHtmlOrCssFiles(directoryPath: string): Promise<boolean> {
-    const files = await this.collectFilesByExtension(directoryPath, [
-      '.html',
-      '.htm',
-      '.css',
-    ]);
+    const files = await this.collectFilesByExtension(directoryPath, [".html", ".htm", ".css"]);
     return files.length > 0;
   }
 
   private async collectFilesByExtension(
     rootDir: string,
     extensions: string[],
-    maxDepth?: number,
+    maxDepth?: number
   ): Promise<string[]> {
     const extensionSet = new Set(extensions.map((ext) => ext.toLowerCase()));
     const files: string[] = [];
@@ -1108,14 +1094,14 @@ export class AnalysisService implements OnModuleInit {
       try {
         entries = (await fs.readdir(currentDir, {
           withFileTypes: true,
-          encoding: 'utf8',
+          encoding: "utf8"
         })) as Array<{ name: string; isDirectory: () => boolean; isFile: () => boolean }>;
       } catch {
         return;
       }
 
       for (const entry of entries) {
-        if (entry.name.startsWith('.')) {
+        if (entry.name.startsWith(".")) {
           continue;
         }
         if (entry.isDirectory() && this.ignoredDirNames.has(entry.name)) {
@@ -1154,23 +1140,23 @@ export class AnalysisService implements OnModuleInit {
   }
 
   private toCsv(data: AnalysisRow[], metrics: string[]): string {
-    const headers = ['path', ...metrics];
-    const rows = [headers.join(';')];
+    const headers = ["path", ...metrics];
+    const rows = [headers.join(";")];
 
     for (const row of data) {
       const values = [
         this.escapeCsvValue(row.path),
-        ...metrics.map((metric) => this.escapeCsvValue(row[metric])),
+        ...metrics.map((metric) => this.escapeCsvValue(row[metric]))
       ];
-      rows.push(values.join(';'));
+      rows.push(values.join(";"));
     }
 
-    return `${rows.join('\n')}\n`;
+    return `${rows.join("\n")}\n`;
   }
 
   private escapeCsvValue(value: string | number | null | undefined): string {
     if (value === null || value === undefined) {
-      return '';
+      return "";
     }
 
     const text = String(value);
@@ -1181,23 +1167,23 @@ export class AnalysisService implements OnModuleInit {
   }
 
   private normalizePath(value: string): string {
-    return value.replace(/\\/g, '/');
+    return value.replace(/\\/g, "/");
   }
 
   private extractRunPath(paths: string[]): string {
     if (!paths.length) {
-      return '';
+      return "";
     }
 
     const normalized = paths
-      .map((value) => this.normalizePath(value).replace(/^\/+/, '').trim())
+      .map((value) => this.normalizePath(value).replace(/^\/+/, "").trim())
       .filter(Boolean);
 
     if (!normalized.length) {
-      return '';
+      return "";
     }
 
-    const splitPaths = normalized.map((value) => value.split('/').filter(Boolean));
+    const splitPaths = normalized.map((value) => value.split("/").filter(Boolean));
     let prefix = splitPaths[0] || [];
 
     for (let i = 1; i < splitPaths.length; i += 1) {
@@ -1213,34 +1199,34 @@ export class AnalysisService implements OnModuleInit {
     }
 
     if (prefix.length > 0) {
-      return prefix.join('/');
+      return prefix.join("/");
     }
 
     return splitPaths[0]?.[0] || normalized[0];
   }
 
   private sanitizeRelativePath(rawPath: string, index: number): string {
-    const normalized = this.normalizePath(String(rawPath || '')).replace(/^([A-Za-z]:)?\/+/, '');
+    const normalized = this.normalizePath(String(rawPath || "")).replace(/^([A-Za-z]:)?\/+/, "");
     const parts = normalized
-      .split('/')
+      .split("/")
       .map((part) => part.trim())
-      .map((part) => part.replace(/[\u0000-\u001F\u007F]/g, ''))
-      .map((part) => part.replace(/[<>:"|?*]/g, '_'))
-      .map((part) => part.replace(/[^\x20-\x7E]/g, '_'))
-      .map((part) => part.replace(/\s+/g, ' '))
-      .map((part) => part.replace(/\.+$/g, ''))
-      .filter((part) => Boolean(part) && part !== '.' && part !== '..');
+      .map((part) => part.replace(/[\u0000-\u001F\u007F]/g, ""))
+      .map((part) => part.replace(/[<>:"|?*]/g, "_"))
+      .map((part) => part.replace(/[^\x20-\x7E]/g, "_"))
+      .map((part) => part.replace(/\s+/g, " "))
+      .map((part) => part.replace(/\.+$/g, ""))
+      .filter((part) => Boolean(part) && part !== "." && part !== "..");
 
     if (parts.length === 0) {
       return `file_${index}.html`;
     }
-    return parts.join('/');
+    return parts.join("/");
   }
 
   private async extractZipToDir(
     zipPath: string,
     outputRoot: string,
-    onProgress?: (progressPercent: number) => Promise<void> | void,
+    onProgress?: (progressPercent: number) => Promise<void> | void
   ): Promise<number> {
     try {
       const zipStat = await fs.stat(zipPath);
@@ -1251,13 +1237,13 @@ export class AnalysisService implements OnModuleInit {
       let lastReported = 0;
 
       for await (const entry of zipStream) {
-        const isDirectory = entry.type === 'Directory';
+        const isDirectory = entry.type === "Directory";
         if (isDirectory) {
           entry.autodrain();
           continue;
         }
 
-        const relativePath = this.sanitizeRelativePath(String(entry.path || ''), extractedFiles);
+        const relativePath = this.sanitizeRelativePath(String(entry.path || ""), extractedFiles);
         const absolutePath = path.resolve(outputRoot, relativePath);
         const normalizedRoot = `${path.resolve(outputRoot)}${path.sep}`;
         if (!absolutePath.startsWith(normalizedRoot)) {
@@ -1281,14 +1267,14 @@ export class AnalysisService implements OnModuleInit {
 
       return extractedFiles;
     } catch (error) {
-      const message = error instanceof Error ? error.message.toLowerCase() : '';
+      const message = error instanceof Error ? error.message.toLowerCase() : "";
       if (
-        message.includes('unexpected end of file') ||
-        message.includes('invalid') ||
-        message.includes('corrupt')
+        message.includes("unexpected end of file") ||
+        message.includes("invalid") ||
+        message.includes("corrupt")
       ) {
         throw new BadRequestException(
-          'ZIP-архив поврежден или загружен не полностью. Пересоздайте архив и повторите попытку.',
+          "ZIP-архив поврежден или загружен не полностью. Пересоздайте архив и повторите попытку."
         );
       }
       throw error;
@@ -1298,7 +1284,7 @@ export class AnalysisService implements OnModuleInit {
   private async saveResultsForUser(
     userId: number,
     result: AnalysisResponse,
-    cacheKey: string | null,
+    cacheKey: string | null
   ): Promise<string | null> {
     if (!result.data?.length) {
       return null;
@@ -1314,11 +1300,11 @@ export class AnalysisService implements OnModuleInit {
         userId,
         runId,
         direction: result.direction,
-        path: this.normalizePath(String(row.path || '')),
+        path: this.normalizePath(String(row.path || "")),
         cacheKey,
         groupValue: row.group ?? null,
         studentValue: row.student ?? null,
-        metrics,
+        metrics
       });
     });
     await this.analysisResultRepo.save(entities);
@@ -1331,12 +1317,12 @@ export class AnalysisService implements OnModuleInit {
     }
 
     const basicMetrics = this.metricsService.getSupportedMetrics(direction);
-    if (direction !== 'html_css') {
+    if (direction !== "html_css") {
       const selected = requestedMetrics?.length ? requestedMetrics : basicMetrics;
       const invalid = selected.filter((metric) => !basicMetrics.includes(metric));
       if (invalid.length > 0) {
         throw new BadRequestException(
-          `Unsupported metrics for ${direction}: ${invalid.join(', ')}`,
+          `Unsupported metrics for ${direction}: ${invalid.join(", ")}`
         );
       }
       return selected;
@@ -1349,7 +1335,7 @@ export class AnalysisService implements OnModuleInit {
     const allowed = new Set([...basicMetrics, ...fullMetrics]);
     const invalid = selected.filter((metric) => !allowed.has(metric));
     if (invalid.length > 0) {
-      throw new BadRequestException(`Unsupported metrics for ${direction}: ${invalid.join(', ')}`);
+      throw new BadRequestException(`Unsupported metrics for ${direction}: ${invalid.join(", ")}`);
     }
     return selected;
   }
@@ -1357,18 +1343,18 @@ export class AnalysisService implements OnModuleInit {
   private async buildZipCacheKey(
     input: ZipAnalysisInput,
     archivePath: string,
-    selectedMetrics: string[],
+    selectedMetrics: string[]
   ): Promise<string> {
     const stats = await fs.stat(archivePath);
-    const metricsPart = [...selectedMetrics].sort().join(',');
+    const metricsPart = [...selectedMetrics].sort().join(",");
     const requestPart = [
       `direction=${input.direction}`,
       `metrics=${metricsPart}`,
-      `group=${input.group || ''}`,
-      `student=${input.student || ''}`,
-      `r=${input.r ? '1' : '0'}`,
-      `depth=${input.depth ?? ''}`,
-    ].join('|');
+      `group=${input.group || ""}`,
+      `student=${input.student || ""}`,
+      `r=${input.r ? "1" : "0"}`,
+      `depth=${input.depth ?? ""}`
+    ].join("|");
 
     if (input.sourceFingerprint) {
       return `${input.sourceFingerprint}|${requestPart}`;
@@ -1379,7 +1365,9 @@ export class AnalysisService implements OnModuleInit {
       return `path|${absolute}|size=${stats.size}|mtime=${stats.mtimeMs}|${requestPart}`;
     }
 
-    const name = String(input.archive.originalname || '').trim().toLowerCase();
+    const name = String(input.archive.originalname || "")
+      .trim()
+      .toLowerCase();
     const size = Number.isFinite(input.archive.size as number)
       ? Number(input.archive.size)
       : stats.size;
@@ -1390,15 +1378,15 @@ export class AnalysisService implements OnModuleInit {
     userId: number,
     direction: string,
     selectedMetrics: string[],
-    cacheKey: string,
+    cacheKey: string
   ): Promise<AnalysisResponse | null> {
     const latest = await this.analysisResultRepo.findOne({
       where: {
         userId,
         direction,
-        cacheKey,
+        cacheKey
       },
-      order: { createdAt: 'DESC', id: 'DESC' },
+      order: { createdAt: "DESC", id: "DESC" }
     });
 
     if (!latest?.runId) {
@@ -1409,9 +1397,9 @@ export class AnalysisService implements OnModuleInit {
       where: {
         userId,
         direction,
-        runId: latest.runId,
+        runId: latest.runId
       },
-      order: { id: 'ASC' },
+      order: { id: "ASC" }
     });
 
     if (!rows.length) {
@@ -1426,8 +1414,8 @@ export class AnalysisService implements OnModuleInit {
         path: row.path,
         group: row.groupValue,
         student: row.studentValue,
-        ...row.metrics,
-      })),
+        ...row.metrics
+      }))
     };
   }
 
@@ -1446,12 +1434,12 @@ export class AnalysisService implements OnModuleInit {
   }
 
   private async recoverStaleJobsAfterRestart(): Promise<void> {
-    const staleStatuses: AnalysisJobStatus[] = ['queued', 'running'];
+    const staleStatuses: AnalysisJobStatus[] = ["queued", "running"];
     const staleJobs = await this.analysisJobRepo.find({
       where: {
-        status: In(staleStatuses),
+        status: In(staleStatuses)
       },
-      order: { createdAt: 'ASC' },
+      order: { createdAt: "ASC" }
     });
 
     if (!staleJobs.length) {
@@ -1460,9 +1448,9 @@ export class AnalysisService implements OnModuleInit {
 
     const now = new Date();
     for (const job of staleJobs) {
-      job.status = 'failed';
-      job.stage = 'Ошибка';
-      job.errorMessage = 'Задача прервана из-за перезапуска сервиса. Запустите анализ повторно.';
+      job.status = "failed";
+      job.stage = "Ошибка";
+      job.errorMessage = "Задача прервана из-за перезапуска сервиса. Запустите анализ повторно.";
       job.finishedAt = now;
       job.heartbeatAt = now;
       job.progressPercent = job.progressPercent ?? 0;
@@ -1472,8 +1460,8 @@ export class AnalysisService implements OnModuleInit {
     await this.analysisUploadRepo
       .createQueryBuilder()
       .update(AnalysisUpload)
-      .set({ status: 'failed', consumedAt: now })
-      .where('status = :status', { status: 'processing' })
+      .set({ status: "failed", consumedAt: now })
+      .where("status = :status", { status: "processing" })
       .execute();
 
     this.logger.warn(`Помечено как failed после рестарта: ${staleJobs.length} задач`);
@@ -1485,19 +1473,16 @@ export class AnalysisService implements OnModuleInit {
       return;
     }
 
-    entity.status = 'running';
+    entity.status = "running";
     entity.startedAt = new Date();
     entity.heartbeatAt = new Date();
     entity.progressPercent = 1;
-    entity.stage = 'Запуск';
+    entity.stage = "Запуск";
     entity.errorMessage = null;
     await this.analysisJobRepo.save(entity);
 
     const heartbeatTimer = setInterval(() => {
-      void this.analysisJobRepo.update(
-        { id: entity.id },
-        { heartbeatAt: new Date() },
-      );
+      void this.analysisJobRepo.update({ id: entity.id }, { heartbeatAt: new Date() });
     }, 10_000);
 
     let lastProgressWriteMs = 0;
@@ -1521,32 +1506,33 @@ export class AnalysisService implements OnModuleInit {
     try {
       let result: AnalysisResponse;
 
-      if ('archive' in job.input) {
+      if ("archive" in job.input) {
         result = await this.runFromZip({
           ...job.input,
-          onProgress: writeProgress,
+          onProgress: writeProgress
         });
       } else {
-        await writeProgress('Подготовка данных', 2);
+        await writeProgress("Подготовка данных", 2);
         const head = await this.getS3Client().send(
           new HeadObjectCommand({
             Bucket: this.getS3Bucket(),
-            Key: job.input.key,
-          }),
+            Key: job.input.key
+          })
         );
         const objectSize = Number(head.ContentLength || 0);
-        const objectEtag = String(head.ETag || '').replaceAll('"', '');
+        const objectEtag = String(head.ETag || "").replaceAll('"', "");
         const tempZipPath = path.join(os.tmpdir(), `analysis-s3-${randomUUID()}.zip`);
 
-        await writeProgress('Получаем архив для проверки', 4);
+        await writeProgress("Получаем архив для проверки", 4);
         await this.downloadS3ObjectToFile(
           job.input.key,
           tempZipPath,
           objectSize,
           async (downloadPercent) => {
-            const mappedProgress = 4 + Math.floor((Math.max(0, Math.min(100, downloadPercent)) * 21) / 100);
-            await writeProgress('Получаем архив для проверки', mappedProgress);
-          },
+            const mappedProgress =
+              4 + Math.floor((Math.max(0, Math.min(100, downloadPercent)) * 21) / 100);
+            await writeProgress("Получаем архив для проверки", mappedProgress);
+          }
         );
 
         result = await this.runFromZip({
@@ -1554,7 +1540,7 @@ export class AnalysisService implements OnModuleInit {
           archive: {
             originalname: path.basename(job.input.key),
             path: tempZipPath,
-            size: objectSize,
+            size: objectSize
           },
           cleanupArchivePath: true,
           sourceFingerprint: `s3|bucket=${this.getS3Bucket()}|key=${job.input.key}|etag=${objectEtag}|size=${objectSize}`,
@@ -1564,35 +1550,35 @@ export class AnalysisService implements OnModuleInit {
           student: job.input.student,
           r: job.input.r,
           depth: job.input.depth,
-          onProgress: writeProgress,
+          onProgress: writeProgress
         });
       }
 
-      entity.status = 'success';
+      entity.status = "success";
       entity.finishedAt = new Date();
       entity.heartbeatAt = entity.finishedAt;
       entity.progressPercent = 100;
-      entity.stage = 'Готово';
+      entity.stage = "Готово";
       entity.resultPayload = {
         direction: result.direction,
         metrics: result.metrics,
         rowsTotal: result.data.length,
-        runId: result.runId || null,
+        runId: result.runId || null
       };
       await this.analysisJobRepo.save(entity);
-      if ('onSuccess' in job && job.onSuccess) {
+      if ("onSuccess" in job && job.onSuccess) {
         await job.onSuccess();
       }
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Неизвестная ошибка';
-      entity.status = 'failed';
+      const message = error instanceof Error ? error.message : "Неизвестная ошибка";
+      entity.status = "failed";
       entity.finishedAt = new Date();
       entity.heartbeatAt = entity.finishedAt;
-      entity.stage = 'Ошибка';
+      entity.stage = "Ошибка";
       entity.errorMessage = message;
       entity.resultPayload = null;
       await this.analysisJobRepo.save(entity);
-      if ('onError' in job && job.onError) {
+      if ("onError" in job && job.onError) {
         await job.onError(message);
       }
     } finally {
@@ -1601,12 +1587,10 @@ export class AnalysisService implements OnModuleInit {
   }
 
   private async estimateJobDurationSeconds(job: AnalysisJob): Promise<number | null> {
-    if (job.status === 'success' && job.startedAt && job.finishedAt) {
+    if (job.status === "success" && job.startedAt && job.finishedAt) {
       return Math.max(
         1,
-        Math.floor(
-          (new Date(job.finishedAt).getTime() - new Date(job.startedAt).getTime()) / 1000,
-        ),
+        Math.floor((new Date(job.finishedAt).getTime() - new Date(job.startedAt).getTime()) / 1000)
       );
     }
 
@@ -1614,10 +1598,10 @@ export class AnalysisService implements OnModuleInit {
     const candidates = await this.analysisJobRepo.find({
       where: {
         direction: job.direction,
-        status: 'success',
+        status: "success"
       },
-      order: { finishedAt: 'DESC' },
-      take: 50,
+      order: { finishedAt: "DESC" },
+      take: 50
     });
 
     const durations: number[] = [];
@@ -1629,7 +1613,7 @@ export class AnalysisService implements OnModuleInit {
         continue;
       }
       const seconds = Math.floor(
-        (new Date(item.finishedAt).getTime() - new Date(item.startedAt).getTime()) / 1000,
+        (new Date(item.finishedAt).getTime() - new Date(item.startedAt).getTime()) / 1000
       );
       if (seconds > 0) {
         durations.push(seconds);
@@ -1648,18 +1632,18 @@ export class AnalysisService implements OnModuleInit {
 
   private getJobSignature(
     direction: string,
-    requestPayload: Record<string, unknown> | null,
+    requestPayload: Record<string, unknown> | null
   ): string {
     const metrics = Array.isArray(requestPayload?.metrics)
       ? [...(requestPayload.metrics as unknown[])]
           .map((item) => String(item))
           .sort()
-          .join(',')
-      : '';
-    const recursive = requestPayload?.r ? '1' : '0';
+          .join(",")
+      : "";
+    const recursive = requestPayload?.r ? "1" : "0";
     const depth =
       requestPayload?.depth === null || requestPayload?.depth === undefined
-        ? ''
+        ? ""
         : String(requestPayload.depth);
 
     return `${direction}|metrics=${metrics}|r=${recursive}|depth=${depth}`;
@@ -1668,7 +1652,7 @@ export class AnalysisService implements OnModuleInit {
   private getS3Bucket(): string {
     const bucket = this.s3Bucket.trim();
     if (!bucket) {
-      throw new BadRequestException('S3_BUCKET is not configured');
+      throw new BadRequestException("S3_BUCKET is not configured");
     }
     return bucket;
   }
@@ -1678,17 +1662,17 @@ export class AnalysisService implements OnModuleInit {
       return this.s3Client;
     }
     if (!this.s3AccessKeyId || !this.s3SecretAccessKey) {
-      throw new BadRequestException('S3 credentials are not configured');
+      throw new BadRequestException("S3 credentials are not configured");
     }
 
     this.s3Client = new S3Client({
-      region: this.s3Region || 'us-east-1',
+      region: this.s3Region || "us-east-1",
       endpoint: this.s3Endpoint || undefined,
       forcePathStyle: this.s3ForcePathStyle,
       credentials: {
         accessKeyId: this.s3AccessKeyId,
-        secretAccessKey: this.s3SecretAccessKey,
-      },
+        secretAccessKey: this.s3SecretAccessKey
+      }
     });
     return this.s3Client;
   }
@@ -1698,36 +1682,36 @@ export class AnalysisService implements OnModuleInit {
       return this.s3PresignClient;
     }
     if (!this.s3AccessKeyId || !this.s3SecretAccessKey) {
-      throw new BadRequestException('S3 credentials are not configured');
+      throw new BadRequestException("S3 credentials are not configured");
     }
 
     this.s3PresignClient = new S3Client({
-      region: this.s3Region || 'us-east-1',
+      region: this.s3Region || "us-east-1",
       endpoint: this.s3PublicEndpoint || this.s3Endpoint || undefined,
       forcePathStyle: this.s3ForcePathStyle,
       credentials: {
         accessKeyId: this.s3AccessKeyId,
-        secretAccessKey: this.s3SecretAccessKey,
-      },
+        secretAccessKey: this.s3SecretAccessKey
+      }
     });
     return this.s3PresignClient;
   }
 
   private sanitizeObjectName(value: string): string {
-    const normalized = String(value || '')
+    const normalized = String(value || "")
       .trim()
-      .replace(/[\u0000-\u001F\u007F]/g, '')
-      .replace(/[<>:"|?*]/g, '_')
-      .replace(/[^\x20-\x7E]/g, '_')
-      .replace(/\s+/g, '-');
+      .replace(/[\u0000-\u001F\u007F]/g, "")
+      .replace(/[<>:"|?*]/g, "_")
+      .replace(/[^\x20-\x7E]/g, "_")
+      .replace(/\s+/g, "-");
     const fallback = normalized || `archive-${Date.now()}.zip`;
-    return fallback.toLowerCase().endsWith('.zip') ? fallback : `${fallback}.zip`;
+    return fallback.toLowerCase().endsWith(".zip") ? fallback : `${fallback}.zip`;
   }
 
   private assertOwnedObjectKey(userId: number, key: string): void {
     const prefix = `uploads/${userId}/`;
-    if (!String(key || '').startsWith(prefix)) {
-      throw new BadRequestException('Недопустимый key объекта');
+    if (!String(key || "").startsWith(prefix)) {
+      throw new BadRequestException("Недопустимый key объекта");
     }
   }
 
@@ -1735,18 +1719,18 @@ export class AnalysisService implements OnModuleInit {
     key: string,
     destinationPath: string,
     expectedBytes?: number,
-    onProgress?: (progressPercent: number) => Promise<void> | void,
+    onProgress?: (progressPercent: number) => Promise<void> | void
   ): Promise<void> {
     const response = await this.getS3Client().send(
       new GetObjectCommand({
         Bucket: this.getS3Bucket(),
-        Key: key,
-      }),
+        Key: key
+      })
     );
 
     const body = response.Body as NodeJS.ReadableStream | undefined;
     if (!body) {
-      throw new BadRequestException('S3 object body is empty');
+      throw new BadRequestException("S3 object body is empty");
     }
     const output = createWriteStream(destinationPath);
     const totalBytes = Math.max(0, Number(expectedBytes || response.ContentLength || 0));
@@ -1755,12 +1739,15 @@ export class AnalysisService implements OnModuleInit {
 
     for await (const chunk of body as AsyncIterable<Buffer>) {
       if (!output.write(chunk)) {
-        await once(output, 'drain');
+        await once(output, "drain");
       }
       downloadedBytes += chunk.length;
 
       if (onProgress && totalBytes > 0) {
-        const percent = Math.max(0, Math.min(100, Math.floor((downloadedBytes / totalBytes) * 100)));
+        const percent = Math.max(
+          0,
+          Math.min(100, Math.floor((downloadedBytes / totalBytes) * 100))
+        );
         if (percent >= lastReported + 2 || percent === 100) {
           lastReported = percent;
           await onProgress(percent);
@@ -1780,23 +1767,23 @@ export class AnalysisService implements OnModuleInit {
   }
 
   private extractWorkLabel(currentPath: string): string {
-    const normalized = this.normalizePath(String(currentPath || '')).trim();
+    const normalized = this.normalizePath(String(currentPath || "")).trim();
     if (!normalized) {
-      return 'текущая работа';
+      return "текущая работа";
     }
 
-    const clean = normalized.replace(/^\/+/, '');
-    const withoutFile = clean.includes('/') ? clean.slice(0, clean.lastIndexOf('/')) : clean;
+    const clean = normalized.replace(/^\/+/, "");
+    const withoutFile = clean.includes("/") ? clean.slice(0, clean.lastIndexOf("/")) : clean;
     const value = withoutFile || clean;
     if (!value) {
-      return 'текущая работа';
+      return "текущая работа";
     }
 
-    const segments = value.split('/').filter(Boolean);
+    const segments = value.split("/").filter(Boolean);
     if (segments.length >= 2) {
       return `${segments[0]}/${segments[1]}`;
     }
-    return segments[0] || 'текущая работа';
+    return segments[0] || "текущая работа";
   }
 
   private async ensureS3BucketExists(): Promise<void> {
@@ -1818,12 +1805,13 @@ export class AnalysisService implements OnModuleInit {
     try {
       await client.send(new CreateBucketCommand({ Bucket: bucket }));
     } catch (error) {
-      const message = String((error as { name?: string; message?: string })?.name || '') +
-        ' ' +
-        String((error as { message?: string })?.message || '');
+      const message =
+        String((error as { name?: string; message?: string })?.name || "") +
+        " " +
+        String((error as { message?: string })?.message || "");
       if (
-        !message.includes('BucketAlreadyOwnedByYou') &&
-        !message.includes('BucketAlreadyExists')
+        !message.includes("BucketAlreadyOwnedByYou") &&
+        !message.includes("BucketAlreadyExists")
       ) {
         throw error;
       }
@@ -1832,5 +1820,4 @@ export class AnalysisService implements OnModuleInit {
     await client.send(new HeadBucketCommand({ Bucket: bucket }));
     this.s3BucketEnsured = true;
   }
-
 }

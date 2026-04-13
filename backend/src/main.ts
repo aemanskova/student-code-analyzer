@@ -1,39 +1,40 @@
-import { ValidationPipe } from '@nestjs/common';
-import { NestFactory } from '@nestjs/core';
-import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
-import { RequestAbortedFilter } from './common/filters/request-aborted.filter';
-import { AppModule } from './app.module';
+import { ValidationPipe } from "@nestjs/common";
+import { NestFactory } from "@nestjs/core";
+import { HttpAdapterHost } from "@nestjs/core";
+import { DocumentBuilder, SwaggerModule } from "@nestjs/swagger";
+import { RequestAbortedFilter } from "./common/filters/request-aborted.filter";
+import { AppModule } from "./app.module";
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
   app.enableCors({
-    origin: process.env.CORS_ORIGIN || 'http://localhost:5173',
-    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization'],
-    credentials: false,
+    origin: process.env.CORS_ORIGIN || "http://localhost:5173",
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"],
+    credentials: false
   });
-  app.setGlobalPrefix('api');
+  app.setGlobalPrefix("api");
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
-  app.useGlobalFilters(new RequestAbortedFilter());
+  app.useGlobalFilters(new RequestAbortedFilter(app.get(HttpAdapterHost)));
 
   const swaggerConfig = new DocumentBuilder()
-    .setTitle('Code Analysis API')
-    .setDescription('API для анализа студенческих работ')
-    .setVersion('1.0')
+    .setTitle("Code Analysis API")
+    .setDescription("API для анализа студенческих работ")
+    .setVersion("1.0")
     .addBearerAuth(
       {
-        type: 'http',
-        scheme: 'bearer',
-        bearerFormat: 'JWT',
+        type: "http",
+        scheme: "bearer",
+        bearerFormat: "JWT"
       },
-      'bearer',
+      "bearer"
     )
     .build();
   const swaggerDocument = SwaggerModule.createDocument(app, swaggerConfig);
-  SwaggerModule.setup('api/docs', app, swaggerDocument, {
+  SwaggerModule.setup("api/docs", app, swaggerDocument, {
     swaggerOptions: {
-      persistAuthorization: true,
-    },
+      persistAuthorization: true
+    }
   });
 
   const server = await app.listen(process.env.PORT ? Number(process.env.PORT) : 3000);

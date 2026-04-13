@@ -1,18 +1,18 @@
-import type { AnalysisRow } from '@entities/analysis/api';
-import { Card, Grid, Stack, Text } from '@mantine/core';
-import { BarChart } from '@mantine/charts';
+import type { AnalysisRow } from "@entities/analysis/api"
+import { BarChart } from "@mantine/charts"
+import { Card, Grid, Stack, Text } from "@mantine/core"
 
-import { getNumericMetrics, toChartData } from '../model/helpers';
+import { getNumericMetrics, toChartData } from "../model/helpers"
 
 type Props = {
-  rows: AnalysisRow[];
-};
+  rows: AnalysisRow[]
+}
 
 export function AnalysisCharts({ rows }: Props) {
-  const metrics = getNumericMetrics(rows).slice(0, 12);
+  const metrics = getNumericMetrics(rows).slice(0, 12)
 
   if (metrics.length === 0) {
-    return <Text c="dimmed">Нет числовых метрик для построения графиков</Text>;
+    return <Text c="dimmed">Нет числовых метрик для построения графиков</Text>
   }
 
   return (
@@ -26,7 +26,7 @@ export function AnalysisCharts({ rows }: Props) {
                 data={toChartData(rows, metric)}
                 dataKey="path"
                 h={220}
-                series={[{ name: 'value', color: 'myColor.6' }]}
+                series={[{ name: "value", color: "myColor.6" }]}
                 tickLine="y"
                 withLegend={false}
               />
@@ -35,5 +35,5 @@ export function AnalysisCharts({ rows }: Props) {
         </Grid.Col>
       ))}
     </Grid>
-  );
+  )
 }

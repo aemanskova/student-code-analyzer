@@ -1,102 +1,98 @@
-import { type AnalysisRunResult, AnalysisForm } from '@features/analysisForm';
-import { AnalysisCharts, AnalysisTable } from '@entities/analysis';
+import { AnalysisCharts, AnalysisTable } from "@entities/analysis"
 import {
-  Alert,
-  Button,
-  Card,
-  Container,
-  Group,
-  Progress,
-  Stack,
-  Text,
-  Title,
-} from '@mantine/core';
-import { useGetAnalysisJobStatusQuery, useGetSavedResultsByRunIdQuery } from '@entities/analysis/api';
-import { useMemo, useState } from 'react';
+  useGetAnalysisJobStatusQuery,
+  useGetSavedResultsByRunIdQuery
+} from "@entities/analysis/api"
+import { AnalysisForm, type AnalysisRunResult } from "@features/analysisForm"
+import { Alert, Button, Card, Container, Group, Progress, Stack, Text, Title } from "@mantine/core"
+import { useMemo, useState } from "react"
 
-const getUserStageTitle = (status: string | null | undefined, stage: string | null | undefined): string => {
-  if (status === 'queued') {
-    return 'Ожидаем запуск анализа';
+const getUserStageTitle = (
+  status: string | null | undefined,
+  stage: string | null | undefined
+): string => {
+  if (status === "queued") {
+    return "Ожидаем запуск анализа"
   }
-  if (status === 'running') {
+  if (status === "running") {
     if (!stage) {
-      return 'Готовим данные к проверке';
+      return "Готовим данные к проверке"
     }
-    return stage;
+    return stage
   }
-  if (status === 'success') {
-    return 'Анализ завершен';
+  if (status === "success") {
+    return "Анализ завершен"
   }
-  if (status === 'failed') {
-    return 'Ошибка анализа';
+  if (status === "failed") {
+    return "Ошибка анализа"
   }
-  return 'Подготовка к запуску';
-};
+  return "Подготовка к запуску"
+}
 
 const toCsv = (rows: Array<Record<string, unknown>>, metrics: string[]): string => {
-  const headers = ['path', ...metrics];
-  const csvRows = [headers.join(';')];
+  const headers = ["path", ...metrics]
+  const csvRows = [headers.join(";")]
 
   for (const row of rows) {
     const values = [
-      String(row.path || ''),
+      String(row.path || ""),
       ...metrics.map((metric) => {
-        const value = row[metric];
+        const value = row[metric]
         if (value === null || value === undefined) {
-          return '';
+          return ""
         }
-        const text = String(value);
+        const text = String(value)
         if (/[;"\n]/.test(text)) {
-          return `"${text.replace(/"/g, '""')}"`;
+          return `"${text.replace(/"/g, '""')}"`
         }
-        return text;
-      }),
-    ];
-    csvRows.push(values.join(';'));
+        return text
+      })
+    ]
+    csvRows.push(values.join(";"))
   }
 
-  return `${csvRows.join('\n')}\n`;
-};
+  return `${csvRows.join("\n")}\n`
+}
 
 export function AnalysisPage() {
-  const [startedRun, setStartedRun] = useState<AnalysisRunResult | null>(null);
-  const jobId = startedRun?.response.jobId || '';
+  const [startedRun, setStartedRun] = useState<AnalysisRunResult | null>(null)
+  const jobId = startedRun?.response.jobId || ""
 
   const { data: jobStatus } = useGetAnalysisJobStatusQuery(jobId, {
     skip: !jobId,
-    pollingInterval: 5000,
-  });
-  const runId = jobStatus?.result?.runId || '';
+    pollingInterval: 5000
+  })
+  const runId = jobStatus?.result?.runId || ""
 
   const { data: runResults, error: runResultsError } = useGetSavedResultsByRunIdQuery(runId, {
-    skip: !runId,
-  });
+    skip: !runId
+  })
 
   const metrics = useMemo(() => {
-    return jobStatus?.result?.metrics || [];
-  }, [jobStatus]);
+    return jobStatus?.result?.metrics || []
+  }, [jobStatus])
 
   const rows = useMemo(() => {
-    return runResults?.data || [];
-  }, [runResults]);
+    return runResults?.data || []
+  }, [runResults])
 
   const handleCsvDownload = () => {
     if (!rows.length || !metrics.length) {
-      return;
+      return
     }
-    const csv = toCsv(rows as Array<Record<string, unknown>>, metrics);
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `analysis_${Date.now()}.csv`;
-    link.click();
-    URL.revokeObjectURL(url);
-  };
+    const csv = toCsv(rows as Array<Record<string, unknown>>, metrics)
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement("a")
+    link.href = url
+    link.download = `analysis_${Date.now()}.csv`
+    link.click()
+    URL.revokeObjectURL(url)
+  }
 
-  const jobInProgress = jobStatus?.status === 'queued' || jobStatus?.status === 'running';
-  const jobFailed = jobStatus?.status === 'failed';
-  const jobDone = jobStatus?.status === 'success';
+  const jobInProgress = jobStatus?.status === "queued" || jobStatus?.status === "running"
+  const jobFailed = jobStatus?.status === "failed"
+  const jobDone = jobStatus?.status === "success"
 
   return (
     <Container size="xl">
@@ -112,16 +108,14 @@ export function AnalysisPage() {
           <Card p="lg" radius="md">
             <Stack gap="sm">
               <Title order={4}>Статус анализа</Title>
-              <Text>
-                Этап: {getUserStageTitle(jobStatus?.status, jobStatus?.stage)}
-              </Text>
+              <Text>Этап: {getUserStageTitle(jobStatus?.status, jobStatus?.stage)}</Text>
               <Progress value={jobStatus?.progressPercent ?? 0} />
               <Text c="dimmed" size="xs">
                 {jobStatus?.progressPercent ?? 0}%
               </Text>
               {jobFailed && (
                 <Alert color="red">
-                  {jobStatus?.errorMessage || 'Не удалось завершить анализ. Попробуйте снова.'}
+                  {jobStatus?.errorMessage || "Не удалось завершить анализ. Попробуйте снова."}
                 </Alert>
               )}
             </Stack>
@@ -159,5 +153,5 @@ export function AnalysisPage() {
         )}
       </Stack>
     </Container>
-  );
+  )
 }
