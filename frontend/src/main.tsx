@@ -1,5 +1,3 @@
-import "@mantine/core/styles.css"
-import "@mantine/charts/styles.css"
 import "./index.css"
 
 import { Router } from "@app/routing"
