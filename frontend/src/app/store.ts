@@ -1,11 +1,13 @@
 import { configureStore } from "@reduxjs/toolkit"
 import { baseApi } from "@shared/api/baseApi"
+import { errorNotificationsMiddleware } from "@shared/api/middleware"
 
 export const store = configureStore({
   reducer: {
     [baseApi.reducerPath]: baseApi.reducer
   },
-  middleware: (getDefaultMiddleware) => getDefaultMiddleware().concat(baseApi.middleware)
+  middleware: (getDefaultMiddleware) =>
+    getDefaultMiddleware().concat(baseApi.middleware, errorNotificationsMiddleware)
 })
 
 export type RootState = ReturnType<typeof store.getState>

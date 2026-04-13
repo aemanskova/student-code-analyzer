@@ -1,5 +1,9 @@
 import { createTheme, type MantineColorsTuple, MantineProvider } from "@mantine/core"
 import type { ComponentType } from "react"
+import { Notifications } from "@mantine/notifications"
+import "@mantine/core/styles.css"
+import "@mantine/charts/styles.css"
+import "@mantine/notifications/styles.css"
 
 const myColor: MantineColorsTuple = [
   "#f6f4f4",
@@ -23,6 +27,7 @@ const theme = createTheme({
 
 export const withStyles = (WrappedComponent: ComponentType) => () => (
   <MantineProvider theme={theme}>
+    <Notifications />
     <WrappedComponent />
   </MantineProvider>
 )
