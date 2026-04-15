@@ -11,6 +11,8 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { randomUUID } from "node:crypto";
 import { once } from "node:events";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import { pipeline } from "node:stream/promises";
 import * as unzipper from "unzipper";
 import {
@@ -30,8 +32,9 @@ import { DuckdbService } from "../database/duckdb/duckdb.service";
 import { MetricsService } from "../metrics/metrics.service";
 import { PathParserService } from "../utils/path-parser/path-parser.service";
 import { RunAnalysisDto } from "./dto/run-analysis.dto";
-import { AnalysisResponse, AnalysisRow } from "./analysis.types";
+import { AnalysisResponse, AnalysisRow, GitAnalysisRow } from "./analysis.types";
 import { HtmlCssFullAnalyzerService } from "./html-css-full-analyzer.service";
+import { AnalysisGitResult } from "./entities/analysis-git-result.entity";
 import { AnalysisJob, AnalysisJobStatus } from "./entities/analysis-job.entity";
 import { AnalysisResult } from "./entities/analysis-result.entity";
 import { AnalysisUpload } from "./entities/analysis-upload.entity";
@@ -48,6 +51,7 @@ interface ZipAnalysisInput {
   student?: string;
   r?: boolean;
   depth?: number;
+  includeGitMetrics?: boolean;
 }
 
 interface QueuedZipJob {
@@ -68,13 +72,23 @@ interface QueuedS3Job {
     student?: string;
     r?: boolean;
     depth?: number;
+    includeGitMetrics?: boolean;
   };
 }
 
 type QueuedJob = QueuedZipJob | QueuedS3Job;
 
+type RunFilterKind = "metrics" | "git";
+
+type RunFilterInput = {
+  kind: RunFilterKind;
+  depth?: number;
+  selectedLevels?: string[][];
+};
+
 @Injectable()
 export class AnalysisService implements OnModuleInit {
+  private readonly runExecFile = promisify(execFile);
   private readonly logger = new Logger(AnalysisService.name);
   private readonly csvRoot = process.env.CSV_ROOT || "/app/csv";
   private readonly worksRoot = process.env.WORKS_ROOT || "/app/works";
@@ -86,17 +100,6 @@ export class AnalysisService implements OnModuleInit {
     "bootstrap",
     "images",
     "__MACOSX"
-  ]);
-  private readonly heavyFullMetrics = new Set<string>([
-    "vnu_files_checked",
-    "vnu_errors_total",
-    "vnu_warnings_total",
-    "vnu_unparsed_files",
-    "axe_violations_total",
-    "axe_critical",
-    "axe_serious",
-    "axe_moderate",
-    "axe_minor"
   ]);
   private readonly asyncConcurrency = Math.max(
     1,
@@ -114,6 +117,40 @@ export class AnalysisService implements OnModuleInit {
   private s3BucketEnsured = false;
   private readonly queuedJobs: QueuedJob[] = [];
   private runningJobs = 0;
+  private readonly gitBinaryExtensions = new Set([
+    ".png",
+    ".jpg",
+    ".jpeg",
+    ".gif",
+    ".bmp",
+    ".ico",
+    ".svg",
+    ".pdf",
+    ".zip",
+    ".tar",
+    ".gz",
+    ".rar",
+    ".7z",
+    ".exe",
+    ".dll",
+    ".so",
+    ".dylib",
+    ".mp3",
+    ".mp4",
+    ".avi",
+    ".mov",
+    ".wav",
+    ".ppt",
+    ".pptx",
+    ".doc",
+    ".docx",
+    ".xls",
+    ".xlsx",
+    ".bin",
+    ".dat",
+    ".db",
+    ".sqlite"
+  ]);
 
   constructor(
     private readonly duckdbService: DuckdbService,
@@ -124,6 +161,8 @@ export class AnalysisService implements OnModuleInit {
     private readonly analysisJobRepo: Repository<AnalysisJob>,
     @InjectRepository(AnalysisUpload)
     private readonly analysisUploadRepo: Repository<AnalysisUpload>,
+    @InjectRepository(AnalysisGitResult)
+    private readonly analysisGitResultRepo: Repository<AnalysisGitResult>,
     @InjectRepository(AnalysisResult)
     private readonly analysisResultRepo: Repository<AnalysisResult>
   ) {}
@@ -133,12 +172,7 @@ export class AnalysisService implements OnModuleInit {
   }
 
   private getDefaultFullMetrics(fullMetrics: string[]): string[] {
-    const includeHeavyByDefault =
-      String(process.env.HTML_CSS_HEAVY_METRICS_BY_DEFAULT || "false").toLowerCase() === "true";
-    if (includeHeavyByDefault) {
-      return fullMetrics;
-    }
-    return fullMetrics.filter((metric) => !this.heavyFullMetrics.has(metric));
+    return fullMetrics;
   }
 
   async run(dto: RunAnalysisDto): Promise<AnalysisResponse> {
@@ -170,10 +204,12 @@ export class AnalysisService implements OnModuleInit {
         !dto.metrics?.length || selectedMetrics.some((metric) => fullMetrics.includes(metric));
 
       if (useFullMetrics) {
-        return this.runFromFolderFull(dto, selectedMetrics);
+        const fullResult = await this.runFromFolderFull(dto, selectedMetrics);
+        return this.withOptionalGitData(fullResult, dto);
       }
 
-      return this.runFromFolderBasic(dto, selectedMetrics);
+      const basicResult = await this.runFromFolderBasic(dto, selectedMetrics);
+      return this.withOptionalGitData(basicResult, dto);
     }
 
     const selectedMetrics = dto.metrics?.length ? dto.metrics : basicMetrics;
@@ -190,7 +226,8 @@ export class AnalysisService implements OnModuleInit {
     }
 
     if (dto.rootPath) {
-      return this.runFromFolderBasic(dto, selectedMetrics);
+      const folderResult = await this.runFromFolderBasic(dto, selectedMetrics);
+      return this.withOptionalGitData(folderResult, dto);
     }
 
     return this.runFromCsv(dto, selectedMetrics);
@@ -262,6 +299,7 @@ export class AnalysisService implements OnModuleInit {
         rootPath: tempRoot,
         r: input.r,
         depth: input.depth,
+        includeGitMetrics: input.includeGitMetrics,
         onAnalyzeProgress: async (completed, total, currentPath) => {
           if (!input.onProgress) {
             return;
@@ -274,9 +312,22 @@ export class AnalysisService implements OnModuleInit {
             `Проверяем папку: ${workLabel} (${completed}/${safeTotal})`,
             progress
           );
+        },
+        onGitProgress: async (completed, total, currentRepoPath) => {
+          if (!input.onProgress) {
+            return;
+          }
+          const safeTotal = Math.max(1, total);
+          const ratio = Math.max(0, Math.min(1, completed / safeTotal));
+          const progress = 93 + Math.floor(ratio * 5);
+          const repoLabel = this.extractWorkLabel(currentRepoPath);
+          await input.onProgress(
+            `Считаем Git-метрики: ${repoLabel} (${completed}/${safeTotal})`,
+            progress
+          );
         }
       });
-      await input.onProgress?.("Сохранение", 92);
+      await input.onProgress?.("Сохраняем результаты", 99);
       const runId = await this.saveResultsForUser(input.userId, result, cacheKey);
       await input.onProgress?.("Готово", 100);
       return {
@@ -311,7 +362,8 @@ export class AnalysisService implements OnModuleInit {
       requestPayload: {
         metrics: input.metrics || [],
         r: Boolean(input.r),
-        depth: input.depth ?? null
+        depth: input.depth ?? null,
+        includeGitMetrics: this.resolveIncludeGitMetrics(input.includeGitMetrics)
       },
       resultPayload: null,
       startedAt: null,
@@ -380,6 +432,7 @@ export class AnalysisService implements OnModuleInit {
     student?: string;
     r?: boolean;
     depth?: number;
+    includeGitMetrics?: boolean;
   }) {
     const uploadId = String(input.uploadId || "").trim();
     if (!uploadId) {
@@ -416,7 +469,8 @@ export class AnalysisService implements OnModuleInit {
         group: input.group,
         student: input.student,
         r: input.r,
-        depth: input.depth
+        depth: input.depth,
+        includeGitMetrics: input.includeGitMetrics
       },
       {
         onSuccess: async () => {
@@ -570,6 +624,7 @@ export class AnalysisService implements OnModuleInit {
     student?: string;
     r?: boolean;
     depth?: number;
+    includeGitMetrics?: boolean;
   }) {
     await this.ensureS3BucketExists();
     const key = String(input.key || "").trim();
@@ -591,7 +646,8 @@ export class AnalysisService implements OnModuleInit {
         key,
         metrics: input.metrics || [],
         r: Boolean(input.r),
-        depth: input.depth ?? null
+        depth: input.depth ?? null,
+        includeGitMetrics: this.resolveIncludeGitMetrics(input.includeGitMetrics)
       },
       resultPayload: null,
       startedAt: null,
@@ -610,7 +666,8 @@ export class AnalysisService implements OnModuleInit {
         group: input.group,
         student: input.student,
         r: input.r,
-        depth: input.depth
+        depth: input.depth,
+        includeGitMetrics: input.includeGitMetrics
       }
     });
     void this.processQueue();
@@ -631,6 +688,7 @@ export class AnalysisService implements OnModuleInit {
     student?: string;
     r?: boolean;
     depth?: number;
+    includeGitMetrics?: boolean;
   }) {
     const zipPathRaw = String(input.zipPath || "").trim();
     if (!zipPathRaw) {
@@ -656,7 +714,8 @@ export class AnalysisService implements OnModuleInit {
       group: input.group,
       student: input.student,
       r: input.r,
-      depth: input.depth
+      depth: input.depth,
+      includeGitMetrics: input.includeGitMetrics
     });
   }
 
@@ -729,6 +788,56 @@ export class AnalysisService implements OnModuleInit {
     };
   }
 
+  async getAnalysisJobs(
+    userId: number,
+    statuses?: AnalysisJobStatus[],
+    limit = 100
+  ): Promise<
+    Array<{
+      jobId: string;
+      status: AnalysisJobStatus;
+      direction: string;
+      archiveName: string | null;
+      stage: string | null;
+      progressPercent: number | null;
+      errorMessage: string | null;
+      createdAt: Date;
+      heartbeatAt: Date | null;
+      startedAt: Date | null;
+      finishedAt: Date | null;
+    }>
+  > {
+    const safeLimit = Math.max(1, Math.min(200, Math.trunc(Number(limit) || 100)));
+    const allowedStatuses: AnalysisJobStatus[] = ["queued", "running", "success", "failed"];
+    const effectiveStatuses =
+      statuses && statuses.length
+        ? statuses.filter((status) => allowedStatuses.includes(status))
+        : (["queued", "running"] as AnalysisJobStatus[]);
+
+    const jobs = await this.analysisJobRepo.find({
+      where: {
+        userId,
+        status: In(effectiveStatuses)
+      },
+      order: { createdAt: "DESC" },
+      take: safeLimit
+    });
+
+    return jobs.map((job) => ({
+      jobId: job.id,
+      status: job.status,
+      direction: job.direction,
+      archiveName: job.archiveName,
+      stage: job.stage,
+      progressPercent: job.progressPercent,
+      errorMessage: job.errorMessage,
+      createdAt: job.createdAt,
+      heartbeatAt: job.heartbeatAt,
+      startedAt: job.startedAt,
+      finishedAt: job.finishedAt
+    }));
+  }
+
   resultToCsv(result: AnalysisResponse): string {
     return this.toCsv(result.data, result.metrics);
   }
@@ -751,6 +860,19 @@ export class AnalysisService implements OnModuleInit {
       },
       order: { createdAt: "DESC", id: "DESC" }
     });
+    const gitRows = await this.analysisGitResultRepo.find({
+      where: {
+        userId,
+        direction: normalizedDirection,
+        path: Like(`${normalizedPath}%`)
+      },
+      order: { createdAt: "DESC", id: "DESC" }
+    });
+    const resolveYearFromGit = this.buildGitYearResolverFromGitRows(gitRows);
+    const fallbackRootLabel = this.inferFallbackRootLabel([
+      ...rows.map((row) => row.path),
+      ...gitRows.map((row) => row.path)
+    ]);
 
     return {
       direction: normalizedDirection,
@@ -758,10 +880,30 @@ export class AnalysisService implements OnModuleInit {
       data: rows.map((row) => ({
         runId: row.runId,
         createdAt: row.createdAt,
-        path: row.path,
+        path: this.normalizeResultPath(row.path, fallbackRootLabel),
         group: row.groupValue,
         student: row.studentValue,
+        year:
+          this.extractYearValue(row.metrics, row.path) || resolveYearFromGit(row.runId, row.path),
         ...row.metrics
+      })),
+      gitData: gitRows.map((row) => ({
+        runId: row.runId,
+        createdAt: row.createdAt,
+        path: this.normalizeResultPath(row.path, fallbackRootLabel),
+        group: row.groupValue,
+        student: row.studentValue,
+        branch: row.branch,
+        hash: row.hash,
+        date: row.date,
+        message: row.message,
+        author: row.author,
+        filename: row.filename,
+        filetype: row.filetype,
+        extraMetadata: row.extraMetadata,
+        changes: row.changes,
+        added: row.added,
+        deleted: row.deleted
       }))
     };
   }
@@ -776,22 +918,335 @@ export class AnalysisService implements OnModuleInit {
       where: { userId, runId: normalizedRunId },
       order: { id: "ASC" }
     });
+    const gitRows = await this.analysisGitResultRepo.find({
+      where: { userId, runId: normalizedRunId },
+      order: { id: "ASC" }
+    });
+    const resolveYearFromGit = this.buildGitYearResolverFromGitRows(gitRows);
+    const fallbackRootLabel = this.inferFallbackRootLabel([
+      ...rows.map((row) => row.path),
+      ...gitRows.map((row) => row.path)
+    ]);
 
-    if (!rows.length) {
+    if (!rows.length && !gitRows.length) {
       throw new NotFoundException("Результаты запуска не найдены");
+    }
+
+    const direction = rows[0]?.direction || gitRows[0]?.direction || "";
+    const pathValue = this.extractRunPath([
+      ...rows.map((row) => row.path),
+      ...gitRows.map((row) => row.path)
+    ]);
+
+    return {
+      runId: normalizedRunId,
+      direction,
+      path: pathValue,
+      data: rows.map((row) => ({
+        runId: row.runId,
+        createdAt: row.createdAt,
+        path: this.normalizeResultPath(row.path, fallbackRootLabel),
+        group: row.groupValue,
+        student: row.studentValue,
+        year:
+          this.extractYearValue(row.metrics, row.path) || resolveYearFromGit(row.runId, row.path),
+        ...row.metrics
+      })),
+      gitData: gitRows.map((row) => ({
+        runId: row.runId,
+        createdAt: row.createdAt,
+        path: this.normalizeResultPath(row.path, fallbackRootLabel),
+        group: row.groupValue,
+        student: row.studentValue,
+        branch: row.branch,
+        hash: row.hash,
+        date: row.date,
+        message: row.message,
+        author: row.author,
+        filename: row.filename,
+        filetype: row.filetype,
+        extraMetadata: row.extraMetadata,
+        changes: row.changes,
+        added: row.added,
+        deleted: row.deleted
+      }))
+    };
+  }
+
+  async getRunFilterOptions(userId: number, runId: string, input: RunFilterInput) {
+    const normalizedRunId = String(runId || "").trim();
+    if (!normalizedRunId) {
+      throw new BadRequestException("runId path parameter is required");
+    }
+
+    const sourceRows =
+      input.kind === "git"
+        ? await this.analysisGitResultRepo.find({
+            select: { path: true },
+            where: { userId, runId: normalizedRunId },
+            order: { id: "ASC" }
+          })
+        : await this.analysisResultRepo.find({
+            select: { path: true },
+            where: { userId, runId: normalizedRunId },
+            order: { id: "ASC" }
+          });
+
+    if (!sourceRows.length) {
+      const runExistsInMetrics = await this.analysisResultRepo.exist({
+        where: { userId, runId: normalizedRunId }
+      });
+      const runExistsInGit = await this.analysisGitResultRepo.exist({
+        where: { userId, runId: normalizedRunId }
+      });
+      if (!runExistsInMetrics && !runExistsInGit) {
+        throw new NotFoundException("Результаты запуска не найдены");
+      }
+
+      const depth = Math.max(1, Math.min(12, Math.trunc(input.depth || 1)));
+      return {
+        runId: normalizedRunId,
+        kind: input.kind,
+        depth,
+        selectedLevels: this.normalizeSelectedLevels(input.selectedLevels || [], depth),
+        levels: [],
+        paths: []
+      };
+    }
+
+    const rawSourcePaths = sourceRows.map((row) => row.path);
+    const fallbackCandidates = [...rawSourcePaths];
+    if (input.kind === "metrics") {
+      const gitPathRows = await this.analysisGitResultRepo.find({
+        select: { path: true },
+        where: { userId, runId: normalizedRunId },
+        order: { id: "ASC" }
+      });
+      fallbackCandidates.push(...gitPathRows.map((row) => row.path));
+    }
+
+    const fallbackRootLabel = this.inferFallbackRootLabel(fallbackCandidates);
+    const sourcePaths = rawSourcePaths
+      .map((pathValue) => this.normalizeResultPath(pathValue, fallbackRootLabel))
+      .filter(Boolean);
+
+    const pathSegments = sourcePaths
+      .map((value) =>
+        this.normalizePath(String(value || ""))
+          .replace(/^\/+|\/+$/g, "")
+          .split("/")
+          .filter(Boolean)
+      )
+      .filter((segments) => segments.length > 0);
+
+    const inferredDepth = pathSegments.reduce((acc, segments) => Math.max(acc, segments.length), 1);
+    const depth = Math.max(1, Math.min(12, Math.trunc(input.depth || inferredDepth)));
+
+    const selectedLevels = this.normalizeSelectedLevels(input.selectedLevels || [], depth);
+    const levels: Array<{ level: number; multi: boolean; options: string[] }> = [];
+    for (let level = 0; level < depth; level += 1) {
+      const options = Array.from(
+        new Set(pathSegments.map((segments) => segments[level]).filter(Boolean))
+      ).sort((a, b) => a.localeCompare(b));
+
+      if (!options.length) {
+        break;
+      }
+
+      levels.push({
+        level: level + 1,
+        multi: level > 0,
+        options
+      });
+    }
+
+    if ((!selectedLevels[0] || !selectedLevels[0].length) && levels[0]?.options?.length) {
+      selectedLevels[0] = [levels[0].options[0]];
+    }
+
+    for (let level = 0; level < levels.length; level += 1) {
+      const options = levels[level]?.options || [];
+      if (!options.length) {
+        selectedLevels[level] = [];
+        continue;
+      }
+
+      const selected = selectedLevels[level] || [];
+      selectedLevels[level] = selected.filter((value) => options.includes(value));
     }
 
     return {
       runId: normalizedRunId,
-      direction: rows[0].direction,
-      path: this.extractRunPath(rows.map((row) => row.path)),
-      data: rows.map((row) => ({
+      kind: input.kind,
+      depth,
+      selectedLevels,
+      levels,
+      paths: Array.from(
+        new Set(
+          sourcePaths
+            .map((value) => this.normalizeResultPath(String(value || ""), fallbackRootLabel))
+            .filter(Boolean)
+        )
+      ).sort((a, b) => a.localeCompare(b))
+    };
+  }
+
+  async getRunView(userId: number, runId: string, input: RunFilterInput) {
+    const normalizedRunId = String(runId || "").trim();
+    if (!normalizedRunId) {
+      throw new BadRequestException("runId path parameter is required");
+    }
+
+    const rows =
+      input.kind === "metrics"
+        ? await this.analysisResultRepo.find({
+            where: { userId, runId: normalizedRunId },
+            order: { id: "ASC" }
+          })
+        : [];
+    const gitRows = await this.analysisGitResultRepo.find({
+      where: { userId, runId: normalizedRunId },
+      order: { id: "ASC" }
+    });
+
+    if (input.kind === "git" && !gitRows.length) {
+      const runExistsInMetrics = await this.analysisResultRepo.exist({
+        where: { userId, runId: normalizedRunId }
+      });
+      const runExistsInGit = await this.analysisGitResultRepo.exist({
+        where: { userId, runId: normalizedRunId }
+      });
+      if (!runExistsInMetrics && !runExistsInGit) {
+        throw new NotFoundException("Результаты запуска не найдены");
+      }
+
+      const depth = Math.max(1, Math.min(12, Math.trunc(input.depth || 1)));
+      return {
+        runId: normalizedRunId,
+        kind: "git",
+        depth,
+        selectedLevels: this.normalizeSelectedLevels(input.selectedLevels || [], depth),
+        rows: []
+      };
+    }
+
+    if (!rows.length && !gitRows.length) {
+      throw new NotFoundException("Результаты запуска не найдены");
+    }
+
+    const rawSourcePaths =
+      input.kind === "git" ? gitRows.map((row) => row.path) : rows.map((row) => row.path);
+    const fallbackRootLabel = this.inferFallbackRootLabel([
+      ...rawSourcePaths,
+      ...gitRows.map((row) => row.path)
+    ]);
+    const sourcePaths = rawSourcePaths
+      .map((pathValue) => this.normalizeResultPath(pathValue, fallbackRootLabel))
+      .filter(Boolean);
+    const pathSegments = sourcePaths
+      .map((value) =>
+        this.normalizeResultPath(String(value || ""), fallbackRootLabel)
+          .split("/")
+          .filter(Boolean)
+      )
+      .filter((segments) => segments.length > 0);
+    const inferredDepth = pathSegments.reduce((acc, segments) => Math.max(acc, segments.length), 1);
+    const depth = Math.max(1, Math.min(12, Math.trunc(input.depth || inferredDepth)));
+    const selectedLevels = this.normalizeSelectedLevels(input.selectedLevels || [], depth);
+
+    if (!selectedLevels[0]?.length) {
+      const level1 = Array.from(
+        new Set(pathSegments.map((segments) => segments[0]).filter(Boolean))
+      ).sort((a, b) => a.localeCompare(b));
+      if (level1.length) {
+        selectedLevels[0] = [level1[0]];
+      }
+    }
+
+    const matches = (pathValue: string) => {
+      const segments = this.normalizeResultPath(String(pathValue || ""), fallbackRootLabel)
+        .split("/")
+        .filter(Boolean);
+      return selectedLevels.every((values, level) => {
+        if (!values.length) {
+          return true;
+        }
+        return values.includes(segments[level] || "");
+      });
+    };
+
+    const filteredRows = rows.filter((row) => matches(row.path));
+    const filteredGitRows = gitRows.filter((row) => matches(row.path));
+    const resolveYearFromGit = this.buildGitYearResolverFromGitRows(filteredGitRows);
+
+    if (input.kind === "git") {
+      return {
+        runId: normalizedRunId,
+        kind: "git",
+        depth,
+        selectedLevels,
+        rows: filteredGitRows.map((row) => ({
+          runId: row.runId,
+          createdAt: row.createdAt,
+          path: this.normalizeResultPath(row.path, fallbackRootLabel),
+          group: row.groupValue,
+          student: row.studentValue,
+          branch: row.branch,
+          hash: row.hash,
+          date: row.date,
+          message: row.message,
+          author: row.author,
+          filename: row.filename,
+          filetype: row.filetype,
+          extraMetadata: row.extraMetadata,
+          changes: row.changes,
+          added: row.added,
+          deleted: row.deleted
+        }))
+      };
+    }
+
+    const metricSet = new Set<string>();
+    for (const row of filteredRows) {
+      for (const key of Object.keys(row.metrics || {})) {
+        metricSet.add(key);
+      }
+    }
+    const metrics = Array.from(metricSet).sort((a, b) => a.localeCompare(b));
+
+    return {
+      runId: normalizedRunId,
+      kind: "metrics",
+      depth,
+      selectedLevels,
+      metrics,
+      rows: filteredRows.map((row) => ({
         runId: row.runId,
         createdAt: row.createdAt,
-        path: row.path,
+        path: this.normalizeResultPath(row.path, fallbackRootLabel),
         group: row.groupValue,
         student: row.studentValue,
+        year:
+          this.extractYearValue(row.metrics, row.path) || resolveYearFromGit(row.runId, row.path),
         ...row.metrics
+      })),
+      gitRows: filteredGitRows.map((row) => ({
+        runId: row.runId,
+        createdAt: row.createdAt,
+        path: this.normalizeResultPath(row.path, fallbackRootLabel),
+        group: row.groupValue,
+        student: row.studentValue,
+        branch: row.branch,
+        hash: row.hash,
+        date: row.date,
+        message: row.message,
+        author: row.author,
+        filename: row.filename,
+        filetype: row.filetype,
+        extraMetadata: row.extraMetadata,
+        changes: row.changes,
+        added: row.added,
+        deleted: row.deleted
       }))
     };
   }
@@ -802,12 +1257,16 @@ export class AnalysisService implements OnModuleInit {
       order: { createdAt: "DESC", id: "DESC" }
     });
 
-    const byRun = new Map<string, { direction: string; createdAt: Date; paths: string[] }>();
+    const byRun = new Map<
+      string,
+      { runId: string; direction: string; createdAt: Date; paths: string[] }
+    >();
 
     for (const row of rows) {
       const existing = byRun.get(row.runId);
       if (!existing) {
         byRun.set(row.runId, {
+          runId: row.runId,
           direction: row.direction,
           createdAt: row.createdAt,
           paths: [this.normalizePath(String(row.path || ""))]
@@ -822,6 +1281,7 @@ export class AnalysisService implements OnModuleInit {
 
     const list = Array.from(byRun.values())
       .map((run) => ({
+        runId: run.runId,
         path: this.extractRunPath(run.paths),
         date: run.createdAt.toISOString(),
         direction: run.direction
@@ -838,6 +1298,271 @@ export class AnalysisService implements OnModuleInit {
       total,
       data
     };
+  }
+
+  private async withOptionalGitData(
+    baseResult: AnalysisResponse,
+    dto: RunAnalysisDto
+  ): Promise<AnalysisResponse> {
+    if (!this.resolveIncludeGitMetrics(dto.includeGitMetrics) || !dto.rootPath) {
+      return baseResult;
+    }
+
+    try {
+      const rootAbsolutePath = this.resolveRootPath(dto.rootPath);
+      const gitData = await this.collectGitMetrics(rootAbsolutePath, {
+        recursiveMode: true,
+        onRepoProgress: dto.onGitProgress
+      });
+      return {
+        ...baseResult,
+        gitData
+      };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unknown git metrics error";
+      this.logger.warn(`Git metrics calculation failed: ${message}`);
+      return baseResult;
+    }
+  }
+
+  private async collectGitMetrics(
+    rootAbsolutePath: string,
+    options?: {
+      recursiveMode?: boolean;
+      allBranches?: boolean;
+      onRepoProgress?: (
+        completed: number,
+        total: number,
+        currentRepoPath: string
+      ) => Promise<void> | void;
+    }
+  ): Promise<GitAnalysisRow[]> {
+    const repoPaths = options?.recursiveMode
+      ? await this.findGitRepos(rootAbsolutePath)
+      : [rootAbsolutePath];
+    const rootDisplayLabel = await this.inferRootDisplayLabel(rootAbsolutePath);
+    const allRows: GitAnalysisRow[] = [];
+    const totalRepos = Math.max(1, repoPaths.length);
+
+    if (!repoPaths.length) {
+      await options?.onRepoProgress?.(1, 1, rootAbsolutePath);
+      return allRows;
+    }
+
+    for (let index = 0; index < repoPaths.length; index += 1) {
+      const repoPath = repoPaths[index];
+      const relativeRepoPath = this.normalizeResultPath(
+        this.normalizePath(path.relative(rootAbsolutePath, repoPath) || "."),
+        rootDisplayLabel
+      );
+      const parsed = this.pathParserService.parse(relativeRepoPath);
+      const repoRows = await this.processGitRepo(repoPath, relativeRepoPath, parsed, {
+        allBranches: Boolean(options?.allBranches)
+      });
+      allRows.push(...repoRows);
+      await options?.onRepoProgress?.(index + 1, totalRepos, relativeRepoPath);
+    }
+
+    return allRows;
+  }
+
+  private async findGitRepos(rootPath: string): Promise<string[]> {
+    const repos: string[] = [];
+
+    const walk = async (currentPath: string): Promise<void> => {
+      let entries: Array<{ name: string; isDirectory: () => boolean }>;
+      try {
+        entries = (await fs.readdir(currentPath, {
+          withFileTypes: true
+        })) as Array<{ name: string; isDirectory: () => boolean }>;
+      } catch {
+        return;
+      }
+
+      for (const entry of entries) {
+        if (!entry.isDirectory()) {
+          continue;
+        }
+
+        if (entry.name === ".git") {
+          try {
+            await this.runGit(["rev-parse", "--is-inside-work-tree"], currentPath);
+            repos.push(currentPath);
+          } catch {
+            // Not a valid repository.
+          }
+          return;
+        }
+
+        if (entry.name.startsWith(".") && entry.name !== ".git") {
+          continue;
+        }
+        if (this.ignoredDirNames.has(entry.name)) {
+          continue;
+        }
+
+        await walk(path.join(currentPath, entry.name));
+      }
+    };
+
+    await walk(rootPath);
+    repos.sort((a, b) => a.localeCompare(b));
+    return repos;
+  }
+
+  private async processGitRepo(
+    repoPath: string,
+    relativeRepoPath: string,
+    parsedRepoPath: { group: string | null; student: string | null },
+    options: { allBranches: boolean }
+  ): Promise<GitAnalysisRow[]> {
+    const rows: GitAnalysisRow[] = [];
+
+    const branchOutput = await this.runGit(["branch", "--format=%(refname:short)"], repoPath);
+    const allBranches = branchOutput
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean);
+    if (!allBranches.length) {
+      return rows;
+    }
+
+    const currentBranch = (await this.runGit(["branch", "--show-current"], repoPath)).trim();
+    const branchesToProcess = options.allBranches || !currentBranch ? allBranches : [currentBranch];
+
+    for (const branch of branchesToProcess) {
+      const gitLogRaw = await this.runGit(
+        [
+          "log",
+          branch,
+          "--numstat",
+          "--date=iso-strict",
+          "--format=%H%x1f%an%x1f%aI%x1f%s%x1f%P%x1e"
+        ],
+        repoPath
+      );
+      const commitBlocks = gitLogRaw
+        .split("\x1e")
+        .map((chunk) => chunk.trim())
+        .filter(Boolean);
+
+      for (const block of commitBlocks) {
+        const lines = block
+          .split("\n")
+          .map((line) => line.trim())
+          .filter(Boolean);
+        if (!lines.length) {
+          continue;
+        }
+
+        const header = lines[0] || "";
+        const [fullHash, author, isoDate, message, parentField] = header.split("\x1f");
+        if (!fullHash) {
+          continue;
+        }
+        const shortHash = fullHash.slice(0, 8);
+        const parentHash = this.getFirstParent(parentField || "");
+
+        for (let i = 1; i < lines.length; i += 1) {
+          const line = lines[i];
+          const match = line.match(/^(\d+|-)\s+(\d+|-)\s+(.+)$/);
+          if (!match) {
+            continue;
+          }
+
+          const added = match[1];
+          const deleted = match[2];
+          const filename = match[3];
+          const binary = this.isBinaryGitFile(added, deleted, filename);
+
+          let addedValue = 0;
+          let deletedValue = 0;
+          let changes = "";
+
+          if (binary) {
+            addedValue = await this.getBlobSize(repoPath, fullHash, filename);
+            if (parentHash) {
+              deletedValue = await this.getBlobSize(repoPath, parentHash, filename);
+            }
+            changes = String(addedValue - deletedValue);
+          } else {
+            addedValue = added === "-" ? 0 : Number(added);
+            deletedValue = deleted === "-" ? 0 : Number(deleted);
+            changes = `${addedValue}/${deletedValue}`;
+          }
+
+          const extraMetadata = this.getGitFileMetadata(parentHash, filename);
+
+          rows.push({
+            path: relativeRepoPath,
+            group: parsedRepoPath.group,
+            student: parsedRepoPath.student,
+            branch,
+            hash: shortHash,
+            date: isoDate || new Date().toISOString(),
+            message: (message || "").replace(/\n/g, " "),
+            author: author || "",
+            filename,
+            filetype: binary ? "binary" : "text",
+            extraMetadata,
+            changes,
+            added: addedValue,
+            deleted: deletedValue
+          });
+        }
+      }
+    }
+
+    return rows;
+  }
+
+  private getFirstParent(parentField: string): string | null {
+    const value = String(parentField || "").trim();
+    if (!value) {
+      return null;
+    }
+    return value.split(" ")[0] || null;
+  }
+
+  private isBinaryGitFile(added: string, deleted: string, filePath: string): boolean {
+    if (added === "-" && deleted === "-") {
+      return true;
+    }
+
+    const extension = path.extname(filePath).toLowerCase();
+    return this.gitBinaryExtensions.has(extension);
+  }
+
+  private async getBlobSize(
+    repoPath: string,
+    commitHash: string,
+    filePath: string
+  ): Promise<number> {
+    try {
+      const sizeRaw = await this.runGit(["cat-file", "-s", `${commitHash}:${filePath}`], repoPath);
+      const parsed = Number(sizeRaw.trim());
+      return Number.isFinite(parsed) ? parsed : 0;
+    } catch {
+      return 0;
+    }
+  }
+
+  private getGitFileMetadata(parentHash: string | null, filePath: string): string {
+    if (!parentHash) {
+      return "added";
+    }
+    const normalizedPath = String(filePath || "").toLowerCase();
+    if (normalizedPath.includes("=>")) {
+      return "rename";
+    }
+    return "modified";
+  }
+
+  private async runGit(args: string[], repoPath: string): Promise<string> {
+    const { stdout } = await this.runExecFile("git", ["-C", repoPath, ...args], {
+      maxBuffer: 64 * 1024 * 1024
+    });
+    return String(stdout || "").trimEnd();
   }
 
   private async runFromCsv(
@@ -897,6 +1622,7 @@ export class AnalysisService implements OnModuleInit {
     selectedMetrics: string[]
   ): Promise<AnalysisResponse> {
     const rootAbsolutePath = this.resolveRootPath(dto.rootPath as string);
+    const rootDisplayLabel = await this.inferRootDisplayLabel(rootAbsolutePath);
     await this.ensureDirectoryExists(rootAbsolutePath);
 
     const aggregates = await this.fullAnalyzer.analyzeRoot(rootAbsolutePath, {
@@ -908,7 +1634,8 @@ export class AnalysisService implements OnModuleInit {
 
     const data: AnalysisRow[] = [];
     for (const row of aggregates) {
-      const parsed = this.pathParserService.parse(String(row.path || ""));
+      const normalizedPath = this.normalizeResultPath(String(row.path || ""), rootDisplayLabel);
+      const parsed = this.pathParserService.parse(normalizedPath);
 
       if (dto.group && parsed.group !== dto.group) {
         continue;
@@ -925,7 +1652,7 @@ export class AnalysisService implements OnModuleInit {
       }
 
       data.push({
-        path: String(row.path || ""),
+        path: normalizedPath,
         group: parsed.group,
         student: parsed.student,
         ...filteredMetrics
@@ -1170,6 +1897,211 @@ export class AnalysisService implements OnModuleInit {
     return value.replace(/\\/g, "/");
   }
 
+  private normalizeResultPath(pathValue: string, fallbackRootLabel?: string): string {
+    const normalized = this.normalizePath(String(pathValue || "")).replace(/^\/+|\/+$/g, "");
+    if (!normalized || normalized === ".") {
+      if (!fallbackRootLabel) {
+        return "";
+      }
+      return this.normalizePath(String(fallbackRootLabel || ""))
+        .replace(/^\/+|\/+$/g, "")
+        .trim();
+    }
+    return normalized;
+  }
+
+  private inferFallbackRootLabel(paths: string[]): string {
+    const candidates = paths
+      .map((pathValue) => this.normalizePath(String(pathValue || "")).replace(/^\/+|\/+$/g, ""))
+      .filter((pathValue) => Boolean(pathValue) && pathValue !== ".");
+
+    if (!candidates.length) {
+      return "";
+    }
+
+    const withSegments = candidates.find((pathValue) => pathValue.includes("/"));
+    if (withSegments) {
+      return withSegments.split("/").filter(Boolean)[0] || "";
+    }
+
+    return candidates[0] || "";
+  }
+
+  private async inferRootDisplayLabel(rootAbsolutePath: string): Promise<string> {
+    const fallback = path.basename(path.resolve(rootAbsolutePath));
+    try {
+      const entries = await fs.readdir(rootAbsolutePath, { withFileTypes: true });
+      const dirs = entries
+        .filter((entry) => entry.isDirectory())
+        .filter((entry) => !entry.name.startsWith("."))
+        .filter((entry) => !this.ignoredDirNames.has(entry.name))
+        .map((entry) => entry.name.trim())
+        .filter(Boolean);
+
+      if (dirs.length === 1) {
+        return dirs[0] || fallback;
+      }
+    } catch {
+      // Ignore and fallback to basename.
+    }
+
+    return fallback;
+  }
+
+  private resolveIncludeGitMetrics(value: boolean | undefined): boolean {
+    return value !== false;
+  }
+
+  private parseYearValue(value: unknown): string | null {
+    if (typeof value === "number" && Number.isFinite(value)) {
+      const year = Math.trunc(value);
+      if (year >= 1900 && year <= 2100) {
+        return String(year);
+      }
+    }
+
+    if (typeof value === "string") {
+      const match = value.match(/\b(19|20)\d{2}\b/);
+      if (match) {
+        return match[0] || null;
+      }
+    }
+
+    return null;
+  }
+
+  private extractYearValue(
+    metrics: Record<string, string | number | null>,
+    pathValue: string
+  ): string | null {
+    const directYear = this.parseYearValue(metrics.year);
+    if (directYear) {
+      return directYear;
+    }
+    const directYearRu = this.parseYearValue((metrics as Record<string, unknown>)["год"]);
+    if (directYearRu) {
+      return directYearRu;
+    }
+
+    for (const [key, value] of Object.entries(metrics)) {
+      if (!/year|год/i.test(key)) {
+        continue;
+      }
+      const parsed = this.parseYearValue(value);
+      if (parsed) {
+        return parsed;
+      }
+    }
+
+    const fromPath = this.parseYearValue(pathValue);
+    return fromPath || null;
+  }
+
+  private parseYearFromDate(value: unknown): string | null {
+    if (typeof value === "string") {
+      const fromText = this.parseYearValue(value);
+      if (fromText) {
+        return fromText;
+      }
+      const parsedDate = new Date(value);
+      if (!Number.isNaN(parsedDate.getTime())) {
+        return String(parsedDate.getUTCFullYear());
+      }
+      return null;
+    }
+
+    if (value instanceof Date && !Number.isNaN(value.getTime())) {
+      return String(value.getUTCFullYear());
+    }
+
+    return this.parseYearValue(value);
+  }
+
+  private normalizeSelectedLevels(selectedLevels: string[][], depth: number): string[][] {
+    const result: string[][] = [];
+    for (let level = 0; level < depth; level += 1) {
+      const rawValues = Array.isArray(selectedLevels[level]) ? selectedLevels[level] : [];
+      const normalized = Array.from(
+        new Set(
+          rawValues
+            .map((value) =>
+              this.normalizePath(String(value || ""))
+                .replace(/^\/+|\/+$/g, "")
+                .trim()
+            )
+            .filter(Boolean)
+        )
+      );
+      result[level] = normalized;
+    }
+    return result;
+  }
+
+  private buildGitYearResolverFromGitRows(
+    gitRows: Array<{ runId?: string | null; path: string; date: string }>
+  ): (runId: string | null | undefined, pathValue: string) => string | null {
+    const yearCounts = new Map<string, Map<string, number>>();
+
+    const toKey = (runId: string | null | undefined, pathValue: string) =>
+      `${String(runId || "")}|${this.normalizePath(String(pathValue || "")).replace(/^\/+|\/+$/g, "")}`;
+
+    const addCount = (key: string, year: string) => {
+      const byYear = yearCounts.get(key) || new Map<string, number>();
+      byYear.set(year, (byYear.get(year) || 0) + 1);
+      yearCounts.set(key, byYear);
+    };
+
+    for (const row of gitRows) {
+      const year = this.parseYearFromDate(row.date);
+      if (!year) {
+        continue;
+      }
+
+      const normalizedPath = this.normalizePath(String(row.path || "")).replace(/^\/+|\/+$/g, "");
+      if (!normalizedPath) {
+        continue;
+      }
+
+      const key = toKey(row.runId, normalizedPath);
+      addCount(key, year);
+    }
+
+    const pickMostFrequent = (byYear: Map<string, number>): string | null => {
+      let bestYear: string | null = null;
+      let bestCount = -1;
+      for (const [year, count] of byYear.entries()) {
+        if (count > bestCount) {
+          bestYear = year;
+          bestCount = count;
+        }
+      }
+      return bestYear;
+    };
+
+    return (runId: string | null | undefined, pathValue: string): string | null => {
+      const normalizedPath = this.normalizePath(String(pathValue || "")).replace(/^\/+|\/+$/g, "");
+      if (!normalizedPath) {
+        return null;
+      }
+
+      const direct = yearCounts.get(toKey(runId, normalizedPath));
+      if (direct) {
+        return pickMostFrequent(direct);
+      }
+
+      const segments = normalizedPath.split("/").filter(Boolean);
+      for (let end = segments.length - 1; end >= 1; end -= 1) {
+        const candidatePath = segments.slice(0, end).join("/");
+        const candidate = yearCounts.get(toKey(runId, candidatePath));
+        if (candidate) {
+          return pickMostFrequent(candidate);
+        }
+      }
+
+      return null;
+    };
+  }
+
   private extractRunPath(paths: string[]): string {
     if (!paths.length) {
       return "";
@@ -1177,7 +2109,7 @@ export class AnalysisService implements OnModuleInit {
 
     const normalized = paths
       .map((value) => this.normalizePath(value).replace(/^\/+/, "").trim())
-      .filter(Boolean);
+      .filter((value) => Boolean(value) && value !== ".");
 
     if (!normalized.length) {
       return "";
@@ -1286,28 +2218,56 @@ export class AnalysisService implements OnModuleInit {
     result: AnalysisResponse,
     cacheKey: string | null
   ): Promise<string | null> {
-    if (!result.data?.length) {
+    if (!result.data?.length && !result.gitData?.length) {
       return null;
     }
     const runId = randomUUID();
-    const entities = result.data.map((row) => {
-      const metrics: Record<string, string | number | null> = {};
-      for (const metric of result.metrics) {
-        const value = row[metric];
-        metrics[metric] = value === undefined ? null : (value as string | number | null);
-      }
-      return this.analysisResultRepo.create({
-        userId,
-        runId,
-        direction: result.direction,
-        path: this.normalizePath(String(row.path || "")),
-        cacheKey,
-        groupValue: row.group ?? null,
-        studentValue: row.student ?? null,
-        metrics
+    if (result.data?.length) {
+      const entities = result.data.map((row) => {
+        const metrics: Record<string, string | number | null> = {};
+        for (const metric of result.metrics) {
+          const value = row[metric];
+          metrics[metric] = value === undefined ? null : (value as string | number | null);
+        }
+        return this.analysisResultRepo.create({
+          userId,
+          runId,
+          direction: result.direction,
+          path: this.normalizePath(String(row.path || "")),
+          cacheKey,
+          groupValue: row.group ?? null,
+          studentValue: row.student ?? null,
+          metrics
+        });
       });
-    });
-    await this.analysisResultRepo.save(entities);
+      await this.analysisResultRepo.save(entities);
+    }
+
+    if (result.gitData?.length) {
+      const gitEntities = result.gitData.map((row) =>
+        this.analysisGitResultRepo.create({
+          userId,
+          runId,
+          direction: result.direction,
+          path: this.normalizePath(String(row.path || "")),
+          groupValue: row.group ?? null,
+          studentValue: row.student ?? null,
+          branch: row.branch,
+          hash: row.hash,
+          date: row.date,
+          message: row.message,
+          author: row.author,
+          filename: row.filename,
+          filetype: row.filetype,
+          extraMetadata: row.extraMetadata,
+          changes: row.changes,
+          added: row.added,
+          deleted: row.deleted
+        })
+      );
+      await this.analysisGitResultRepo.save(gitEntities);
+    }
+
     return runId;
   }
 
@@ -1353,7 +2313,8 @@ export class AnalysisService implements OnModuleInit {
       `group=${input.group || ""}`,
       `student=${input.student || ""}`,
       `r=${input.r ? "1" : "0"}`,
-      `depth=${input.depth ?? ""}`
+      `depth=${input.depth ?? ""}`,
+      `includeGitMetrics=${this.resolveIncludeGitMetrics(input.includeGitMetrics) ? "1" : "0"}`
     ].join("|");
 
     if (input.sourceFingerprint) {
@@ -1402,7 +2363,17 @@ export class AnalysisService implements OnModuleInit {
       order: { id: "ASC" }
     });
 
-    if (!rows.length) {
+    const gitRows = await this.analysisGitResultRepo.find({
+      where: {
+        userId,
+        direction,
+        runId: latest.runId
+      },
+      order: { id: "ASC" }
+    });
+    const resolveYearFromGit = this.buildGitYearResolverFromGitRows(gitRows);
+
+    if (!rows.length && !gitRows.length) {
       return null;
     }
 
@@ -1414,7 +2385,25 @@ export class AnalysisService implements OnModuleInit {
         path: row.path,
         group: row.groupValue,
         student: row.studentValue,
+        year:
+          this.extractYearValue(row.metrics, row.path) || resolveYearFromGit(row.runId, row.path),
         ...row.metrics
+      })),
+      gitData: gitRows.map((row) => ({
+        path: row.path,
+        group: row.groupValue,
+        student: row.studentValue,
+        branch: row.branch,
+        hash: row.hash,
+        date: row.date,
+        message: row.message,
+        author: row.author,
+        filename: row.filename,
+        filetype: row.filetype,
+        extraMetadata: row.extraMetadata,
+        changes: row.changes,
+        added: row.added,
+        deleted: row.deleted
       }))
     };
   }
@@ -1550,6 +2539,7 @@ export class AnalysisService implements OnModuleInit {
           student: job.input.student,
           r: job.input.r,
           depth: job.input.depth,
+          includeGitMetrics: job.input.includeGitMetrics,
           onProgress: writeProgress
         });
       }
@@ -1563,6 +2553,7 @@ export class AnalysisService implements OnModuleInit {
         direction: result.direction,
         metrics: result.metrics,
         rowsTotal: result.data.length,
+        gitRowsTotal: result.gitData?.length || 0,
         runId: result.runId || null
       };
       await this.analysisJobRepo.save(entity);
@@ -1645,8 +2636,9 @@ export class AnalysisService implements OnModuleInit {
       requestPayload?.depth === null || requestPayload?.depth === undefined
         ? ""
         : String(requestPayload.depth);
+    const includeGitMetrics = requestPayload?.includeGitMetrics === false ? "0" : "1";
 
-    return `${direction}|metrics=${metrics}|r=${recursive}|depth=${depth}`;
+    return `${direction}|metrics=${metrics}|r=${recursive}|depth=${depth}|git=${includeGitMetrics}`;
   }
 
   private getS3Bucket(): string {

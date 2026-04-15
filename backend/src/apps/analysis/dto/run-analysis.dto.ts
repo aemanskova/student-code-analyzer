@@ -34,10 +34,21 @@ export class RunAnalysisDto {
   @Min(1)
   depth?: number;
 
+  @IsOptional()
+  @IsBoolean()
+  includeGitMetrics?: boolean;
+
   // Internal callback for background job progress. Not intended for request body.
   onAnalyzeProgress?: (
     completed: number,
     total: number,
     currentPath: string
+  ) => Promise<void> | void;
+
+  // Internal callback for git metrics progress. Not intended for request body.
+  onGitProgress?: (
+    completed: number,
+    total: number,
+    currentRepoPath: string
   ) => Promise<void> | void;
 }
