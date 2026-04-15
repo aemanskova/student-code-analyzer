@@ -56,6 +56,7 @@ export interface AnalysisJobResultPayload {
   rowsTotal: number
   gitRowsTotal?: number
   runId: string | null
+  path?: string | null
 }
 
 export interface AnalysisJobStatusResponse {
@@ -86,6 +87,10 @@ export interface AnalysisListItem {
 export interface AnalysisListQuery {
   page: number
   size: number
+  path?: string
+  direction?: Direction
+  dateFrom?: string
+  dateTo?: string
 }
 
 export interface AnalysisListResponse {
@@ -93,6 +98,20 @@ export interface AnalysisListResponse {
   size: number
   total: number
   data: AnalysisListItem[]
+}
+
+export interface DeleteSavedRunResponse {
+  runId: string
+  deletedMetricsRows: number
+  deletedGitRows: number
+}
+
+export interface SavedRunDetailsResponse {
+  runId: string
+  direction: Direction
+  path: string
+  data: SavedResultItem[]
+  gitData: GitAnalysisRow[]
 }
 
 export type RunViewKind = "metrics" | "git"

@@ -1,22 +1,30 @@
 import "@mantine/core/styles.css"
 import "@mantine/charts/styles.css"
 import "@mantine/notifications/styles.css"
+import "@mantine/dates/styles.css"
+import "dayjs/locale/ru"
 
-import { createTheme, type MantineColorsTuple, MantineProvider } from "@mantine/core"
+import {
+  createTheme,
+  localStorageColorSchemeManager,
+  type MantineColorsTuple,
+  MantineProvider
+} from "@mantine/core"
+import { DatesProvider } from "@mantine/dates"
 import { Notifications } from "@mantine/notifications"
 import type { ComponentType } from "react"
 
 const myColor: MantineColorsTuple = [
-  "#f6f4f4",
-  "#e7e7e7",
-  "#cccccc",
-  "#b0b0b0",
-  "#9a9897",
-  "#8e8987",
-  "#88817e",
-  "#766e6b",
-  "#6b615e",
-  "#3b3330"
+  "#f1f4fe",
+  "#e4e6ed",
+  "#c8cad3",
+  "#a9adb9",
+  "#9094a3",
+  "#7f8496",
+  "#777c91",
+  "#63687c",
+  "#595e72",
+  "#4a5167"
 ]
 
 const theme = createTheme({
@@ -37,6 +45,11 @@ const theme = createTheme({
         gap: "md"
       }
     },
+    Group: {
+      defaultProps: {
+        gap: "md"
+      }
+    },
     Grid: {
       defaultProps: {
         gutter: "md"
@@ -46,8 +59,14 @@ const theme = createTheme({
 })
 
 export const withStyles = (WrappedComponent: ComponentType) => () => (
-  <MantineProvider theme={theme}>
-    <Notifications />
-    <WrappedComponent />
+  <MantineProvider
+    colorSchemeManager={localStorageColorSchemeManager({ key: "mantine-color-scheme" })}
+    defaultColorScheme="light"
+    theme={theme}
+  >
+    <DatesProvider settings={{ locale: "ru", firstDayOfWeek: 1 }}>
+      <Notifications />
+      <WrappedComponent />
+    </DatesProvider>
   </MantineProvider>
 )

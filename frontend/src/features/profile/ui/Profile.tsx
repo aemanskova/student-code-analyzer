@@ -20,10 +20,10 @@ export function Profile() {
   return (
     <Stack>
       <Grid>
-        <Grid.Col span={{ base: 12, md: 4 }}>
+        <Grid.Col span={{ base: 12, md: 4 }} style={{ display: "flex" }}>
           <CommonInfo />
         </Grid.Col>
-        <Grid.Col span={{ base: 12, md: 8 }}>
+        <Grid.Col span={{ base: 12, md: 8 }} style={{ display: "flex" }}>
           <ProfileForm />
         </Grid.Col>
       </Grid>

@@ -5,12 +5,12 @@ export const ALL_METRICS_OPTION = "__all__"
 
 export const AXIS_COLOR = "#9ca3af"
 export const GRID_COLOR = "#e5e7eb"
-export const LABEL_COLOR = "#4b5563"
+export const LABEL_COLOR = "var(--app-chart-label-color)"
 export const BAR_FILL = "#88817e"
-export const KDE_STROKE = "#4e79a7"
+export const KDE_STROKE = "var(--app-chart-accent-blue)"
 
 export const BOXEN_COLORS = [
-  "#4e79a7",
+  "var(--app-chart-accent-blue)",
   "#f28e2b",
   "#e15759",
   "#76b7b2",

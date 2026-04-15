@@ -4,11 +4,13 @@ import type {
   AnalysisJobStatusResponse,
   AnalysisListQuery,
   AnalysisListResponse,
+  DeleteSavedRunResponse,
   RunFilterOptionsResponse,
   RunFilterQuery,
   RunS3AsyncRequest,
   RunS3AsyncResponse,
-  RunViewResponse
+  RunViewResponse,
+  SavedRunDetailsResponse
 } from "./types"
 
 const buildFilterQueryParams = (query: RunFilterQuery) => {
@@ -57,11 +59,42 @@ export const analysisApi = baseApi.injectEndpoints({
       providesTags: ["ArchiveResults"]
     }),
     getSavedAnalysisList: build.query<AnalysisListResponse, AnalysisListQuery>({
-      query: ({ page, size }) => ({
-        url: `/analysis/list?page=${encodeURIComponent(String(page))}&size=${encodeURIComponent(String(size))}`,
+      query: ({ page, size, path, direction, dateFrom, dateTo }) => {
+        const params = new URLSearchParams()
+        params.set("page", String(page))
+        params.set("size", String(size))
+        if (path) {
+          params.set("path", path)
+        }
+        if (direction) {
+          params.set("direction", direction)
+        }
+        if (dateFrom) {
+          params.set("dateFrom", dateFrom)
+        }
+        if (dateTo) {
+          params.set("dateTo", dateTo)
+        }
+        return {
+          url: `/analysis/list?${params.toString()}`,
+          method: "GET"
+        }
+      },
+      providesTags: ["ArchiveResults"]
+    }),
+    getSavedResultsByRunId: build.query<SavedRunDetailsResponse, string>({
+      query: (runId) => ({
+        url: `/analysis/results/run/${encodeURIComponent(runId)}`,
         method: "GET"
       }),
       providesTags: ["ArchiveResults"]
+    }),
+    deleteSavedRun: build.mutation<DeleteSavedRunResponse, { runId: string }>({
+      query: ({ runId }) => ({
+        url: `/analysis/results/run/${encodeURIComponent(runId)}`,
+        method: "DELETE"
+      }),
+      invalidatesTags: ["ArchiveResults"]
     })
   })
 })
@@ -71,5 +104,7 @@ export const {
   useGetRunFilterOptionsQuery,
   useGetRunViewQuery,
   useGetSavedAnalysisListQuery,
+  useGetSavedResultsByRunIdQuery,
+  useDeleteSavedRunMutation,
   useRunS3AsyncMutation
 } = analysisApi

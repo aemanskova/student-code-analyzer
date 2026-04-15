@@ -1,6 +1,10 @@
-import { useGetAnalysisJobStatusQuery } from "@entities/analysis/api"
+import {
+  useGetAnalysisJobStatusQuery,
+  useGetSavedResultsByRunIdQuery
+} from "@entities/analysis/api"
 import { AnalysisForm, type AnalysisRunResult } from "@features/analysisForm"
-import { Alert, Card, Container, Progress, Stack, Text, Title } from "@mantine/core"
+import { Alert, Card, Container, Loader, Progress, Stack, Text, Title } from "@mantine/core"
+import { routes } from "@shared/config/routes"
 import { AnalysisResultsWidget } from "@widgets/analysisResults"
 import { useEffect } from "react"
 import { useNavigate, useSearchParams } from "react-router"
@@ -40,6 +44,9 @@ export function AnalysisPage() {
     skip: !jobId || Boolean(runId),
     pollingInterval: 5000
   })
+  const runDetailsQuery = useGetSavedResultsByRunIdQuery(runId, {
+    skip: !runId
+  })
 
   const jobInProgress = jobStatus?.status === "queued" || jobStatus?.status === "running"
   const jobFailed = jobStatus?.status === "failed"
@@ -52,13 +59,49 @@ export function AnalysisPage() {
     if (!nextRunId) {
       return
     }
+    const nextPath = String(jobStatus?.result?.path || "").trim()
+    const nextDirection = String(jobStatus?.result?.direction || "").trim()
+    if (nextPath && nextDirection) {
+      const params = new URLSearchParams()
+      params.set("runId", nextRunId)
+      params.set("direction", nextDirection)
+      navigate(`${routes.archive}/${encodeURIComponent(nextPath)}?${params.toString()}`, {
+        replace: true
+      })
+      return
+    }
+
     const params = new URLSearchParams()
     params.set("runId", nextRunId)
     if (analysisDepth) {
       params.set("depth", String(analysisDepth))
     }
-    navigate(`/analysis?${params.toString()}`, { replace: true })
-  }, [analysisDepth, jobStatus?.result?.runId, jobStatus?.status, navigate])
+    navigate(`${routes.analysis}?${params.toString()}`, { replace: true })
+  }, [
+    analysisDepth,
+    jobStatus?.result?.direction,
+    jobStatus?.result?.path,
+    jobStatus?.result?.runId,
+    jobStatus?.status,
+    navigate
+  ])
+
+  useEffect(() => {
+    if (!runId) {
+      return
+    }
+    const nextPath = String(runDetailsQuery.data?.path || "").trim()
+    const nextDirection = String(runDetailsQuery.data?.direction || "").trim()
+    if (!nextPath || !nextDirection) {
+      return
+    }
+    const params = new URLSearchParams()
+    params.set("runId", runId)
+    params.set("direction", nextDirection)
+    navigate(`${routes.archive}/${encodeURIComponent(nextPath)}?${params.toString()}`, {
+      replace: true
+    })
+  }, [navigate, runDetailsQuery.data?.direction, runDetailsQuery.data?.path, runId])
 
   const handleRunSuccess = (result: AnalysisRunResult) => {
     const params = new URLSearchParams()
@@ -70,17 +113,30 @@ export function AnalysisPage() {
   }
 
   if (runId) {
+    if (runDetailsQuery.isFetching || runDetailsQuery.isLoading) {
+      return (
+        <Container py="md" size="xl">
+          <Card>
+            <Stack align="center" gap="md" py="xl">
+              <Loader size="sm" />
+              <Text c="dimmed" size="sm">
+                Подготавливаем переход к отчету...
+              </Text>
+            </Stack>
+          </Card>
+        </Container>
+      )
+    }
+
     return (
-      <Container size="xl">
-        <Card>
-          <AnalysisResultsWidget analysisDepth={analysisDepth} runId={runId} />
-        </Card>
+      <Container py="md" size="xl">
+        <AnalysisResultsWidget analysisDepth={analysisDepth} runId={runId} />
       </Container>
     )
   }
 
   return (
-    <Container size="xl">
+    <Container py="md" size="xl">
       <Stack>
         <Card>
           <Stack>
@@ -91,7 +147,7 @@ export function AnalysisPage() {
 
         {jobId ? (
           <Card>
-            <Stack gap="sm">
+            <Stack gap="md">
               <Title order={4}>Статус анализа</Title>
               <Text>Этап: {getUserStageTitle(jobStatus?.status, jobStatus?.stage)}</Text>
               <Progress value={jobStatus?.progressPercent ?? 0} />

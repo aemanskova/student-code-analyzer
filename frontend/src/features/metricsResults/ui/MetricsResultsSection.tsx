@@ -50,14 +50,14 @@ export function MetricsResultsSection({ runId, analysisDepth, selectedLevels }: 
             </Tabs.Tab>
           </Tabs.List>
           <Tabs.Panel pt="md" value="charts">
-            <Stack gap="sm">
+            <Stack gap="md">
               <Skeleton h={22} radius="sm" w={260} />
               <Skeleton h={280} radius="md" />
               <Skeleton h={280} radius="md" />
             </Stack>
           </Tabs.Panel>
           <Tabs.Panel pt="md" value="table">
-            <Stack gap="sm">
+            <Stack gap="md">
               <Skeleton h={52} radius="sm" />
               <Skeleton h={320} radius="md" />
             </Stack>

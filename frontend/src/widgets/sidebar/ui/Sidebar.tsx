@@ -13,7 +13,7 @@ type Props = {
 export function Sidebar({ links }: Props) {
   return (
     <Stack h="100%">
-      <Stack gap="xs">
+      <Stack gap="md">
         {links.map((link) => (
           <NavLink
             key={link.to}
@@ -23,7 +23,19 @@ export function Sidebar({ links }: Props) {
             styles={{
               root: {
                 border: "none",
-                borderRadius: 10
+                borderRadius: 10,
+                color: "inherit"
+              },
+              label: {
+                color: "inherit"
+              },
+              section: {
+                color: "inherit"
+              }
+            }}
+            sx={{
+              "&[data-active]": {
+                color: "inherit"
               }
             }}
             to={link.to}

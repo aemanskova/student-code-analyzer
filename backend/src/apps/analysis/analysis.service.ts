@@ -1251,7 +1251,17 @@ export class AnalysisService implements OnModuleInit {
     };
   }
 
-  async getSavedAnalysisList(userId: number, page: number, size: number) {
+  async getSavedAnalysisList(
+    userId: number,
+    page: number,
+    size: number,
+    filters?: {
+      path?: string;
+      direction?: string;
+      dateFrom?: Date;
+      dateTo?: Date;
+    }
+  ) {
     const rows = await this.analysisResultRepo.find({
       where: { userId },
       order: { createdAt: "DESC", id: "DESC" }
@@ -1279,7 +1289,7 @@ export class AnalysisService implements OnModuleInit {
       }
     }
 
-    const list = Array.from(byRun.values())
+    let list = Array.from(byRun.values())
       .map((run) => ({
         runId: run.runId,
         path: this.extractRunPath(run.paths),
@@ -1287,6 +1297,41 @@ export class AnalysisService implements OnModuleInit {
         direction: run.direction
       }))
       .sort((a, b) => b.date.localeCompare(a.date));
+
+    const normalizedDirection = String(filters?.direction || "")
+      .trim()
+      .toLowerCase();
+    const normalizedPath = this.normalizePath(String(filters?.path || "").trim()).toLowerCase();
+    const dateFromMs = filters?.dateFrom ? filters.dateFrom.getTime() : null;
+    const dateToMs = filters?.dateTo ? filters.dateTo.getTime() : null;
+
+    if (normalizedDirection) {
+      list = list.filter(
+        (item) =>
+          String(item.direction || "")
+            .trim()
+            .toLowerCase() === normalizedDirection
+      );
+    }
+    if (normalizedPath) {
+      list = list.filter((item) =>
+        this.normalizePath(String(item.path || ""))
+          .toLowerCase()
+          .includes(normalizedPath)
+      );
+    }
+    if (dateFromMs !== null) {
+      list = list.filter((item) => {
+        const timestamp = new Date(item.date).getTime();
+        return Number.isFinite(timestamp) && timestamp >= dateFromMs;
+      });
+    }
+    if (dateToMs !== null) {
+      list = list.filter((item) => {
+        const timestamp = new Date(item.date).getTime();
+        return Number.isFinite(timestamp) && timestamp <= dateToMs;
+      });
+    }
 
     const total = list.length;
     const start = (page - 1) * size;
@@ -1297,6 +1342,38 @@ export class AnalysisService implements OnModuleInit {
       size,
       total,
       data
+    };
+  }
+
+  async deleteSavedRun(userId: number, runId: string) {
+    const normalizedRunId = String(runId || "").trim();
+    if (!normalizedRunId) {
+      throw new BadRequestException("runId path parameter is required");
+    }
+
+    const runExistsInMetrics = await this.analysisResultRepo.exist({
+      where: { userId, runId: normalizedRunId }
+    });
+    const runExistsInGit = await this.analysisGitResultRepo.exist({
+      where: { userId, runId: normalizedRunId }
+    });
+    if (!runExistsInMetrics && !runExistsInGit) {
+      throw new NotFoundException("Результаты запуска не найдены");
+    }
+
+    const metricsDeleteResult = await this.analysisResultRepo.delete({
+      userId,
+      runId: normalizedRunId
+    });
+    const gitDeleteResult = await this.analysisGitResultRepo.delete({
+      userId,
+      runId: normalizedRunId
+    });
+
+    return {
+      runId: normalizedRunId,
+      deletedMetricsRows: metricsDeleteResult.affected || 0,
+      deletedGitRows: gitDeleteResult.affected || 0
     };
   }
 
@@ -1368,44 +1445,55 @@ export class AnalysisService implements OnModuleInit {
 
   private async findGitRepos(rootPath: string): Promise<string[]> {
     const repos: string[] = [];
+    const pending: string[] = [rootPath];
 
-    const walk = async (currentPath: string): Promise<void> => {
+    while (pending.length > 0) {
+      const currentPath = pending.pop();
+      if (!currentPath) {
+        continue;
+      }
+
       let entries: Array<{ name: string; isDirectory: () => boolean }>;
       try {
         entries = (await fs.readdir(currentPath, {
           withFileTypes: true
         })) as Array<{ name: string; isDirectory: () => boolean }>;
       } catch {
-        return;
+        continue;
+      }
+
+      let hasGitDir = false;
+      for (const entry of entries) {
+        if (entry.isDirectory() && entry.name === ".git") {
+          hasGitDir = true;
+          break;
+        }
+      }
+
+      if (hasGitDir) {
+        try {
+          await this.runGit(["rev-parse", "--is-inside-work-tree"], currentPath);
+          repos.push(currentPath);
+        } catch {
+          // Not a valid repository.
+        }
+        continue;
       }
 
       for (const entry of entries) {
         if (!entry.isDirectory()) {
           continue;
         }
-
-        if (entry.name === ".git") {
-          try {
-            await this.runGit(["rev-parse", "--is-inside-work-tree"], currentPath);
-            repos.push(currentPath);
-          } catch {
-            // Not a valid repository.
-          }
-          return;
-        }
-
-        if (entry.name.startsWith(".") && entry.name !== ".git") {
+        if (entry.name.startsWith(".")) {
           continue;
         }
         if (this.ignoredDirNames.has(entry.name)) {
           continue;
         }
-
-        await walk(path.join(currentPath, entry.name));
+        pending.push(path.join(currentPath, entry.name));
       }
-    };
+    }
 
-    await walk(rootPath);
     repos.sort((a, b) => a.localeCompare(b));
     return repos;
   }
@@ -1437,7 +1525,7 @@ export class AnalysisService implements OnModuleInit {
           branch,
           "--numstat",
           "--date=iso-strict",
-          "--format=%H%x1f%an%x1f%aI%x1f%s%x1f%P%x1e"
+          "--format=%x1e%H%x1f%an%x1f%aI%x1f%s%x1f%P"
         ],
         repoPath
       );
@@ -1449,7 +1537,7 @@ export class AnalysisService implements OnModuleInit {
       for (const block of commitBlocks) {
         const lines = block
           .split("\n")
-          .map((line) => line.trim())
+          .map((line) => line.trimEnd())
           .filter(Boolean);
         if (!lines.length) {
           continue;
@@ -1457,7 +1545,10 @@ export class AnalysisService implements OnModuleInit {
 
         const header = lines[0] || "";
         const [fullHash, author, isoDate, message, parentField] = header.split("\x1f");
-        if (!fullHash) {
+        if (!fullHash || !/^[0-9a-f]{40}$/i.test(fullHash)) {
+          continue;
+        }
+        if (!isoDate) {
           continue;
         }
         const shortHash = fullHash.slice(0, 8);
@@ -1499,7 +1590,7 @@ export class AnalysisService implements OnModuleInit {
             student: parsedRepoPath.student,
             branch,
             hash: shortHash,
-            date: isoDate || new Date().toISOString(),
+            date: isoDate,
             message: (message || "").replace(/\n/g, " "),
             author: author || "",
             filename,
@@ -2554,7 +2645,11 @@ export class AnalysisService implements OnModuleInit {
         metrics: result.metrics,
         rowsTotal: result.data.length,
         gitRowsTotal: result.gitData?.length || 0,
-        runId: result.runId || null
+        runId: result.runId || null,
+        path: this.extractRunPath([
+          ...result.data.map((row) => this.normalizeResultPath(String(row.path || ""))),
+          ...(result.gitData || []).map((row) => this.normalizeResultPath(String(row.path || "")))
+        ])
       };
       await this.analysisJobRepo.save(entity);
       if ("onSuccess" in job && job.onSuccess) {

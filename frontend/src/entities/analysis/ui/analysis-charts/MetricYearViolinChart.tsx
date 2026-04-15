@@ -203,9 +203,9 @@ export const MetricYearViolinChart = ({ rows, metric, analysisDepth, gitYearReso
           </text>
         </g>
       </svg>
-      <Group gap={10} mt={6} wrap="wrap">
+      <Group gap="md" mt={6} wrap="wrap">
         {specialties.map((specialty, index) => (
-          <Group key={specialty} gap={6}>
+          <Group key={specialty} gap="md">
             <Box
               h={8}
               w={14}

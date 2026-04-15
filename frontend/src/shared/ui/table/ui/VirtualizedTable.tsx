@@ -16,6 +16,8 @@ type Props<T> = {
   getRowKey: (row: T, index: number) => string
   maxHeight: number
   minTableWidth?: number
+  fullWidth?: boolean
+  disableVerticalScroll?: boolean
   rowHeight?: number
   overscan?: number
 }
@@ -26,6 +28,8 @@ export function VirtualizedTable<T>({
   getRowKey,
   maxHeight,
   minTableWidth,
+  fullWidth = false,
+  disableVerticalScroll = false,
   rowHeight = 42,
   overscan = 120
 }: Props<T>) {
@@ -41,7 +45,7 @@ export function VirtualizedTable<T>({
       style={{
         ...props.style,
         overflowX: "auto",
-        overflowY: "auto"
+        overflowY: disableVerticalScroll ? "hidden" : "auto"
       }}
     />
   ))
@@ -54,9 +58,9 @@ export function VirtualizedTable<T>({
         ...props.style,
         borderCollapse: "separate",
         borderSpacing: 0,
-        minWidth: computedMinWidth,
-        tableLayout: "fixed",
-        width: "max-content"
+        minWidth: fullWidth ? undefined : computedMinWidth,
+        tableLayout: fullWidth ? "auto" : "fixed",
+        width: fullWidth ? "100%" : "max-content"
       }}
     />
   )
@@ -74,7 +78,14 @@ export function VirtualizedTable<T>({
         fixedHeaderContent={() => (
           <tr>
             {columns.map((column) => (
-              <th key={column.key} style={{ ...HEAD_CELL_STYLE, minWidth: column.minWidth || 140 }}>
+              <th
+                key={column.key}
+                style={{
+                  ...HEAD_CELL_STYLE,
+                  minWidth: column.minWidth || 140,
+                  ...(fullWidth ? {} : { width: column.minWidth || 140 })
+                }}
+              >
                 {column.title}
               </th>
             ))}
@@ -82,7 +93,14 @@ export function VirtualizedTable<T>({
         )}
         itemContent={(index, row) =>
           columns.map((column) => (
-            <td key={column.key} style={{ ...CELL_STYLE, minWidth: column.minWidth || 140 }}>
+            <td
+              key={column.key}
+              style={{
+                ...CELL_STYLE,
+                minWidth: column.minWidth || 140,
+                ...(fullWidth ? {} : { width: column.minWidth || 140 })
+              }}
+            >
               {column.render(row, index)}
             </td>
           ))

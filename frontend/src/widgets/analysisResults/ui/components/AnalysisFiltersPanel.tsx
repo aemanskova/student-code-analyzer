@@ -33,7 +33,7 @@ export const AnalysisFiltersPanel = ({
     <Grid align="stretch" gutter="md">
       <Grid.Col span={{ base: 12, md: 8 }}>
         <Card>
-          <Stack gap="xs">
+          <Stack gap="md">
             <Title order={3}>Аналитический отчет</Title>
 
             {levels.length > 0 ? (
@@ -97,7 +97,7 @@ export const AnalysisFiltersPanel = ({
 
       <Grid.Col span={{ base: 12, md: 4 }}>
         <Card p="md">
-          <Stack gap={6}>
+          <Stack gap="md">
             <Text c="dimmed" size="sm">
               Параметры среза
             </Text>

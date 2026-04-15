@@ -3,11 +3,12 @@ import { AnalysisPage } from "@pages/analysis"
 import { ArchivePage } from "@pages/archive"
 import { ArchiveDetailsPage } from "@pages/archive-details"
 import { LoginPage } from "@pages/login"
+import { MainPage } from "@pages/main"
 import { NotFoundPage } from "@pages/not-found"
 import { ProfilePage } from "@pages/profile"
 import { routes } from "@shared/config/routes"
 import { withProtection } from "@shared/lib"
-import { Navigate, Route, Routes } from "react-router"
+import { Route, Routes } from "react-router"
 
 const ProtectedAnalysisPage = withProtection(AnalysisPage)
 const ProtectedArchivePage = withProtection(ArchivePage)
@@ -18,7 +19,7 @@ export function Router() {
   return (
     <Routes>
       <Route path={routes.home} element={<App />}>
-        <Route index element={<Navigate replace to={routes.analysis} />} />
+        <Route index element={<MainPage />} />
         <Route path={routes.login} element={<LoginPage />} />
         <Route path={routes.profile} element={<ProtectedProfilePage />} />
         <Route path={routes.analysis} element={<ProtectedAnalysisPage />} />

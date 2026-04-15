@@ -7,7 +7,7 @@ type Props = {
 
 export const ChartCard = ({ title, children }: Props) => (
   <Card withBorder>
-    <Stack gap="xs">
+    <Stack gap="md">
       <Text fw={600} size="sm">
         {title}
       </Text>

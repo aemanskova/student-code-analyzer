@@ -1,5 +1,5 @@
 import type { GitAnalysisRow } from "@entities/analysis/api"
-import { Grid, MultiSelect, Select, Stack } from "@mantine/core"
+import { Grid, MultiSelect, Select, Stack, useMantineColorScheme } from "@mantine/core"
 import { useMemo, useState } from "react"
 
 import {
@@ -8,7 +8,13 @@ import {
   type GitScatterMetricKey,
   HISTO_CHARTS
 } from "../model/chartConfig"
-import { ALL_GIT_METRICS_OPTION, BOXPLOT_METRICS, HISTO_METRICS } from "../model/constants"
+import {
+  ALL_GIT_METRICS_OPTION,
+  BOXPLOT_METRICS,
+  GIT_PATH_COLORS_DARK,
+  GIT_PATH_COLORS_LIGHT,
+  HISTO_METRICS
+} from "../model/constants"
 import { buildGitChartsDataset, getPathColorMap } from "../model/gitCharts"
 import { useGitMetricSelection } from "../model/useGitMetricSelection"
 import { ChartCard, HorizontalBarChart, MetricGroupsBoxPlot, ScatterChart } from "./components"
@@ -20,6 +26,7 @@ type Props = {
 
 export function GitChartsSection({ rows, analysisDepth }: Props) {
   const [chartMode, setChartMode] = useState<"boxplot" | "histo">("histo")
+  const { colorScheme } = useMantineColorScheme()
   const chartData = useMemo(() => buildGitChartsDataset(rows), [rows])
   const availableMetrics = useMemo(
     () => (chartMode === "boxplot" ? BOXPLOT_METRICS : HISTO_METRICS),
@@ -45,8 +52,9 @@ export function GitChartsSection({ rows, analysisDepth }: Props) {
       ...chartData.commitsVsChurn,
       ...chartData.commitsVsChurnPct
     ]
-    return getPathColorMap(chartRows, analysisDepth)
-  }, [analysisDepth, chartData])
+    const palette = colorScheme === "dark" ? GIT_PATH_COLORS_DARK : GIT_PATH_COLORS_LIGHT
+    return getPathColorMap(chartRows, analysisDepth, palette)
+  }, [analysisDepth, chartData, colorScheme])
 
   if (!rows.length) {
     return null
@@ -59,7 +67,7 @@ export function GitChartsSection({ rows, analysisDepth }: Props) {
 
   return (
     <Stack gap="md">
-      <Stack gap="sm">
+      <Stack gap="md">
         <Select
           data={[
             { value: "histo", label: "Гисто/точечные" },
