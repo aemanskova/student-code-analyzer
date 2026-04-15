@@ -7,6 +7,25 @@ export interface AnalysisRow {
   [key: string]: string | number | null
 }
 
+export interface GitAnalysisRow {
+  runId?: string
+  createdAt?: string
+  path: string
+  group: string | null
+  student: string | null
+  branch: string
+  hash: string
+  date: string
+  message: string
+  author: string
+  filename: string
+  filetype: "binary" | "text"
+  extraMetadata: string
+  changes: string
+  added: number
+  deleted: number
+}
+
 export interface SavedResultItem {
   runId: string
   createdAt: string
@@ -16,25 +35,13 @@ export interface SavedResultItem {
   [key: string]: string | number | null
 }
 
-export interface SavedResultsResponse {
-  direction: string
-  path: string
-  data: SavedResultItem[]
-}
-
-export interface SavedRunResultsResponse {
-  runId: string
-  direction: string
-  path: string
-  data: SavedResultItem[]
-}
-
 export interface RunS3AsyncRequest {
   key: string
   direction: Direction
   metrics?: string[]
   r?: boolean
   depth?: number
+  includeGitMetrics?: boolean
 }
 
 export interface RunS3AsyncResponse {
@@ -47,6 +54,7 @@ export interface AnalysisJobResultPayload {
   direction: Direction
   metrics: string[]
   rowsTotal: number
+  gitRowsTotal?: number
   runId: string | null
 }
 
@@ -68,12 +76,8 @@ export interface AnalysisJobStatusResponse {
   finishedAt: string | null
 }
 
-export interface SavedResultsQuery {
-  path: string
-  direction: Direction
-}
-
 export interface AnalysisListItem {
+  runId: string
   path: string
   date: string
   direction: Direction
@@ -90,3 +94,47 @@ export interface AnalysisListResponse {
   total: number
   data: AnalysisListItem[]
 }
+
+export type RunViewKind = "metrics" | "git"
+
+export interface RunFilterQuery {
+  runId: string
+  kind: RunViewKind
+  depth?: number
+  selectedLevels?: string[][]
+}
+
+export interface RunFilterLevelOptions {
+  level: number
+  multi: boolean
+  options: string[]
+}
+
+export interface RunFilterOptionsResponse {
+  runId: string
+  kind: RunViewKind
+  depth: number
+  selectedLevels: string[][]
+  levels: RunFilterLevelOptions[]
+  paths: string[]
+}
+
+export interface RunMetricsViewResponse {
+  runId: string
+  kind: "metrics"
+  depth: number
+  selectedLevels: string[][]
+  metrics: string[]
+  rows: SavedResultItem[]
+  gitRows: GitAnalysisRow[]
+}
+
+export interface RunGitViewResponse {
+  runId: string
+  kind: "git"
+  depth: number
+  selectedLevels: string[][]
+  rows: GitAnalysisRow[]
+}
+
+export type RunViewResponse = RunMetricsViewResponse | RunGitViewResponse

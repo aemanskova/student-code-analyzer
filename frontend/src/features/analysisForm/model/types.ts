@@ -6,6 +6,7 @@ export interface AnalysisFormValues {
   metrics: string[]
   recursive: boolean
   depth?: number
+  includeGitMetrics: boolean
 }
 
 export interface AnalysisRunResult {

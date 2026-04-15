@@ -12,10 +12,23 @@ type Props = {
 
 export function Sidebar({ links }: Props) {
   return (
-    <Stack gap="lg" h="100%">
+    <Stack h="100%">
       <Stack gap="xs">
         {links.map((link) => (
-          <NavLink key={link.to} component={RouterNavLink} end label={link.label} to={link.to} />
+          <NavLink
+            key={link.to}
+            component={RouterNavLink}
+            end
+            label={link.label}
+            styles={{
+              root: {
+                border: "none",
+                borderRadius: 10
+              }
+            }}
+            to={link.to}
+            variant="subtle"
+          />
         ))}
       </Stack>
     </Stack>

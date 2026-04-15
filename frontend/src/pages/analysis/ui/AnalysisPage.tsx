@@ -1,11 +1,9 @@
-import { AnalysisCharts, AnalysisTable } from "@entities/analysis"
-import {
-  useGetAnalysisJobStatusQuery,
-  useGetSavedResultsByRunIdQuery
-} from "@entities/analysis/api"
+import { useGetAnalysisJobStatusQuery } from "@entities/analysis/api"
 import { AnalysisForm, type AnalysisRunResult } from "@features/analysisForm"
-import { Alert, Button, Card, Container, Group, Progress, Stack, Text, Title } from "@mantine/core"
-import { useMemo, useState } from "react"
+import { Alert, Card, Container, Progress, Stack, Text, Title } from "@mantine/core"
+import { AnalysisResultsWidget } from "@widgets/analysisResults"
+import { useEffect } from "react"
+import { useNavigate, useSearchParams } from "react-router"
 
 const getUserStageTitle = (
   status: string | null | undefined,
@@ -29,83 +27,70 @@ const getUserStageTitle = (
   return "Подготовка к запуску"
 }
 
-const toCsv = (rows: Array<Record<string, unknown>>, metrics: string[]): string => {
-  const headers = ["path", ...metrics]
-  const csvRows = [headers.join(";")]
-
-  for (const row of rows) {
-    const values = [
-      String(row.path || ""),
-      ...metrics.map((metric) => {
-        const value = row[metric]
-        if (value === null || value === undefined) {
-          return ""
-        }
-        const text = String(value)
-        if (/[;"\n]/.test(text)) {
-          return `"${text.replace(/"/g, '""')}"`
-        }
-        return text
-      })
-    ]
-    csvRows.push(values.join(";"))
-  }
-
-  return `${csvRows.join("\n")}\n`
-}
-
 export function AnalysisPage() {
-  const [startedRun, setStartedRun] = useState<AnalysisRunResult | null>(null)
-  const jobId = startedRun?.response.jobId || ""
+  const [searchParams] = useSearchParams()
+  const navigate = useNavigate()
+
+  const runId = String(searchParams.get("runId") || "").trim()
+  const jobId = String(searchParams.get("jobId") || "").trim()
+  const rawDepth = Number(searchParams.get("depth") || "")
+  const analysisDepth = Number.isFinite(rawDepth) && rawDepth > 0 ? rawDepth : undefined
 
   const { data: jobStatus } = useGetAnalysisJobStatusQuery(jobId, {
-    skip: !jobId,
+    skip: !jobId || Boolean(runId),
     pollingInterval: 5000
   })
-  const runId = jobStatus?.result?.runId || ""
-
-  const { data: runResults, error: runResultsError } = useGetSavedResultsByRunIdQuery(runId, {
-    skip: !runId
-  })
-
-  const metrics = useMemo(() => {
-    return jobStatus?.result?.metrics || []
-  }, [jobStatus])
-
-  const rows = useMemo(() => {
-    return runResults?.data || []
-  }, [runResults])
-
-  const handleCsvDownload = () => {
-    if (!rows.length || !metrics.length) {
-      return
-    }
-    const csv = toCsv(rows as Array<Record<string, unknown>>, metrics)
-    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" })
-    const url = URL.createObjectURL(blob)
-    const link = document.createElement("a")
-    link.href = url
-    link.download = `analysis_${Date.now()}.csv`
-    link.click()
-    URL.revokeObjectURL(url)
-  }
 
   const jobInProgress = jobStatus?.status === "queued" || jobStatus?.status === "running"
   const jobFailed = jobStatus?.status === "failed"
-  const jobDone = jobStatus?.status === "success"
+
+  useEffect(() => {
+    if (jobStatus?.status !== "success") {
+      return
+    }
+    const nextRunId = String(jobStatus?.result?.runId || "").trim()
+    if (!nextRunId) {
+      return
+    }
+    const params = new URLSearchParams()
+    params.set("runId", nextRunId)
+    if (analysisDepth) {
+      params.set("depth", String(analysisDepth))
+    }
+    navigate(`/analysis?${params.toString()}`, { replace: true })
+  }, [analysisDepth, jobStatus?.result?.runId, jobStatus?.status, navigate])
+
+  const handleRunSuccess = (result: AnalysisRunResult) => {
+    const params = new URLSearchParams()
+    params.set("jobId", result.response.jobId)
+    if (result.request.depth) {
+      params.set("depth", String(result.request.depth))
+    }
+    navigate(`/analysis?${params.toString()}`)
+  }
+
+  if (runId) {
+    return (
+      <Container size="xl">
+        <Card>
+          <AnalysisResultsWidget analysisDepth={analysisDepth} runId={runId} />
+        </Card>
+      </Container>
+    )
+  }
 
   return (
     <Container size="xl">
-      <Stack gap="lg">
-        <Card p="lg" radius="md">
+      <Stack>
+        <Card>
           <Stack>
             <Title order={3}>Анализ студенческих работ</Title>
-            <AnalysisForm onSuccess={setStartedRun} />
+            <AnalysisForm onSuccess={handleRunSuccess} />
           </Stack>
         </Card>
 
         {jobId ? (
-          <Card p="lg" radius="md">
+          <Card>
             <Stack gap="sm">
               <Title order={4}>Статус анализа</Title>
               <Text>Этап: {getUserStageTitle(jobStatus?.status, jobStatus?.stage)}</Text>
@@ -113,44 +98,20 @@ export function AnalysisPage() {
               <Text c="dimmed" size="xs">
                 {jobStatus?.progressPercent ?? 0}%
               </Text>
-              {jobFailed && (
+              {jobFailed ? (
                 <Alert color="red">
                   {jobStatus?.errorMessage || "Не удалось завершить анализ. Попробуйте снова."}
                 </Alert>
-              )}
+              ) : null}
             </Stack>
           </Card>
         ) : null}
 
-        {jobDone && (
-          <Card p="lg" radius="md">
-            <Stack gap="md">
-              <Group justify="space-between">
-                <Title order={4}>Результаты анализа</Title>
-                <Button onClick={handleCsvDownload}>Скачать CSV</Button>
-              </Group>
-              {runResultsError && (
-                <Alert color="red">Не удалось загрузить результаты завершенного запуска</Alert>
-              )}
-              {rows.length > 0 ? (
-                <>
-                  <AnalysisCharts rows={rows} />
-                  <AnalysisTable metrics={metrics} rows={rows} />
-                </>
-              ) : (
-                <Text c="dimmed">
-                  Результаты пока не готовы или запуск не содержит строк для выбранных метрик.
-                </Text>
-              )}
-            </Stack>
-          </Card>
-        )}
-
-        {jobInProgress && (
+        {jobInProgress ? (
           <Alert color="blue">
             Анализ выполняется в фоне. Страница обновляет статус автоматически.
           </Alert>
-        )}
+        ) : null}
       </Stack>
     </Container>
   )

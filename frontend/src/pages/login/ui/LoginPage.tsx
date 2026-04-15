@@ -4,7 +4,7 @@ import { Card, Container } from "@mantine/core"
 export function LoginPage() {
   return (
     <Container size="lg">
-      <Card p="xl" radius="md">
+      <Card>
         <LoginForm />
       </Card>
     </Container>

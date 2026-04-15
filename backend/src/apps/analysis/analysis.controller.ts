@@ -38,7 +38,8 @@ export class AnalysisController {
       group: body.group ? String(body.group) : undefined,
       student: body.student ? String(body.student) : undefined,
       r: this.parseBoolean(body.r),
-      depth: this.parseNumber(body.depth)
+      depth: this.parseNumber(body.depth),
+      includeGitMetrics: this.parseBoolean(body.includeGitMetrics) ?? true
     });
   }
 
@@ -53,6 +54,23 @@ export class AnalysisController {
       throw new UnauthorizedException("Invalid token payload");
     }
     return this.analysisService.getAnalysisJobStatus(userId, String(jobId || ""));
+  }
+
+  @Get("jobs")
+  @ApiOperation({ summary: "Список фоновых задач анализа" })
+  async getAnalysisJobs(
+    @Query("status") statusValue: string | undefined,
+    @Query("limit") limitValue: string | undefined,
+    @Req() req: { user?: { sub?: number | string } }
+  ) {
+    const userId = Number(req.user?.sub);
+    if (!Number.isFinite(userId) || userId <= 0) {
+      throw new UnauthorizedException("Invalid token payload");
+    }
+
+    const statuses = this.parseJobStatuses(statusValue);
+    const limit = this.parsePaginationValue(limitValue, 100);
+    return this.analysisService.getAnalysisJobs(userId, statuses, limit);
   }
 
   @Get("results")
@@ -80,6 +98,42 @@ export class AnalysisController {
       throw new UnauthorizedException("Invalid token payload");
     }
     return this.analysisService.getSavedResultsByRunId(userId, runId);
+  }
+
+  @Get("results/run/:runId/select-options")
+  @ApiOperation({ summary: "Получить справочники селектов для фильтрации результатов runId" })
+  async getRunSelectOptions(
+    @Param("runId") runId: string,
+    @Query() query: Record<string, unknown>,
+    @Req() req: { user?: { sub?: number | string } }
+  ) {
+    const userId = Number(req.user?.sub);
+    if (!Number.isFinite(userId) || userId <= 0) {
+      throw new UnauthorizedException("Invalid token payload");
+    }
+    return this.analysisService.getRunFilterOptions(userId, runId, {
+      kind: this.parseFilterKind(query.kind),
+      depth: this.parseNumber(query.depth),
+      selectedLevels: this.parseSelectedLevels(query)
+    });
+  }
+
+  @Get("results/run/:runId/view")
+  @ApiOperation({ summary: "Получить данные для графиков и таблиц runId по фильтрам" })
+  async getRunView(
+    @Param("runId") runId: string,
+    @Query() query: Record<string, unknown>,
+    @Req() req: { user?: { sub?: number | string } }
+  ) {
+    const userId = Number(req.user?.sub);
+    if (!Number.isFinite(userId) || userId <= 0) {
+      throw new UnauthorizedException("Invalid token payload");
+    }
+    return this.analysisService.getRunView(userId, runId, {
+      kind: this.parseFilterKind(query.kind),
+      depth: this.parseNumber(query.depth),
+      selectedLevels: this.parseSelectedLevels(query)
+    });
   }
 
   @Get("list")
@@ -154,5 +208,50 @@ export class AnalysisController {
     }
     const intValue = Math.trunc(parsed);
     return intValue > 0 ? intValue : defaultValue;
+  }
+
+  private parseJobStatuses(value: unknown): Array<"queued" | "running" | "success" | "failed"> {
+    if (value === undefined || value === null || value === "") {
+      return ["queued", "running"];
+    }
+
+    const allowed = new Set(["queued", "running", "success", "failed"]);
+    const parsed = String(value)
+      .split(",")
+      .map((item) => item.trim().toLowerCase())
+      .filter((item) => allowed.has(item));
+
+    return parsed as Array<"queued" | "running" | "success" | "failed">;
+  }
+
+  private parseFilterKind(value: unknown): "metrics" | "git" {
+    const text = String(value || "")
+      .trim()
+      .toLowerCase();
+    return text === "git" ? "git" : "metrics";
+  }
+
+  private parseSelectedLevels(query: Record<string, unknown>): string[][] {
+    const selected: string[][] = [];
+
+    for (const [key, value] of Object.entries(query || {})) {
+      const match = key.match(/^level(\d+)$/i);
+      if (!match) {
+        continue;
+      }
+      const level = Number(match[1] || 0);
+      if (!Number.isFinite(level) || level < 1 || level > 12) {
+        continue;
+      }
+
+      const rawText = Array.isArray(value) ? value.join(",") : String(value || "");
+      const values = rawText
+        .split(",")
+        .map((part) => part.trim())
+        .filter(Boolean);
+      selected[level - 1] = values;
+    }
+
+    return selected;
   }
 }

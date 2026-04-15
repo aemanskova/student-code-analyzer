@@ -4,12 +4,27 @@ import type {
   AnalysisJobStatusResponse,
   AnalysisListQuery,
   AnalysisListResponse,
+  RunFilterOptionsResponse,
+  RunFilterQuery,
   RunS3AsyncRequest,
   RunS3AsyncResponse,
-  SavedResultsQuery,
-  SavedResultsResponse,
-  SavedRunResultsResponse
+  RunViewResponse
 } from "./types"
+
+const buildFilterQueryParams = (query: RunFilterQuery) => {
+  const params = new URLSearchParams()
+  params.set("kind", query.kind)
+  if (typeof query.depth === "number") {
+    params.set("depth", String(query.depth))
+  }
+  ;(query.selectedLevels || []).forEach((values, index) => {
+    if (!values || !values.length) {
+      return
+    }
+    params.set(`level${index + 1}`, values.join(","))
+  })
+  return params.toString()
+}
 
 export const analysisApi = baseApi.injectEndpoints({
   endpoints: (build) => ({
@@ -27,16 +42,16 @@ export const analysisApi = baseApi.injectEndpoints({
         method: "GET"
       })
     }),
-    getSavedResults: build.query<SavedResultsResponse, SavedResultsQuery>({
-      query: ({ path, direction }) => ({
-        url: `/analysis/results?path=${encodeURIComponent(path)}&direction=${encodeURIComponent(direction)}`,
+    getRunFilterOptions: build.query<RunFilterOptionsResponse, RunFilterQuery>({
+      query: (query) => ({
+        url: `/analysis/results/run/${encodeURIComponent(query.runId)}/select-options?${buildFilterQueryParams(query)}`,
         method: "GET"
       }),
       providesTags: ["ArchiveResults"]
     }),
-    getSavedResultsByRunId: build.query<SavedRunResultsResponse, string>({
-      query: (runId) => ({
-        url: `/analysis/results/run/${encodeURIComponent(runId)}`,
+    getRunView: build.query<RunViewResponse, RunFilterQuery>({
+      query: (query) => ({
+        url: `/analysis/results/run/${encodeURIComponent(query.runId)}/view?${buildFilterQueryParams(query)}`,
         method: "GET"
       }),
       providesTags: ["ArchiveResults"]
@@ -53,8 +68,8 @@ export const analysisApi = baseApi.injectEndpoints({
 
 export const {
   useGetAnalysisJobStatusQuery,
+  useGetRunFilterOptionsQuery,
+  useGetRunViewQuery,
   useGetSavedAnalysisListQuery,
-  useGetSavedResultsByRunIdQuery,
-  useGetSavedResultsQuery,
   useRunS3AsyncMutation
 } = analysisApi

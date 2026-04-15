@@ -1,7 +1,7 @@
-import { createListenerMiddleware, isRejectedWithValue, type Middleware } from "@reduxjs/toolkit"
 import { notifications } from "@mantine/notifications"
-import { isPlainObject } from "@shared/lib"
 import { XIcon } from "@phosphor-icons/react"
+import { createListenerMiddleware, isRejectedWithValue, type Middleware } from "@reduxjs/toolkit"
+import { isPlainObject } from "@shared/lib"
 
 type ErrorPayload = {
   status?: number | string

@@ -7,6 +7,7 @@ import { MetricsModule } from "../metrics/metrics.module";
 import { PathParserModule } from "../utils/path-parser/path-parser.module";
 import { HtmlCssFullAnalyzerService } from "./html-css-full-analyzer.service";
 import { AnalysisResult } from "./entities/analysis-result.entity";
+import { AnalysisGitResult } from "./entities/analysis-git-result.entity";
 import { AnalysisJob } from "./entities/analysis-job.entity";
 import { AnalysisUpload } from "./entities/analysis-upload.entity";
 import { AuthModule } from "../auth/auth.module";
@@ -18,7 +19,7 @@ import { S3UploadController } from "./s3-upload.controller";
     DuckdbModule,
     MetricsModule,
     PathParserModule,
-    TypeOrmModule.forFeature([AnalysisResult, AnalysisJob, AnalysisUpload]),
+    TypeOrmModule.forFeature([AnalysisResult, AnalysisGitResult, AnalysisJob, AnalysisUpload]),
     AuthModule
   ],
   controllers: [AnalysisController, S3UploadController],

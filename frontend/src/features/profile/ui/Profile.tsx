@@ -9,7 +9,7 @@ export function Profile() {
   //toDo: переписать не skeleton-ы
   if (isLoading) {
     return (
-      <Card p="lg" radius="md">
+      <Card>
         <Group justify="center" py="xl">
           <Loader />
         </Group>
@@ -18,8 +18,8 @@ export function Profile() {
   }
 
   return (
-    <Stack gap="lg">
-      <Grid gutter="lg">
+    <Stack>
+      <Grid>
         <Grid.Col span={{ base: 12, md: 4 }}>
           <CommonInfo />
         </Grid.Col>

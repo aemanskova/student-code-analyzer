@@ -14,14 +14,14 @@ export function ArchivePage() {
 
   return (
     <Container size="xl">
-      <Stack gap="lg">
-        <Card p="lg">
+      <Stack>
+        <Card>
           <Stack>
             <Title order={3}>Архив анализов</Title>
           </Stack>
         </Card>
 
-        <Card p="lg">
+        <Card>
           <Stack>
             <Table striped>
               <Table.Thead>
@@ -33,10 +33,10 @@ export function ArchivePage() {
               </Table.Thead>
               <Table.Tbody>
                 {rows.map((row: AnalysisListItem) => (
-                  <Table.Tr key={`${row.path}:${row.date}:${row.direction}`}>
+                  <Table.Tr key={`${row.runId}:${row.path}:${row.date}:${row.direction}`}>
                     <Table.Td>
                       <NavLink
-                        to={`/archive/${encodeURIComponent(row.path)}?direction=${encodeURIComponent(row.direction)}`}
+                        to={`/archive/${encodeURIComponent(row.path)}?direction=${encodeURIComponent(row.direction)}&runId=${encodeURIComponent(row.runId)}`}
                       >
                         {row.path}
                       </NavLink>

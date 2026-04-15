@@ -24,8 +24,8 @@ export function CommonInfo() {
   const { data } = useGetMeQuery()
 
   return (
-    <Card p="lg" radius="md">
-      <Stack gap="md">
+    <Card>
+      <Stack>
         <Group align="center" justify="space-between" wrap="wrap">
           <Group>
             <Avatar color="indigo" radius="xl" size={48} variant="filled">

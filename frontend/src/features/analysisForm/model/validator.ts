@@ -6,7 +6,8 @@ export const analysisSchema = z
     direction: z.enum(["html_css", "js"]),
     metrics: z.array(z.string()),
     recursive: z.boolean(),
-    depth: z.number().int().min(1).optional()
+    depth: z.number().int().min(1).optional(),
+    includeGitMetrics: z.boolean()
   })
   .superRefine((value, ctx) => {
     if (!value.archive) {
