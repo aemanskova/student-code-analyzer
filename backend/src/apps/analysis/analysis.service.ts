@@ -1445,44 +1445,55 @@ export class AnalysisService implements OnModuleInit {
 
   private async findGitRepos(rootPath: string): Promise<string[]> {
     const repos: string[] = [];
+    const pending: string[] = [rootPath];
 
-    const walk = async (currentPath: string): Promise<void> => {
+    while (pending.length > 0) {
+      const currentPath = pending.pop();
+      if (!currentPath) {
+        continue;
+      }
+
       let entries: Array<{ name: string; isDirectory: () => boolean }>;
       try {
         entries = (await fs.readdir(currentPath, {
           withFileTypes: true
         })) as Array<{ name: string; isDirectory: () => boolean }>;
       } catch {
-        return;
+        continue;
+      }
+
+      let hasGitDir = false;
+      for (const entry of entries) {
+        if (entry.isDirectory() && entry.name === ".git") {
+          hasGitDir = true;
+          break;
+        }
+      }
+
+      if (hasGitDir) {
+        try {
+          await this.runGit(["rev-parse", "--is-inside-work-tree"], currentPath);
+          repos.push(currentPath);
+        } catch {
+          // Not a valid repository.
+        }
+        continue;
       }
 
       for (const entry of entries) {
         if (!entry.isDirectory()) {
           continue;
         }
-
-        if (entry.name === ".git") {
-          try {
-            await this.runGit(["rev-parse", "--is-inside-work-tree"], currentPath);
-            repos.push(currentPath);
-          } catch {
-            // Not a valid repository.
-          }
-          return;
-        }
-
-        if (entry.name.startsWith(".") && entry.name !== ".git") {
+        if (entry.name.startsWith(".")) {
           continue;
         }
         if (this.ignoredDirNames.has(entry.name)) {
           continue;
         }
-
-        await walk(path.join(currentPath, entry.name));
+        pending.push(path.join(currentPath, entry.name));
       }
-    };
+    }
 
-    await walk(rootPath);
     repos.sort((a, b) => a.localeCompare(b));
     return repos;
   }
@@ -1514,7 +1525,7 @@ export class AnalysisService implements OnModuleInit {
           branch,
           "--numstat",
           "--date=iso-strict",
-          "--format=%H%x1f%an%x1f%aI%x1f%s%x1f%P%x1e"
+          "--format=%x1e%H%x1f%an%x1f%aI%x1f%s%x1f%P"
         ],
         repoPath
       );
@@ -1526,7 +1537,7 @@ export class AnalysisService implements OnModuleInit {
       for (const block of commitBlocks) {
         const lines = block
           .split("\n")
-          .map((line) => line.trim())
+          .map((line) => line.trimEnd())
           .filter(Boolean);
         if (!lines.length) {
           continue;
@@ -1534,7 +1545,10 @@ export class AnalysisService implements OnModuleInit {
 
         const header = lines[0] || "";
         const [fullHash, author, isoDate, message, parentField] = header.split("\x1f");
-        if (!fullHash) {
+        if (!fullHash || !/^[0-9a-f]{40}$/i.test(fullHash)) {
+          continue;
+        }
+        if (!isoDate) {
           continue;
         }
         const shortHash = fullHash.slice(0, 8);
@@ -1576,7 +1590,7 @@ export class AnalysisService implements OnModuleInit {
             student: parsedRepoPath.student,
             branch,
             hash: shortHash,
-            date: isoDate || new Date().toISOString(),
+            date: isoDate,
             message: (message || "").replace(/\n/g, " "),
             author: author || "",
             filename,
@@ -2631,7 +2645,11 @@ export class AnalysisService implements OnModuleInit {
         metrics: result.metrics,
         rowsTotal: result.data.length,
         gitRowsTotal: result.gitData?.length || 0,
-        runId: result.runId || null
+        runId: result.runId || null,
+        path: this.extractRunPath([
+          ...result.data.map((row) => this.normalizeResultPath(String(row.path || ""))),
+          ...(result.gitData || []).map((row) => this.normalizeResultPath(String(row.path || "")))
+        ])
       };
       await this.analysisJobRepo.save(entity);
       if ("onSuccess" in job && job.onSuccess) {

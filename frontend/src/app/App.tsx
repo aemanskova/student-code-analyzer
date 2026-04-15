@@ -1,9 +1,10 @@
 import { withProviders } from "@app/providers"
 import { sidebarLinks } from "@app/routing"
 import { ProfileHeaderActions } from "@features/profileActions"
-import { AppShell, Burger, Group, Text } from "@mantine/core"
+import { AppShell, Box, Burger, Group, Text } from "@mantine/core"
 import { useDisclosure } from "@mantine/hooks"
 import { routes } from "@shared/config/routes"
+import { AppBreadcrumbs } from "@shared/ui"
 import { Sidebar } from "@widgets/sidebar"
 import { NavLink, Outlet } from "react-router"
 
@@ -31,6 +32,9 @@ export const App = withProviders(() => {
         <Sidebar links={sidebarLinks} />
       </AppShell.Navbar>
       <AppShell.Main>
+        <Box mb="sm">
+          <AppBreadcrumbs />
+        </Box>
         <Outlet />
       </AppShell.Main>
     </AppShell>

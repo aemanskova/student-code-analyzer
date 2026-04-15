@@ -9,7 +9,8 @@ import type {
   RunFilterQuery,
   RunS3AsyncRequest,
   RunS3AsyncResponse,
-  RunViewResponse
+  RunViewResponse,
+  SavedRunDetailsResponse
 } from "./types"
 
 const buildFilterQueryParams = (query: RunFilterQuery) => {
@@ -81,6 +82,13 @@ export const analysisApi = baseApi.injectEndpoints({
       },
       providesTags: ["ArchiveResults"]
     }),
+    getSavedResultsByRunId: build.query<SavedRunDetailsResponse, string>({
+      query: (runId) => ({
+        url: `/analysis/results/run/${encodeURIComponent(runId)}`,
+        method: "GET"
+      }),
+      providesTags: ["ArchiveResults"]
+    }),
     deleteSavedRun: build.mutation<DeleteSavedRunResponse, { runId: string }>({
       query: ({ runId }) => ({
         url: `/analysis/results/run/${encodeURIComponent(runId)}`,
@@ -96,6 +104,7 @@ export const {
   useGetRunFilterOptionsQuery,
   useGetRunViewQuery,
   useGetSavedAnalysisListQuery,
+  useGetSavedResultsByRunIdQuery,
   useDeleteSavedRunMutation,
   useRunS3AsyncMutation
 } = analysisApi

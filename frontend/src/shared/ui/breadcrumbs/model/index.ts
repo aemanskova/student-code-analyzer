@@ -1,0 +1,1 @@
+export { getBreadcrumbItems } from "./getBreadcrumbItems"

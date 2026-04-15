@@ -5,6 +5,7 @@ export {
   useGetRunFilterOptionsQuery,
   useGetRunViewQuery,
   useGetSavedAnalysisListQuery,
+  useGetSavedResultsByRunIdQuery,
   useRunS3AsyncMutation
 } from "./analysisApi"
 export type {
@@ -24,5 +25,6 @@ export type {
   RunS3AsyncResponse,
   RunViewKind,
   RunViewResponse,
-  SavedResultItem
+  SavedResultItem,
+  SavedRunDetailsResponse
 } from "./types"

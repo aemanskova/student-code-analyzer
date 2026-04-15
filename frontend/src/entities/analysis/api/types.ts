@@ -56,6 +56,7 @@ export interface AnalysisJobResultPayload {
   rowsTotal: number
   gitRowsTotal?: number
   runId: string | null
+  path?: string | null
 }
 
 export interface AnalysisJobStatusResponse {
@@ -103,6 +104,14 @@ export interface DeleteSavedRunResponse {
   runId: string
   deletedMetricsRows: number
   deletedGitRows: number
+}
+
+export interface SavedRunDetailsResponse {
+  runId: string
+  direction: Direction
+  path: string
+  data: SavedResultItem[]
+  gitData: GitAnalysisRow[]
 }
 
 export type RunViewKind = "metrics" | "git"
