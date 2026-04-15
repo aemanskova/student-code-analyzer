@@ -1,0 +1,66 @@
+.main-page-hero {
+  background:
+    radial-gradient(1200px 400px at 10% -30%, rgba(127, 132, 150, 0.22), transparent 60%),
+    radial-gradient(1200px 450px at 90% -40%, rgba(99, 104, 124, 0.2), transparent 64%),
+    var(--mantine-color-body);
+}
+
+.main-page-visual {
+  margin: 0 auto;
+  max-width: 980px;
+  width: 100%;
+}
+
+.main-page-chart {
+  background:
+    linear-gradient(to top, rgba(127, 132, 150, 0.12), transparent 70%), var(--mantine-color-body);
+  border-radius: 12px;
+  height: 360px;
+  width: 100%;
+}
+
+.main-page-chart .axis {
+  opacity: 0.9;
+  stroke: var(--mantine-color-myColor-5);
+  stroke-width: 1.4;
+}
+
+.main-page-chart .bar {
+  cursor: pointer;
+  fill: var(--mantine-color-myColor-6);
+  fill-opacity: 0.35;
+  transition: all 170ms ease;
+}
+
+.main-page-chart .bar:hover,
+.main-page-chart .bar.active {
+  fill: var(--mantine-color-myColor-5);
+  fill-opacity: 0.72;
+  transform: translateY(-2px);
+  transform-box: fill-box;
+  transform-origin: center bottom;
+}
+
+.main-page-chart .line {
+  animation: linePulse 2.8s ease-in-out infinite;
+  fill: none;
+  stroke: var(--mantine-color-myColor-7);
+  stroke-width: 3;
+}
+
+@keyframes linePulse {
+  0%,
+  100% {
+    opacity: 0.86;
+  }
+
+  50% {
+    opacity: 1;
+  }
+}
+
+@media (max-width: 900px) {
+  .main-page-chart {
+    height: 290px;
+  }
+}
