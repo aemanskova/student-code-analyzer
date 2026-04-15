@@ -20,7 +20,7 @@ export function ArchiveUploadStep({ file, disabled, onUploaded }: Props) {
   } = useArchiveUpload({ disabled, file, onUploaded })
 
   return (
-    <Stack gap={6}>
+    <Stack gap="md">
       <Progress value={progressPercent} />
 
       <Text c="dimmed" size="xs">

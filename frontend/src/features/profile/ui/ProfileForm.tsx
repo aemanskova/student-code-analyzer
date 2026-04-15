@@ -46,7 +46,7 @@ export function ProfileForm() {
   }
 
   return (
-    <Card>
+    <Card h="100%" w="100%">
       <Stack>
         <Title order={4}>Редактирование данных</Title>
         <Grid>

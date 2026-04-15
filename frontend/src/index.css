@@ -1,3 +1,13 @@
+:root {
+  --app-chart-accent-blue: #4e79a7;
+  --app-chart-label-color: #4b5563;
+}
+
+[data-mantine-color-scheme="dark"] {
+  --app-chart-accent-blue: #7cc8ff;
+  --app-chart-label-color: #e5e7eb;
+}
+
 html,
 body,
 #root {

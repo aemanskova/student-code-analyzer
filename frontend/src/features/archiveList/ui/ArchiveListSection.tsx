@@ -31,8 +31,8 @@ export const ArchiveListSection = () => {
 
   return (
     <>
-      <Card p="sm">
-        <Stack gap="sm">
+      <Card p="md">
+        <Stack gap="md">
           <ArchiveListFilters
             dateFrom={dateFrom}
             dateTo={dateTo}

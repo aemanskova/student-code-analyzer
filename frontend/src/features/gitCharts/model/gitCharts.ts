@@ -274,7 +274,8 @@ export const filterByScope = (
 
 export const getPathColorMap = (
   rows: Array<{ path: string }>,
-  analysisDepth?: number
+  analysisDepth?: number,
+  palette?: string[]
 ): Map<string, string> => {
   const scopeDepth = getScopeDepth(analysisDepth)
   const scopeSet = new Set<string>()
@@ -284,7 +285,8 @@ export const getPathColorMap = (
   }
 
   const scopes = Array.from(scopeSet).sort((a, b) => a.localeCompare(b))
-  const colorScale = scaleOrdinal<string, string>(schemeTableau10).domain(scopes)
+  const range = palette?.length ? palette : schemeTableau10
+  const colorScale = scaleOrdinal<string, string>(range).domain(scopes)
 
   const colorMap = new Map<string, string>()
   for (const row of rows) {

@@ -1,12 +1,11 @@
 import { withProviders } from "@app/providers"
 import { sidebarLinks } from "@app/routing"
 import { ProfileHeaderActions } from "@features/profileActions"
-import { AppShell, Box, Burger, Group, Text } from "@mantine/core"
+import { AppShell, Box, Burger, Group } from "@mantine/core"
 import { useDisclosure } from "@mantine/hooks"
-import { routes } from "@shared/config/routes"
 import { AppBreadcrumbs } from "@shared/ui"
 import { Sidebar } from "@widgets/sidebar"
-import { NavLink, Outlet } from "react-router"
+import { Outlet } from "react-router"
 
 export const App = withProviders(() => {
   const [opened, { toggle }] = useDisclosure()
@@ -19,11 +18,11 @@ export const App = withProviders(() => {
     >
       <AppShell.Header px="md">
         <Group h="100%" justify="space-between">
-          <Group gap="sm">
+          <Group gap="md">
             <Burger opened={opened} onClick={toggle} size="sm" />
-            <Text component={NavLink} fw={700} to={routes.home} td="none" c="inherit">
-              Инструмент для анализа кода студенческих работ
-            </Text>
+            {/*<Text component={NavLink} fw={700} to={routes.home} td="none" c="inherit">*/}
+            {/*  Инструмент для анализа кода студенческих работ*/}
+            {/*</Text>*/}
           </Group>
           <ProfileHeaderActions />
         </Group>

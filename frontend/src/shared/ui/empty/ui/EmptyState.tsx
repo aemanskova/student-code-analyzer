@@ -11,7 +11,7 @@ export function EmptyState({ text, icon }: Props) {
   return (
     <Paper p="md" radius="md" withBorder>
       <Center>
-        <Stack align="center" gap={6}>
+        <Stack align="center" gap="md">
           {icon || <MagnifyingGlass size={22} />}
           <Text c="dimmed" size="sm" ta="center">
             {text}

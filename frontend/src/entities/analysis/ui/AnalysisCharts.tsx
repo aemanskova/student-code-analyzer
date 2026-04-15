@@ -80,7 +80,7 @@ export function AnalysisCharts({ rows, gitRows = [], selectedMetrics, analysisDe
             {metrics.map((metric) => (
               <Grid.Col key={`hist:${metric}`} span={{ base: 12, sm: 6, lg: 4 }}>
                 <Card withBorder>
-                  <Stack gap="xs">
+                  <Stack gap="md">
                     <Text fw={600} size="sm">
                       {metric}
                     </Text>
@@ -97,7 +97,7 @@ export function AnalysisCharts({ rows, gitRows = [], selectedMetrics, analysisDe
             {metrics.map((metric) => (
               <Grid.Col key={`year:${metric}`} span={{ base: 12, sm: 6, lg: 4 }}>
                 <Card withBorder>
-                  <Stack gap="xs">
+                  <Stack gap="md">
                     <Text fw={600} size="sm">
                       {metric}
                     </Text>

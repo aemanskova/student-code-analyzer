@@ -18,21 +18,21 @@ export const AppBreadcrumbs = () => {
 
     if (isLast) {
       return (
-        <Text c="myColor.7" fw={600} key={item.href} size="sm">
+        <Text c="dimmed" fw={600} key={item.href} size="sm">
           {item.label}
         </Text>
       )
     }
 
     return (
-      <Anchor c="myColor.8" component={NavLink} fw={500} key={item.href} size="sm" to={item.href}>
+      <Anchor c="myColor.6" component={NavLink} fw={500} key={item.href} size="sm" to={item.href}>
         {item.label}
       </Anchor>
     )
   })
 
   return (
-    <Group gap="xs" wrap="nowrap">
+    <Group gap="md" wrap="nowrap">
       <Breadcrumbs separator="/">{links}</Breadcrumbs>
     </Group>
   )

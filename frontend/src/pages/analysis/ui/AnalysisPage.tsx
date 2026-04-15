@@ -115,9 +115,9 @@ export function AnalysisPage() {
   if (runId) {
     if (runDetailsQuery.isFetching || runDetailsQuery.isLoading) {
       return (
-        <Container size="xl">
+        <Container py="md" size="xl">
           <Card>
-            <Stack align="center" gap="sm" py="xl">
+            <Stack align="center" gap="md" py="xl">
               <Loader size="sm" />
               <Text c="dimmed" size="sm">
                 Подготавливаем переход к отчету...
@@ -129,16 +129,14 @@ export function AnalysisPage() {
     }
 
     return (
-      <Container size="xl">
-        <Card>
-          <AnalysisResultsWidget analysisDepth={analysisDepth} runId={runId} />
-        </Card>
+      <Container py="md" size="xl">
+        <AnalysisResultsWidget analysisDepth={analysisDepth} runId={runId} />
       </Container>
     )
   }
 
   return (
-    <Container size="xl">
+    <Container py="md" size="xl">
       <Stack>
         <Card>
           <Stack>
@@ -149,7 +147,7 @@ export function AnalysisPage() {
 
         {jobId ? (
           <Card>
-            <Stack gap="sm">
+            <Stack gap="md">
               <Title order={4}>Статус анализа</Title>
               <Text>Этап: {getUserStageTitle(jobStatus?.status, jobStatus?.stage)}</Text>
               <Progress value={jobStatus?.progressPercent ?? 0} />

@@ -24,14 +24,14 @@ export function CommonInfo() {
   const { data } = useGetMeQuery()
 
   return (
-    <Card>
+    <Card h="100%" w="100%">
       <Stack>
         <Group align="center" justify="space-between" wrap="wrap">
           <Group>
             <Avatar color="indigo" radius="xl" size={48} variant="filled">
               {getInitials(data?.name, data?.surname)}
             </Avatar>
-            <Stack gap={0}>
+            <Stack gap="md">
               <Title order={4}>Профиль</Title>
               <Text c="dimmed" size="sm">
                 Основная информация

@@ -1,7 +1,8 @@
 import type { AnalysisListItem } from "@entities/analysis/api"
-import { ActionIcon, Box, Pagination, Table, Tooltip } from "@mantine/core"
+import { ActionIcon, Anchor, Group, Loader, Pagination, Stack, Tooltip } from "@mantine/core"
 import { Trash } from "@phosphor-icons/react"
 import { EmptyState } from "@shared/ui"
+import { type VirtualizedColumn, VirtualizedTable } from "@shared/ui/table"
 import { NavLink } from "react-router"
 
 type Props = {
@@ -14,25 +15,6 @@ type Props = {
   onDeleteRun: (runId: string, path: string) => void
 }
 
-const SKELETON_ROWS = Array.from({ length: 8 }, (_, index) => index)
-
-const RowSkeleton = () => (
-  <Table.Tr>
-    <Table.Td>
-      <Box h={12} style={{ background: "var(--mantine-color-gray-2)", borderRadius: 6 }} w="70%" />
-    </Table.Td>
-    <Table.Td>
-      <Box h={12} style={{ background: "var(--mantine-color-gray-2)", borderRadius: 6 }} w="55%" />
-    </Table.Td>
-    <Table.Td>
-      <Box h={12} style={{ background: "var(--mantine-color-gray-2)", borderRadius: 6 }} w="60%" />
-    </Table.Td>
-    <Table.Td>
-      <Box h={12} style={{ background: "var(--mantine-color-gray-2)", borderRadius: 6 }} w={20} />
-    </Table.Td>
-  </Table.Tr>
-)
-
 export const ArchiveListTable = ({
   rows,
   page,
@@ -41,58 +23,80 @@ export const ArchiveListTable = ({
   isUpdating,
   onPageChange,
   onDeleteRun
-}: Props) => (
-  <>
-    <Box>
-      <Table highlightOnHover horizontalSpacing="sm" striped verticalSpacing="sm" withTableBorder>
-        <Table.Thead>
-          <Table.Tr>
-            <Table.Th>Папка анализа</Table.Th>
-            <Table.Th>Направление</Table.Th>
-            <Table.Th>Дата</Table.Th>
-            <Table.Th w={56}></Table.Th>
-          </Table.Tr>
-        </Table.Thead>
-        <Table.Tbody>
-          {isInitialLoading || isUpdating
-            ? SKELETON_ROWS.map((row) => <RowSkeleton key={`skeleton-${row}`} />)
-            : rows.map((row) => (
-                <Table.Tr key={`${row.runId}:${row.path}:${row.date}:${row.direction}`}>
-                  <Table.Td>
-                    <NavLink
-                      to={`/archive/${encodeURIComponent(row.path)}?direction=${encodeURIComponent(row.direction)}&runId=${encodeURIComponent(row.runId)}`}
-                    >
-                      {row.path}
-                    </NavLink>
-                  </Table.Td>
-                  <Table.Td>{row.direction}</Table.Td>
-                  <Table.Td>{new Date(row.date).toLocaleString()}</Table.Td>
-                  <Table.Td>
-                    <Tooltip label="Удалить отчет">
-                      <ActionIcon
-                        color="red"
-                        variant="subtle"
-                        onClick={() => onDeleteRun(row.runId, row.path)}
-                      >
-                        <Trash size={16} />
-                      </ActionIcon>
-                    </Tooltip>
-                  </Table.Td>
-                </Table.Tr>
-              ))}
-        </Table.Tbody>
-      </Table>
-    </Box>
+}: Props) => {
+  if (isInitialLoading || isUpdating) {
+    return (
+      <Group justify="center" py="xl">
+        <Loader />
+      </Group>
+    )
+  }
 
-    {!isInitialLoading && !isUpdating && !rows.length ? (
-      <EmptyState text="По заданным фильтрам записи не найдены." />
-    ) : null}
+  const columns: Array<VirtualizedColumn<AnalysisListItem>> = [
+    {
+      key: "path",
+      title: "Папка анализа",
+      minWidth: 360,
+      render: (row) => (
+        <Anchor
+          c="myColor.6"
+          component={NavLink}
+          style={{ display: "inline-block", whiteSpace: "nowrap" }}
+          to={`/archive/${encodeURIComponent(row.path)}?direction=${encodeURIComponent(row.direction)}&runId=${encodeURIComponent(row.runId)}`}
+        >
+          {row.path}
+        </Anchor>
+      )
+    },
+    {
+      key: "direction",
+      title: "Направление",
+      minWidth: 180,
+      render: (row) => row.direction
+    },
+    {
+      key: "date",
+      title: "Дата",
+      minWidth: 220,
+      render: (row) => new Date(row.date).toLocaleString()
+    },
+    {
+      key: "actions",
+      title: "",
+      minWidth: 72,
+      render: (row) => (
+        <Tooltip label="Удалить отчет">
+          <ActionIcon color="red" variant="subtle" onClick={() => onDeleteRun(row.runId, row.path)}>
+            <Trash size={16} />
+          </ActionIcon>
+        </Tooltip>
+      )
+    }
+  ]
+  const headerHeight = 46
+  const rowHeight = 52
+  const tableBottomBuffer = 8
+  const tableHeight = headerHeight + rows.length * rowHeight + tableBottomBuffer
 
-    <Pagination
-      disabled={isInitialLoading || isUpdating}
-      total={totalPages}
-      value={page}
-      onChange={onPageChange}
-    />
-  </>
-)
+  return (
+    <>
+      {rows.length ? (
+        <Stack gap="md">
+          <VirtualizedTable
+            columns={columns}
+            data={rows}
+            disableVerticalScroll
+            getRowKey={(row) => `${row.runId}:${row.path}:${row.date}:${row.direction}`}
+            fullWidth
+            maxHeight={tableHeight}
+            overscan={120}
+            rowHeight={rowHeight}
+          />
+          <Pagination total={totalPages} value={page} onChange={onPageChange} />
+        </Stack>
+      ) : (
+        <EmptyState text="По заданным фильтрам записи не найдены." />
+      )}
+    </>
+  )
+}
