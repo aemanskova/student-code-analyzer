@@ -42,7 +42,7 @@ export default defineConfig([
       ]
     },
     rules: {
-      "boundaries/element-types": [
+      "boundaries/dependencies": [
         "error",
         {
           default: "disallow",

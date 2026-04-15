@@ -1,5 +1,6 @@
 import type { AnalysisRow } from "@entities/analysis/api"
-import { ScrollArea, Table } from "@mantine/core"
+import { Text } from "@mantine/core"
+import { type VirtualizedColumn, VirtualizedTable } from "@shared/ui/table"
 
 type Props = {
   rows: AnalysisRow[]
@@ -7,28 +8,34 @@ type Props = {
 }
 
 export function AnalysisTable({ rows, metrics }: Props) {
+  if (!rows.length) {
+    return <Text c="dimmed">Нет строк для отображения.</Text>
+  }
+
+  const columns: Array<VirtualizedColumn<AnalysisRow>> = [
+    {
+      key: "path",
+      title: "Путь",
+      minWidth: 260,
+      render: (row) => row.path
+    },
+    ...metrics.map((metric) => ({
+      key: metric,
+      title: metric,
+      minWidth: 140,
+      render: (row: AnalysisRow) => String(row[metric] ?? "")
+    }))
+  ]
+
   return (
-    <ScrollArea>
-      <Table striped>
-        <Table.Thead>
-          <Table.Tr>
-            <Table.Th>Путь</Table.Th>
-            {metrics.map((metric) => (
-              <Table.Th key={metric}>{metric}</Table.Th>
-            ))}
-          </Table.Tr>
-        </Table.Thead>
-        <Table.Tbody>
-          {rows.map((row) => (
-            <Table.Tr key={row.path}>
-              <Table.Td>{row.path}</Table.Td>
-              {metrics.map((metric) => (
-                <Table.Td key={`${row.path}:${metric}`}>{String(row[metric] ?? "")}</Table.Td>
-              ))}
-            </Table.Tr>
-          ))}
-        </Table.Tbody>
-      </Table>
-    </ScrollArea>
+    <VirtualizedTable
+      columns={columns}
+      data={rows}
+      getRowKey={(row) => row.path}
+      maxHeight={480}
+      // minTableWidth={Math.max(900, 260 + metrics.length * 140)}
+      overscan={120}
+      rowHeight={42}
+    />
   )
 }

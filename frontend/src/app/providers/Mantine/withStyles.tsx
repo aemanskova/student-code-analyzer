@@ -1,9 +1,10 @@
-import { createTheme, type MantineColorsTuple, MantineProvider } from "@mantine/core"
-import type { ComponentType } from "react"
-import { Notifications } from "@mantine/notifications"
 import "@mantine/core/styles.css"
 import "@mantine/charts/styles.css"
 import "@mantine/notifications/styles.css"
+
+import { createTheme, type MantineColorsTuple, MantineProvider } from "@mantine/core"
+import { Notifications } from "@mantine/notifications"
+import type { ComponentType } from "react"
 
 const myColor: MantineColorsTuple = [
   "#f6f4f4",
@@ -22,7 +23,26 @@ const theme = createTheme({
   colors: {
     myColor
   },
-  primaryColor: "myColor"
+  primaryColor: "myColor",
+  defaultRadius: "md",
+  components: {
+    Card: {
+      defaultProps: {
+        p: "md",
+        radius: "md"
+      }
+    },
+    Stack: {
+      defaultProps: {
+        gap: "md"
+      }
+    },
+    Grid: {
+      defaultProps: {
+        gutter: "md"
+      }
+    }
+  }
 })
 
 export const withStyles = (WrappedComponent: ComponentType) => () => (

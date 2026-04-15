@@ -1,13 +1,10 @@
-import { useRunS3AsyncMutation } from "@entities/analysis/api"
 import {
-  type AnalysisFormValues,
   type AnalysisRunResult,
-  analysisSchema,
   DIRECTION_OPTIONS,
-  METRICS_BY_DIRECTION
+  METRICS_BY_DIRECTION,
+  useAnalysisFormModel
 } from "@features/analysisForm/model"
-import { ArchiveUploadStep, type UploadedArchiveInfo } from "@features/archiveUpload"
-import { zodResolver } from "@hookform/resolvers/zod"
+import { ArchiveUploadStep } from "@features/archiveUpload"
 import {
   Alert,
   Button,
@@ -20,58 +17,27 @@ import {
   Stack
 } from "@mantine/core"
 import { getApiErrorMessage } from "@shared/lib"
-import { useState } from "react"
-import { Controller, useForm } from "react-hook-form"
+import { Controller, useWatch } from "react-hook-form"
 
 type Props = {
   onSuccess: (result: AnalysisRunResult) => void
 }
 
 export function AnalysisForm({ onSuccess }: Props) {
-  const [runS3Async, { isLoading: isAnalyzing, error: analyzeError }] = useRunS3AsyncMutation()
-  const [uploadedArchive, setUploadedArchive] = useState<UploadedArchiveInfo | null>(null)
-  const [runFormError, setRunFormError] = useState<string | null>(null)
+  const {
+    analyzeError,
+    form,
+    isAnalyzing,
+    onSubmit,
+    runFormError,
+    setRunFormError,
+    setUploadedArchive,
+    uploadedArchive
+  } = useAnalysisFormModel({ onSuccess })
 
-  const form = useForm<AnalysisFormValues>({
-    resolver: zodResolver(analysisSchema),
-    mode: "onBlur",
-    defaultValues: {
-      archive: null,
-      direction: "html_css",
-      metrics: [],
-      recursive: false,
-      depth: undefined
-    }
-  })
-
-  const direction = form.watch("direction")
-  const recursive = form.watch("recursive")
-  const archive = form.watch("archive")
-
-  const onSubmit = form.handleSubmit(async (values) => {
-    if (!uploadedArchive || isAnalyzing) {
-      setRunFormError("Сначала загрузите архив в хранилище.")
-      return
-    }
-
-    setRunFormError(null)
-    try {
-      const request = {
-        key: uploadedArchive.key,
-        direction: values.direction,
-        metrics: values.metrics.length > 0 ? values.metrics : undefined,
-        r: values.recursive,
-        depth: values.recursive ? values.depth : undefined
-      }
-      const response = await runS3Async(request).unwrap()
-      onSuccess({
-        response,
-        request
-      })
-    } catch (e) {
-      console.error(e)
-    }
-  })
+  const direction = useWatch({ control: form.control, name: "direction" })
+  const recursive = useWatch({ control: form.control, name: "recursive" })
+  const archive = useWatch({ control: form.control, name: "archive" })
 
   return (
     <Stack gap="md">
@@ -139,12 +105,18 @@ export function AnalysisForm({ onSuccess }: Props) {
           <Checkbox
             checked={field.value}
             label="Рекурсивный режим"
-            onChange={(event) => field.onChange(event.currentTarget.checked)}
+            onChange={(event) => {
+              const checked = event.currentTarget.checked
+              field.onChange(checked)
+              if (!checked) {
+                form.setValue("depth", undefined, { shouldDirty: true, shouldValidate: true })
+              }
+            }}
           />
         )}
       />
 
-      {recursive && (
+      {recursive ? (
         <Controller
           control={form.control}
           name="depth"
@@ -158,14 +130,26 @@ export function AnalysisForm({ onSuccess }: Props) {
             />
           )}
         />
-      )}
+      ) : null}
 
-      {runFormError && <Alert color="red">{runFormError}</Alert>}
-      {analyzeError && (
+      <Controller
+        control={form.control}
+        name="includeGitMetrics"
+        render={({ field }) => (
+          <Checkbox
+            checked={field.value}
+            label="Дополнительно посчитать Git-метрики"
+            onChange={(event) => field.onChange(event.currentTarget.checked)}
+          />
+        )}
+      />
+
+      {runFormError ? <Alert color="red">{runFormError}</Alert> : null}
+      {analyzeError ? (
         <Alert color="red">
           {getApiErrorMessage(analyzeError, "Не удалось запустить анализ. Повторите попытку.")}
         </Alert>
-      )}
+      ) : null}
 
       <Group justify="flex-end">
         <Button disabled={!uploadedArchive} loading={isAnalyzing} onClick={onSubmit}>

@@ -1,9 +1,9 @@
 export {
   analysisApi,
   useGetAnalysisJobStatusQuery,
+  useGetRunFilterOptionsQuery,
+  useGetRunViewQuery,
   useGetSavedAnalysisListQuery,
-  useGetSavedResultsByRunIdQuery,
-  useGetSavedResultsQuery,
   useRunS3AsyncMutation
 } from "./analysisApi"
 export type {
@@ -14,10 +14,13 @@ export type {
   AnalysisListResponse,
   AnalysisRow,
   Direction,
+  GitAnalysisRow,
+  RunFilterLevelOptions,
+  RunFilterOptionsResponse,
+  RunFilterQuery,
   RunS3AsyncRequest,
   RunS3AsyncResponse,
-  SavedResultItem,
-  SavedResultsQuery,
-  SavedResultsResponse,
-  SavedRunResultsResponse
+  RunViewKind,
+  RunViewResponse,
+  SavedResultItem
 } from "./types"

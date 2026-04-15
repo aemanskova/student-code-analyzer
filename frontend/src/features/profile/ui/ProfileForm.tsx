@@ -46,10 +46,10 @@ export function ProfileForm() {
   }
 
   return (
-    <Card p="lg" radius="md">
-      <Stack gap="md">
+    <Card>
+      <Stack>
         <Title order={4}>Редактирование данных</Title>
-        <Grid gutter="md">
+        <Grid>
           <Grid.Col span={{ base: 12, sm: 6 }}>
             <Controller
               control={form.control}
