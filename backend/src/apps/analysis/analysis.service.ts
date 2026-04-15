@@ -1251,7 +1251,17 @@ export class AnalysisService implements OnModuleInit {
     };
   }
 
-  async getSavedAnalysisList(userId: number, page: number, size: number) {
+  async getSavedAnalysisList(
+    userId: number,
+    page: number,
+    size: number,
+    filters?: {
+      path?: string;
+      direction?: string;
+      dateFrom?: Date;
+      dateTo?: Date;
+    }
+  ) {
     const rows = await this.analysisResultRepo.find({
       where: { userId },
       order: { createdAt: "DESC", id: "DESC" }
@@ -1279,7 +1289,7 @@ export class AnalysisService implements OnModuleInit {
       }
     }
 
-    const list = Array.from(byRun.values())
+    let list = Array.from(byRun.values())
       .map((run) => ({
         runId: run.runId,
         path: this.extractRunPath(run.paths),
@@ -1287,6 +1297,41 @@ export class AnalysisService implements OnModuleInit {
         direction: run.direction
       }))
       .sort((a, b) => b.date.localeCompare(a.date));
+
+    const normalizedDirection = String(filters?.direction || "")
+      .trim()
+      .toLowerCase();
+    const normalizedPath = this.normalizePath(String(filters?.path || "").trim()).toLowerCase();
+    const dateFromMs = filters?.dateFrom ? filters.dateFrom.getTime() : null;
+    const dateToMs = filters?.dateTo ? filters.dateTo.getTime() : null;
+
+    if (normalizedDirection) {
+      list = list.filter(
+        (item) =>
+          String(item.direction || "")
+            .trim()
+            .toLowerCase() === normalizedDirection
+      );
+    }
+    if (normalizedPath) {
+      list = list.filter((item) =>
+        this.normalizePath(String(item.path || ""))
+          .toLowerCase()
+          .includes(normalizedPath)
+      );
+    }
+    if (dateFromMs !== null) {
+      list = list.filter((item) => {
+        const timestamp = new Date(item.date).getTime();
+        return Number.isFinite(timestamp) && timestamp >= dateFromMs;
+      });
+    }
+    if (dateToMs !== null) {
+      list = list.filter((item) => {
+        const timestamp = new Date(item.date).getTime();
+        return Number.isFinite(timestamp) && timestamp <= dateToMs;
+      });
+    }
 
     const total = list.length;
     const start = (page - 1) * size;
@@ -1297,6 +1342,38 @@ export class AnalysisService implements OnModuleInit {
       size,
       total,
       data
+    };
+  }
+
+  async deleteSavedRun(userId: number, runId: string) {
+    const normalizedRunId = String(runId || "").trim();
+    if (!normalizedRunId) {
+      throw new BadRequestException("runId path parameter is required");
+    }
+
+    const runExistsInMetrics = await this.analysisResultRepo.exist({
+      where: { userId, runId: normalizedRunId }
+    });
+    const runExistsInGit = await this.analysisGitResultRepo.exist({
+      where: { userId, runId: normalizedRunId }
+    });
+    if (!runExistsInMetrics && !runExistsInGit) {
+      throw new NotFoundException("Результаты запуска не найдены");
+    }
+
+    const metricsDeleteResult = await this.analysisResultRepo.delete({
+      userId,
+      runId: normalizedRunId
+    });
+    const gitDeleteResult = await this.analysisGitResultRepo.delete({
+      userId,
+      runId: normalizedRunId
+    });
+
+    return {
+      runId: normalizedRunId,
+      deletedMetricsRows: metricsDeleteResult.affected || 0,
+      deletedGitRows: gitDeleteResult.affected || 0
     };
   }
 

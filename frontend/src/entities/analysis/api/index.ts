@@ -1,5 +1,6 @@
 export {
   analysisApi,
+  useDeleteSavedRunMutation,
   useGetAnalysisJobStatusQuery,
   useGetRunFilterOptionsQuery,
   useGetRunViewQuery,
@@ -13,6 +14,7 @@ export type {
   AnalysisListQuery,
   AnalysisListResponse,
   AnalysisRow,
+  DeleteSavedRunResponse,
   Direction,
   GitAnalysisRow,
   RunFilterLevelOptions,

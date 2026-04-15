@@ -16,6 +16,7 @@
     "@hookform/resolvers": "^5.2.2",
     "@mantine/charts": "^8.3.6",
     "@mantine/core": "^8.3.6",
+    "@mantine/dates": "^8.3.18",
     "@mantine/hooks": "^8.3.6",
     "@mantine/notifications": "^8.3.18",
     "@phosphor-icons/react": "^2.1.10",

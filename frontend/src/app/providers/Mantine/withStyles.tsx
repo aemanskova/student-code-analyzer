@@ -1,8 +1,11 @@
 import "@mantine/core/styles.css"
 import "@mantine/charts/styles.css"
 import "@mantine/notifications/styles.css"
+import "@mantine/dates/styles.css"
+import "dayjs/locale/ru"
 
 import { createTheme, type MantineColorsTuple, MantineProvider } from "@mantine/core"
+import { DatesProvider } from "@mantine/dates"
 import { Notifications } from "@mantine/notifications"
 import type { ComponentType } from "react"
 
@@ -47,7 +50,9 @@ const theme = createTheme({
 
 export const withStyles = (WrappedComponent: ComponentType) => () => (
   <MantineProvider theme={theme}>
-    <Notifications />
-    <WrappedComponent />
+    <DatesProvider settings={{ locale: "ru", firstDayOfWeek: 1 }}>
+      <Notifications />
+      <WrappedComponent />
+    </DatesProvider>
   </MantineProvider>
 )

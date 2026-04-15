@@ -1,15 +1,35 @@
 import { useGetRunFilterOptionsQuery } from "@entities/analysis/api"
-import { useEffect, useMemo, useRef, useState } from "react"
+import { useEffect, useMemo } from "react"
+import { useForm, useWatch } from "react-hook-form"
 
 type Params = {
   runId: string
   analysisDepth?: number
 }
 
+type LevelsFormValues = {
+  selectedLevels: string[][]
+  draftLevels: string[][]
+}
+
+const getNormalizedLevels = (value: string[][] | undefined): string[][] =>
+  Array.isArray(value) ? value.map((items) => (Array.isArray(items) ? [...items] : [])) : []
+
 export const useAnalysisLevels = ({ runId, analysisDepth }: Params) => {
-  const [selectedLevels, setSelectedLevels] = useState<string[][]>([])
-  const [draftLevels, setDraftLevels] = useState<string[][]>([])
-  const draftLevelsRef = useRef<string[][]>([])
+  const form = useForm<LevelsFormValues>({
+    defaultValues: {
+      selectedLevels: [],
+      draftLevels: []
+    }
+  })
+
+  const selectedLevelsWatch = useWatch({ control: form.control, name: "selectedLevels" })
+  const draftLevelsWatch = useWatch({ control: form.control, name: "draftLevels" })
+  const selectedLevels = useMemo(
+    () => getNormalizedLevels(selectedLevelsWatch),
+    [selectedLevelsWatch]
+  )
+  const draftLevels = useMemo(() => getNormalizedLevels(draftLevelsWatch), [draftLevelsWatch])
 
   const optionsQuery = useGetRunFilterOptionsQuery(
     { runId, kind: "metrics", depth: analysisDepth },
@@ -60,76 +80,60 @@ export const useAnalysisLevels = ({ runId, analysisDepth }: Params) => {
   }, [allSegments, draftLevels, levelOptions.length])
 
   useEffect(() => {
-    const initial = optionsQuery.data?.selectedLevels || []
-    setSelectedLevels(initial)
-    setDraftLevels(initial)
-    draftLevelsRef.current = initial
-  }, [optionsQuery.data?.selectedLevels])
+    const initial = getNormalizedLevels(optionsQuery.data?.selectedLevels)
+    form.reset({
+      selectedLevels: initial,
+      draftLevels: initial
+    })
+  }, [form, optionsQuery.data?.selectedLevels])
 
   useEffect(() => {
     if (!levelOptions.length) {
       return
     }
     const defaultLevel1 = levelOptions[0]?.options?.[0]
-    if (!defaultLevel1) {
+    if (!defaultLevel1 || selectedLevels[0]?.length) {
       return
     }
 
-    setSelectedLevels((prev) => {
-      if (prev[0]?.length) {
-        return prev
-      }
-      const next = [...prev]
-      next[0] = [defaultLevel1]
-      return next
-    })
+    const nextSelected = getNormalizedLevels(selectedLevels)
+    const nextDraft = getNormalizedLevels(draftLevels)
+    nextSelected[0] = [defaultLevel1]
+    nextDraft[0] = [defaultLevel1]
 
-    setDraftLevels((prev) => {
-      if (prev[0]?.length) {
-        return prev
-      }
-      const next = [...prev]
-      next[0] = [defaultLevel1]
-      draftLevelsRef.current = next
-      return next
-    })
-  }, [levelOptions])
+    form.setValue("selectedLevels", nextSelected)
+    form.setValue("draftLevels", nextDraft)
+  }, [draftLevels, form, levelOptions, selectedLevels])
 
   const commitLevelSelection = (index: number) => {
-    setSelectedLevels((prev) => {
-      const next = prev.slice(0, index + 1)
-      next[index] = draftLevelsRef.current[index] || []
-      return next
-    })
+    const next = getNormalizedLevels(selectedLevels).slice(0, index + 1)
+    next[index] = draftLevels[index] || []
+    form.setValue("selectedLevels", next)
   }
 
   const clearLowerCommittedLevels = (index: number) => {
-    setSelectedLevels((prev) => {
-      if (prev.length <= index + 1) {
-        return prev
-      }
-      const next = prev.slice(0, index + 1)
-      next[index] = prev[index] || []
-      return next
-    })
+    if (selectedLevels.length <= index + 1) {
+      return
+    }
+    const next = getNormalizedLevels(selectedLevels).slice(0, index + 1)
+    next[index] = selectedLevels[index] || []
+    form.setValue("selectedLevels", next)
   }
 
   const changeLevel = (index: number, values: string[]) => {
-    const previousValues = draftLevelsRef.current[index] || []
+    const previousValues = draftLevels[index] || []
     const hasRemoved = previousValues.some((item) => !values.includes(item))
-    const nextDraft = draftLevelsRef.current.slice(0, index + 1)
+
+    const nextDraft = getNormalizedLevels(draftLevels).slice(0, index + 1)
     nextDraft[index] = values
-    draftLevelsRef.current = nextDraft
-    setDraftLevels(nextDraft)
+    form.setValue("draftLevels", nextDraft)
 
     clearLowerCommittedLevels(index)
 
     if (hasRemoved) {
-      setSelectedLevels((prev) => {
-        const next = prev.slice(0, index + 1)
-        next[index] = values
-        return next
-      })
+      const nextSelected = getNormalizedLevels(selectedLevels).slice(0, index + 1)
+      nextSelected[index] = values
+      form.setValue("selectedLevels", nextSelected)
     }
   }
 

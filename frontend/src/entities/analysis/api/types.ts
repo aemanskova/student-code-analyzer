@@ -86,6 +86,10 @@ export interface AnalysisListItem {
 export interface AnalysisListQuery {
   page: number
   size: number
+  path?: string
+  direction?: Direction
+  dateFrom?: string
+  dateTo?: string
 }
 
 export interface AnalysisListResponse {
@@ -93,6 +97,12 @@ export interface AnalysisListResponse {
   size: number
   total: number
   data: AnalysisListItem[]
+}
+
+export interface DeleteSavedRunResponse {
+  runId: string
+  deletedMetricsRows: number
+  deletedGitRows: number
 }
 
 export type RunViewKind = "metrics" | "git"

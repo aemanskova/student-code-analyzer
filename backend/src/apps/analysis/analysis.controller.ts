@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   Post,
@@ -141,6 +142,10 @@ export class AnalysisController {
   async getSavedAnalysisList(
     @Query("page") pageValue: string | undefined,
     @Query("size") sizeValue: string | undefined,
+    @Query("path") pathValue: string | undefined,
+    @Query("direction") directionValue: string | undefined,
+    @Query("dateFrom") dateFromValue: string | undefined,
+    @Query("dateTo") dateToValue: string | undefined,
     @Req() req: { user?: { sub?: number | string } }
   ) {
     const userId = Number(req.user?.sub);
@@ -148,8 +153,26 @@ export class AnalysisController {
       throw new UnauthorizedException("Invalid token payload");
     }
     const page = this.parsePaginationValue(pageValue, 1);
-    const size = this.parsePaginationValue(sizeValue, 10);
-    return this.analysisService.getSavedAnalysisList(userId, page, size);
+    const size = this.parsePaginationValue(sizeValue, 20);
+    return this.analysisService.getSavedAnalysisList(userId, page, size, {
+      path: this.parseText(pathValue),
+      direction: this.parseText(directionValue),
+      dateFrom: this.parseDate(dateFromValue, "start"),
+      dateTo: this.parseDate(dateToValue, "end")
+    });
+  }
+
+  @Delete("results/run/:runId")
+  @ApiOperation({ summary: "Удалить сохраненный отчет анализа по runId" })
+  async deleteSavedRun(
+    @Param("runId") runId: string,
+    @Req() req: { user?: { sub?: number | string } }
+  ) {
+    const userId = Number(req.user?.sub);
+    if (!Number.isFinite(userId) || userId <= 0) {
+      throw new UnauthorizedException("Invalid token payload");
+    }
+    return this.analysisService.deleteSavedRun(userId, runId);
   }
 
   private parseMetrics(value: unknown): string[] | undefined {
@@ -208,6 +231,41 @@ export class AnalysisController {
     }
     const intValue = Math.trunc(parsed);
     return intValue > 0 ? intValue : defaultValue;
+  }
+
+  private parseText(value: unknown): string | undefined {
+    if (value === undefined || value === null) {
+      return undefined;
+    }
+    const text = String(value).trim();
+    return text || undefined;
+  }
+
+  private parseDate(value: unknown, bound: "start" | "end"): Date | undefined {
+    const text = this.parseText(value);
+    if (!text) {
+      return undefined;
+    }
+
+    const dayMatch = text.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (dayMatch) {
+      const year = Number(dayMatch[1]);
+      const month = Number(dayMatch[2]);
+      const day = Number(dayMatch[3]);
+      if (!Number.isFinite(year) || !Number.isFinite(month) || !Number.isFinite(day)) {
+        return undefined;
+      }
+      if (bound === "start") {
+        return new Date(Date.UTC(year, month - 1, day, 0, 0, 0, 0));
+      }
+      return new Date(Date.UTC(year, month - 1, day, 23, 59, 59, 999));
+    }
+
+    const parsed = new Date(text);
+    if (Number.isNaN(parsed.getTime())) {
+      return undefined;
+    }
+    return parsed;
   }
 
   private parseJobStatuses(value: unknown): Array<"queued" | "running" | "success" | "failed"> {
