@@ -38,7 +38,10 @@ export function AnalysisResultsWidget({ runId, analysisDepth }: Props) {
   }
 
   const isLoading = !isOptionsResolved || optionsQuery.isLoading || optionsQuery.isFetching
-  const shouldShowNoGitNotice = isGitOptionsResolved && !hasGitTab && activeTab === "metrics"
+  const shouldShowNoGitNotice = isGitOptionsResolved && !hasGitTab
+  const shouldShowFeatureNotice = shouldShowNoGitNotice
+  const noticeText =
+    "Для этого запуска Git-метрики не рассчитывались. Доступен только отчет по качеству и доступности."
 
   return (
     <Stack gap="md">
@@ -54,12 +57,7 @@ export function AnalysisResultsWidget({ runId, analysisDepth }: Props) {
         onChangeLevel={changeLevel}
       />
 
-      {shouldShowNoGitNotice ? (
-        <InfoNotice
-          icon={<Info size={16} />}
-          text="Для этого запуска Git-метрики не рассчитывались. Доступен только отчет по качеству и доступности."
-        />
-      ) : null}
+      {shouldShowFeatureNotice ? <InfoNotice icon={<Info size={16} />} text={noticeText} /> : null}
 
       <ResultsTabs
         activeTab={activeTab}

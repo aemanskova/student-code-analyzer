@@ -1,6 +1,7 @@
 import type { AnalysisListItem } from "@entities/analysis/api"
 import { ActionIcon, Anchor, Group, Loader, Pagination, Stack, Tooltip } from "@mantine/core"
 import { Trash } from "@phosphor-icons/react"
+import { routes } from "@shared/config/routes"
 import { EmptyState } from "@shared/ui"
 import { type VirtualizedColumn, VirtualizedTable } from "@shared/ui/table"
 import { NavLink } from "react-router"
@@ -42,7 +43,7 @@ export const ArchiveListTable = ({
           c="myColor.6"
           component={NavLink}
           style={{ display: "inline-block", whiteSpace: "nowrap" }}
-          to={`/archive/${encodeURIComponent(row.path)}?direction=${encodeURIComponent(row.direction)}&runId=${encodeURIComponent(row.runId)}`}
+          to={`${routes.archive}/${encodeURIComponent(row.path)}?direction=${encodeURIComponent(row.direction)}&runId=${encodeURIComponent(row.runId)}`}
         >
           {row.path}
         </Anchor>

@@ -15,11 +15,11 @@ export const BREADCRUMB_RULES: BreadcrumbRule[] = [
   },
   {
     path: routes.analysis,
-    label: "Анализ"
+    label: "Новый анализ"
   },
   {
     path: routes.archive,
-    label: "Архив"
+    label: "Анализ"
   },
   {
     path: routes.archiveDetails,
@@ -34,6 +34,51 @@ export const BREADCRUMB_RULES: BreadcrumbRule[] = [
         return raw
       }
     }
+  },
+  {
+    path: routes.archiveLegacy,
+    label: "Анализ"
+  },
+  {
+    path: routes.archiveDetailsLegacy,
+    label: (params) => {
+      const raw = String(params.encodedPath || "").trim()
+      if (!raw) {
+        return "Отчет"
+      }
+      try {
+        return decodeURIComponent(raw)
+      } catch {
+        return raw
+      }
+    }
+  },
+  {
+    path: routes.heatmap,
+    label: "Тепловые карты"
+  },
+  {
+    path: routes.heatmapBuild,
+    label: "Построение"
+  },
+  {
+    path: routes.heatmapDetailsPath,
+    label: (params) => {
+      const raw = String(params.encodedFolder || "").trim()
+      if (!raw) {
+        return "Карта"
+      }
+      try {
+        return decodeURIComponent(raw)
+      } catch {
+        return raw
+      }
+    }
+  },
+  {
+    path: routes.heatmapDetailsFallbackPath,
+    hidden: true,
+    label: "Карта"
   },
   {
     path: routes.profile,

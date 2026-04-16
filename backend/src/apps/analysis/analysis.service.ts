@@ -10,18 +10,22 @@ import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
 import { randomUUID } from "node:crypto";
-import { once } from "node:events";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
+import { Readable, Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import * as unzipper from "unzipper";
 import {
   CompleteMultipartUploadCommand,
+  AbortMultipartUploadCommand,
   CreateBucketCommand,
   CreateMultipartUploadCommand,
+  DeleteObjectCommand,
   GetObjectCommand,
   HeadBucketCommand,
   HeadObjectCommand,
+  ListMultipartUploadsCommand,
+  ListObjectsV2Command,
   S3Client,
   UploadPartCommand
 } from "@aws-sdk/client-s3";
@@ -37,12 +41,21 @@ import { AnalysisResponse, AnalysisRow, GitAnalysisRow } from "./analysis.types"
 import { HtmlCssFullAnalyzerService } from "./html-css-full-analyzer.service";
 import { AnalysisGitResult } from "./entities/analysis-git-result.entity";
 import { AnalysisJob, AnalysisJobStatus } from "./entities/analysis-job.entity";
+import { AnalysisPlagiarism } from "./entities/analysis-plagiarism.entity";
 import { AnalysisResult } from "./entities/analysis-result.entity";
 import { AnalysisUpload } from "./entities/analysis-upload.entity";
+import { PlagiarismHeatmapService } from "./plagiarism-heatmap.service";
 
 interface ZipAnalysisInput {
   userId: number;
-  archive: { originalname?: string; buffer?: Buffer; path?: string; size?: number };
+  archive: {
+    originalname?: string;
+    buffer?: Buffer;
+    path?: string;
+    stream?: NodeJS.ReadableStream;
+    s3Key?: string;
+    size?: number;
+  };
   cleanupArchivePath?: boolean;
   sourceFingerprint?: string;
   onProgress?: (stage: string, progressPercent: number) => Promise<void> | void;
@@ -53,6 +66,7 @@ interface ZipAnalysisInput {
   r?: boolean;
   depth?: number;
   includeGitMetrics?: boolean;
+  includePlagiarismHeatmap?: boolean;
 }
 
 interface QueuedZipJob {
@@ -74,10 +88,32 @@ interface QueuedS3Job {
     r?: boolean;
     depth?: number;
     includeGitMetrics?: boolean;
+    includePlagiarismHeatmap?: boolean;
   };
 }
 
-type QueuedJob = QueuedZipJob | QueuedS3Job;
+interface QueuedHeatmapJob {
+  jobId: string;
+  input: {
+    userId: number;
+    runId: string;
+    depth?: number;
+    selectedLevels?: string[][];
+  };
+}
+
+interface QueuedStandaloneHeatmapJob {
+  jobId: string;
+  input: {
+    userId: number;
+    key: string;
+    originalName?: string;
+    r?: boolean;
+    depth?: number;
+  };
+}
+
+type QueuedJob = QueuedZipJob | QueuedS3Job | QueuedHeatmapJob | QueuedStandaloneHeatmapJob;
 
 type RunFilterKind = "metrics" | "git";
 
@@ -86,6 +122,20 @@ type RunFilterInput = {
   depth?: number;
   selectedLevels?: string[][];
 };
+
+type ZipEntryFilter = (relativePath: string) => boolean;
+
+const HEATMAP_MAX_WORKS = 100;
+const HEATMAP_LIMIT_MESSAGE =
+  "Построить тепловую карту списанных работ можно только для максимум 100 работ. Пожалуйста, запустите анализ без тепловой карты, а затем на странице архива анализа постройте карту для непосредственного нужного среза.";
+const DEFAULT_HEATMAP_MAX_ARCHIVE_BYTES = 5000 * 1024 * 1024; // 5000 MB
+const DEFAULT_ZIP_EXTRACT_CONCURRENCY = 8;
+const DEFAULT_S3_ZIP_TAIL_SIZES = [
+  1024 * 1024,
+  4 * 1024 * 1024,
+  16 * 1024 * 1024,
+  64 * 1024 * 1024
+];
 
 @Injectable()
 export class AnalysisService implements OnModuleInit {
@@ -113,6 +163,18 @@ export class AnalysisService implements OnModuleInit {
   private readonly s3AccessKeyId = String(process.env.S3_ACCESS_KEY_ID || "").trim();
   private readonly s3SecretAccessKey = String(process.env.S3_SECRET_ACCESS_KEY || "").trim();
   private readonly s3ForcePathStyle = String(process.env.S3_FORCE_PATH_STYLE || "true") === "true";
+  private readonly uploadCleanupTtlHours = Math.max(
+    1,
+    Number(process.env.ANALYSIS_UPLOAD_CLEANUP_TTL_HOURS || 24)
+  );
+  private readonly sourceArchiveTtlHours = Math.max(
+    1,
+    Number(process.env.ANALYSIS_SOURCE_ARCHIVE_TTL_HOURS || 24)
+  );
+  private readonly heatmapMaxArchiveBytes = Math.max(
+    1,
+    Math.trunc(Number(process.env.HEATMAP_MAX_ARCHIVE_BYTES || DEFAULT_HEATMAP_MAX_ARCHIVE_BYTES))
+  );
   private s3Client: S3Client | null = null;
   private s3PresignClient: S3Client | null = null;
   private s3BucketEnsured = false;
@@ -164,12 +226,34 @@ export class AnalysisService implements OnModuleInit {
     private readonly analysisUploadRepo: Repository<AnalysisUpload>,
     @InjectRepository(AnalysisGitResult)
     private readonly analysisGitResultRepo: Repository<AnalysisGitResult>,
+    @InjectRepository(AnalysisPlagiarism)
+    private readonly analysisPlagiarismRepo: Repository<AnalysisPlagiarism>,
     @InjectRepository(AnalysisResult)
-    private readonly analysisResultRepo: Repository<AnalysisResult>
+    private readonly analysisResultRepo: Repository<AnalysisResult>,
+    private readonly plagiarismHeatmapService: PlagiarismHeatmapService
   ) {}
 
   async onModuleInit(): Promise<void> {
-    await this.recoverStaleJobsAfterRestart();
+    try {
+      await this.recoverStaleJobsAfterRestart();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.error(`Не удалось восстановить статусы задач после рестарта: ${message}`);
+    }
+
+    try {
+      await this.cleanupStaleLocalUploads();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.error(`Не удалось очистить старые upload-архивы: ${message}`);
+    }
+
+    try {
+      await this.cleanupStaleS3Uploads();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.error(`Не удалось очистить старые S3-архивы: ${message}`);
+    }
   }
 
   private getDefaultFullMetrics(fullMetrics: string[]): string[] {
@@ -257,7 +341,12 @@ export class AnalysisService implements OnModuleInit {
       throw new BadRequestException("archive must be a .zip file");
     }
 
-    if (!input.archive.buffer && !input.archive.path) {
+    if (
+      !input.archive.buffer &&
+      !input.archive.path &&
+      !input.archive.stream &&
+      !input.archive.s3Key
+    ) {
       throw new BadRequestException("archive content is empty");
     }
 
@@ -269,7 +358,7 @@ export class AnalysisService implements OnModuleInit {
     let archivePath = input.archive.path;
     try {
       await input.onProgress?.("Подготовка данных", 3);
-      if (!archivePath) {
+      if (!archivePath && input.archive.buffer) {
         const tempZipFile = path.join(tempRoot, "upload.zip");
         await fs.writeFile(tempZipFile, input.archive.buffer as Buffer);
         archivePath = tempZipFile;
@@ -287,14 +376,52 @@ export class AnalysisService implements OnModuleInit {
         return cached;
       }
 
-      const extractedFiles = await this.extractZipToDir(archivePath, tempRoot, (extractProgress) =>
-        input.onProgress?.("Подготовка файлов к проверке", 5 + Math.floor(extractProgress * 0.45))
-      );
+      const extractedFiles = input.archive.s3Key
+        ? await this.extractS3ZipObjectToDir(input.archive.s3Key, tempRoot, {
+            expectedBytes: Number(input.archive.size || 0),
+            entryFilter: this.buildAnalysisZipEntryFilter(input.includeGitMetrics),
+            onProgress: (extractProgress) =>
+              input.onProgress?.(
+                "Подготовка файлов к проверке",
+                5 + Math.floor(extractProgress * 0.3)
+              )
+          })
+        : input.archive.stream
+          ? await this.extractZipReadableToDir(input.archive.stream, tempRoot, {
+              expectedBytes: Number(input.archive.size || 0),
+              entryFilter: this.buildAnalysisZipEntryFilter(input.includeGitMetrics),
+              onProgress: (extractProgress) =>
+                input.onProgress?.(
+                  "Подготовка файлов к проверке",
+                  5 + Math.floor(extractProgress * 0.3)
+                )
+            })
+          : await this.extractZipToDir(
+              archivePath as string,
+              tempRoot,
+              (extractProgress) =>
+                input.onProgress?.(
+                  "Подготовка файлов к проверке",
+                  5 + Math.floor(extractProgress * 0.3)
+                ),
+              this.buildAnalysisZipEntryFilter(input.includeGitMetrics)
+            );
       if (!extractedFiles) {
         throw new BadRequestException("zip archive is empty");
       }
+      if (this.resolveIncludePlagiarismHeatmap(input.includePlagiarismHeatmap)) {
+        await input.onProgress?.("Проверяем лимиты тепловой карты", 36);
+        const heatmapFoldersCount = await this.plagiarismHeatmapService.countFromRoot(
+          tempRoot,
+          Boolean(input.r),
+          input.depth
+        );
+        if (heatmapFoldersCount > HEATMAP_MAX_WORKS) {
+          throw new BadRequestException(HEATMAP_LIMIT_MESSAGE);
+        }
+      }
 
-      await input.onProgress?.("Запуск проверки работ", 55);
+      await input.onProgress?.("Запуск проверки работ", 40);
       const result = await this.run({
         direction: input.direction,
         metrics: selectedMetrics,
@@ -309,8 +436,7 @@ export class AnalysisService implements OnModuleInit {
             return;
           }
           const safeTotal = Math.max(1, total);
-          const ratio = Math.max(0, Math.min(1, completed / safeTotal));
-          const progress = 55 + Math.floor(ratio * 37);
+          const progress = this.mapProgressRange(40, 78, completed, safeTotal);
           const workLabel = this.extractWorkLabel(currentPath);
           await input.onProgress(
             `Проверяем папку: ${workLabel} (${completed}/${safeTotal})`,
@@ -322,8 +448,7 @@ export class AnalysisService implements OnModuleInit {
             return;
           }
           const safeTotal = Math.max(1, total);
-          const ratio = Math.max(0, Math.min(1, completed / safeTotal));
-          const progress = 93 + Math.floor(ratio * 5);
+          const progress = this.mapProgressRange(79, 90, completed, safeTotal);
           const repoLabel = this.extractWorkLabel(currentRepoPath);
           await input.onProgress(
             `Считаем Git-метрики: ${repoLabel} (${completed}/${safeTotal})`,
@@ -331,7 +456,9 @@ export class AnalysisService implements OnModuleInit {
           );
         }
       });
-      await input.onProgress?.("Сохраняем результаты", 99);
+      await input.onProgress?.("Подготавливаем тепловую карту", 91);
+      result.plagiarismHeatmap = await this.buildPlagiarismHeatmapIfNeeded(tempRoot, input);
+      await input.onProgress?.("Сохраняем результаты", 98);
       const runId = await this.saveResultsForUser(input.userId, result, cacheKey);
       await input.onProgress?.("Готово", 100);
       return {
@@ -340,9 +467,19 @@ export class AnalysisService implements OnModuleInit {
       };
     } finally {
       if (archivePath && input.cleanupArchivePath !== false) {
-        await fs.rm(archivePath, { force: true });
+        try {
+          await fs.rm(archivePath, { force: true });
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          this.logger.warn(`Не удалось удалить временный архив ${archivePath}: ${message}`);
+        }
       }
-      await fs.rm(tempRoot, { recursive: true, force: true });
+      try {
+        await fs.rm(tempRoot, { recursive: true, force: true });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        this.logger.warn(`Не удалось удалить временную папку ${tempRoot}: ${message}`);
+      }
     }
   }
 
@@ -367,7 +504,10 @@ export class AnalysisService implements OnModuleInit {
         metrics: input.metrics || [],
         r: Boolean(input.r),
         depth: input.depth ?? null,
-        includeGitMetrics: this.resolveIncludeGitMetrics(input.includeGitMetrics)
+        includeGitMetrics: this.resolveIncludeGitMetrics(input.includeGitMetrics),
+        includePlagiarismHeatmap: this.resolveIncludePlagiarismHeatmap(
+          input.includePlagiarismHeatmap
+        )
       },
       resultPayload: null,
       startedAt: null,
@@ -417,6 +557,7 @@ export class AnalysisService implements OnModuleInit {
       consumedAt: null
     });
     await this.analysisUploadRepo.save(upload);
+    void this.cleanupStaleLocalUploads();
 
     return {
       uploadId: upload.id,
@@ -437,6 +578,7 @@ export class AnalysisService implements OnModuleInit {
     r?: boolean;
     depth?: number;
     includeGitMetrics?: boolean;
+    includePlagiarismHeatmap?: boolean;
   }) {
     const uploadId = String(input.uploadId || "").trim();
     if (!uploadId) {
@@ -474,7 +616,8 @@ export class AnalysisService implements OnModuleInit {
         student: input.student,
         r: input.r,
         depth: input.depth,
-        includeGitMetrics: input.includeGitMetrics
+        includeGitMetrics: input.includeGitMetrics,
+        includePlagiarismHeatmap: input.includePlagiarismHeatmap
       },
       {
         onSuccess: async () => {
@@ -574,6 +717,63 @@ export class AnalysisService implements OnModuleInit {
     };
   }
 
+  async getS3MultipartPartUrls(input: {
+    userId: number;
+    key: string;
+    uploadId: string;
+    partNumbers: number[];
+    expiresInSeconds?: number;
+  }) {
+    await this.ensureS3BucketExists();
+    this.assertOwnedObjectKey(input.userId, input.key);
+    if (!input.uploadId) {
+      throw new BadRequestException("uploadId is required");
+    }
+
+    const partNumbers = Array.from(
+      new Set(
+        (Array.isArray(input.partNumbers) ? input.partNumbers : [])
+          .map((partNumber) => Math.trunc(Number(partNumber)))
+          .filter((partNumber) => Number.isFinite(partNumber) && partNumber >= 1)
+      )
+    ).sort((a, b) => a - b);
+
+    if (!partNumbers.length) {
+      throw new BadRequestException("partNumbers are required");
+    }
+    if (partNumbers.length > 1000) {
+      throw new BadRequestException("partNumbers batch is too large");
+    }
+    if (partNumbers.some((partNumber) => partNumber > 10000)) {
+      throw new BadRequestException("partNumber must be in range 1..10000");
+    }
+
+    const expiresInSeconds = Math.max(60, Math.min(3600, input.expiresInSeconds || 1800));
+    const urls = await Promise.all(
+      partNumbers.map(async (partNumber) => {
+        const command = new UploadPartCommand({
+          Bucket: this.getS3Bucket(),
+          Key: input.key,
+          UploadId: input.uploadId,
+          PartNumber: partNumber
+        });
+        return {
+          partNumber,
+          url: await getSignedUrl(this.getS3PresignClient(), command, {
+            expiresIn: expiresInSeconds
+          })
+        };
+      })
+    );
+
+    return {
+      key: input.key,
+      uploadId: input.uploadId,
+      expiresInSeconds,
+      urls
+    };
+  }
+
   async completeS3MultipartUpload(input: {
     userId: number;
     key: string;
@@ -610,12 +810,43 @@ export class AnalysisService implements OnModuleInit {
       MultipartUpload: { Parts: uniqueSortedParts }
     });
     const response = await this.getS3Client().send(command);
+    void this.cleanupStaleS3Uploads();
 
     return {
       bucket: this.getS3Bucket(),
       key: input.key,
       location: response.Location || null,
       etag: response.ETag || null
+    };
+  }
+
+  async abortS3MultipartUpload(input: { userId: number; key: string; uploadId: string }) {
+    await this.ensureS3BucketExists();
+    this.assertOwnedObjectKey(input.userId, input.key);
+    if (!input.uploadId) {
+      throw new BadRequestException("uploadId is required");
+    }
+
+    await this.getS3Client().send(
+      new AbortMultipartUploadCommand({
+        Bucket: this.getS3Bucket(),
+        Key: input.key,
+        UploadId: input.uploadId
+      })
+    );
+
+    return {
+      bucket: this.getS3Bucket(),
+      key: input.key,
+      aborted: true
+    };
+  }
+
+  async deleteUploadedS3Object(input: { userId: number; key: string }) {
+    await this.deleteS3ObjectIfOwned(input.userId, input.key);
+    return {
+      key: input.key,
+      deleted: true
     };
   }
 
@@ -629,6 +860,7 @@ export class AnalysisService implements OnModuleInit {
     r?: boolean;
     depth?: number;
     includeGitMetrics?: boolean;
+    includePlagiarismHeatmap?: boolean;
   }) {
     await this.ensureS3BucketExists();
     const key = String(input.key || "").trim();
@@ -636,6 +868,7 @@ export class AnalysisService implements OnModuleInit {
       throw new BadRequestException("key is required");
     }
     this.assertOwnedObjectKey(input.userId, key);
+
     const jobId = randomUUID();
     const created = this.analysisJobRepo.create({
       id: jobId,
@@ -651,7 +884,10 @@ export class AnalysisService implements OnModuleInit {
         metrics: input.metrics || [],
         r: Boolean(input.r),
         depth: input.depth ?? null,
-        includeGitMetrics: this.resolveIncludeGitMetrics(input.includeGitMetrics)
+        includeGitMetrics: this.resolveIncludeGitMetrics(input.includeGitMetrics),
+        includePlagiarismHeatmap: this.resolveIncludePlagiarismHeatmap(
+          input.includePlagiarismHeatmap
+        )
       },
       resultPayload: null,
       startedAt: null,
@@ -671,7 +907,333 @@ export class AnalysisService implements OnModuleInit {
         student: input.student,
         r: input.r,
         depth: input.depth,
-        includeGitMetrics: input.includeGitMetrics
+        includeGitMetrics: input.includeGitMetrics,
+        includePlagiarismHeatmap: input.includePlagiarismHeatmap
+      }
+    });
+    void this.processQueue();
+
+    return {
+      jobId,
+      status: "queued" as AnalysisJobStatus,
+      createdAt: created.createdAt
+    };
+  }
+
+  async validateS3HeatmapLimit(input: {
+    userId: number;
+    key: string;
+    r?: boolean;
+    depth?: number;
+    selectedLevels?: string[][];
+  }) {
+    await this.ensureS3BucketExists();
+    const key = String(input.key || "").trim();
+    if (!key) {
+      throw new BadRequestException("key is required");
+    }
+    this.assertOwnedObjectKey(input.userId, key);
+    const head = await this.headS3SourceArchive(key);
+    const archiveBytes = Number(head.ContentLength || 0);
+    if (
+      Number.isFinite(archiveBytes) &&
+      archiveBytes > 0 &&
+      archiveBytes > this.heatmapMaxArchiveBytes
+    ) {
+      return {
+        folderCount: null,
+        maxAllowed: HEATMAP_MAX_WORKS,
+        allowed: false,
+        archiveTooLarge: true,
+        message: this.buildHeatmapArchiveSizeLimitMessage(archiveBytes)
+      };
+    }
+
+    const recursive = Boolean(input.r);
+    const normalizedDepth =
+      input.depth !== undefined && Number.isFinite(input.depth)
+        ? Math.max(1, Math.trunc(input.depth))
+        : undefined;
+
+    let folderCount: number;
+    if (recursive && normalizedDepth !== undefined) {
+      folderCount = await this.countHeatmapFoldersFromZipEntriesFast(key, {
+        recursive,
+        depth: normalizedDepth,
+        selectedLevels: input.selectedLevels || [],
+        earlyStopLimit: HEATMAP_MAX_WORKS + 1
+      });
+    } else {
+      folderCount = await this.withExtractedS3ObjectRoot(
+        key,
+        async (tempRoot) =>
+          this.plagiarismHeatmapService.countFromRoot(
+            tempRoot,
+            recursive,
+            normalizedDepth,
+            input.selectedLevels
+          ),
+        undefined,
+        this.buildSelectedLevelsZipEntryFilter(input.selectedLevels || [])
+      );
+    }
+
+    return {
+      folderCount,
+      maxAllowed: HEATMAP_MAX_WORKS,
+      allowed: folderCount <= HEATMAP_MAX_WORKS,
+      archiveTooLarge: false,
+      message: folderCount > HEATMAP_MAX_WORKS ? HEATMAP_LIMIT_MESSAGE : null
+    };
+  }
+
+  async enqueueStandaloneHeatmapBuild(input: {
+    userId: number;
+    key: string;
+    originalName?: string;
+    r?: boolean;
+    depth?: number;
+  }) {
+    await this.ensureS3BucketExists();
+    const key = String(input.key || "").trim();
+    if (!key) {
+      throw new BadRequestException("key is required");
+    }
+    this.assertOwnedObjectKey(input.userId, key);
+    await this.assertHeatmapArchiveSizeAllowed(key);
+
+    const jobId = randomUUID();
+    const archiveName = String(input.originalName || path.basename(key) || "heatmap.zip");
+    const created = this.analysisJobRepo.create({
+      id: jobId,
+      userId: input.userId,
+      direction: "html_css",
+      status: "queued",
+      archiveName,
+      progressPercent: 0,
+      stage: "Ожидание",
+      errorMessage: null,
+      requestPayload: {
+        kind: "standalone_heatmap",
+        key,
+        originalName: archiveName,
+        r: Boolean(input.r),
+        depth: input.depth ?? null
+      },
+      resultPayload: null,
+      startedAt: null,
+      finishedAt: null,
+      heartbeatAt: null
+    });
+    await this.analysisJobRepo.save(created);
+
+    this.queuedJobs.push({
+      jobId,
+      input: {
+        userId: input.userId,
+        key,
+        originalName: archiveName,
+        r: input.r,
+        depth: input.depth
+      }
+    });
+    void this.processQueue();
+
+    return {
+      jobId,
+      status: "queued" as AnalysisJobStatus,
+      createdAt: created.createdAt
+    };
+  }
+
+  async deleteStandaloneHeatmap(userId: number, jobId: string) {
+    const normalizedJobId = String(jobId || "").trim();
+    if (!normalizedJobId) {
+      throw new BadRequestException("jobId path parameter is required");
+    }
+
+    const job = await this.analysisJobRepo.findOne({
+      where: {
+        id: normalizedJobId,
+        userId
+      }
+    });
+    if (!job) {
+      throw new NotFoundException("Тепловая карта не найдена");
+    }
+
+    const request = (job.requestPayload || {}) as Record<string, unknown>;
+    if (request.kind !== "standalone_heatmap" && request.kind !== "heatmap_build") {
+      throw new NotFoundException("Тепловая карта не найдена");
+    }
+
+    await this.analysisJobRepo.delete({
+      id: normalizedJobId,
+      userId
+    });
+
+    return {
+      jobId: normalizedJobId,
+      deleted: true
+    };
+  }
+
+  async buildPlagiarismHeatmapByRunFilters(input: {
+    userId: number;
+    runId: string;
+    depth?: number;
+    selectedLevels?: string[][];
+    onProgress?: (stage: string, progressPercent: number) => Promise<void> | void;
+  }) {
+    const normalizedRunId = String(input.runId || "").trim();
+    if (!normalizedRunId) {
+      throw new BadRequestException("runId path parameter is required");
+    }
+
+    const sourceJob = await this.findSuccessfulJobByRunId(input.userId, normalizedRunId, {
+      requireSourceKey: true
+    });
+    const key = String(sourceJob?.requestPayload?.key || "").trim();
+    if (!key) {
+      throw new NotFoundException("Архив для запуска не найден");
+    }
+    this.assertOwnedObjectKey(input.userId, key);
+
+    const recursive =
+      sourceJob?.requestPayload?.r === undefined ? true : Boolean(sourceJob.requestPayload.r);
+
+    const inferredDepth = this.inferDepthFromSelectedLevels(input.selectedLevels || []);
+    const normalizedDepth =
+      input.depth !== undefined && Number.isFinite(input.depth)
+        ? Math.max(1, Math.trunc(input.depth))
+        : inferredDepth;
+    const normalizedLevels = normalizedDepth
+      ? this.normalizeSelectedLevels(input.selectedLevels || [], normalizedDepth)
+      : [];
+
+    const output = await this.withExtractedS3ObjectRoot(
+      key,
+      async (tempRoot) => {
+        await input.onProgress?.("Определяем папки для сравнения", 21);
+        const folderCount = await this.plagiarismHeatmapService.countFromRoot(
+          tempRoot,
+          recursive,
+          normalizedDepth,
+          normalizedLevels
+        );
+        if (folderCount > HEATMAP_MAX_WORKS) {
+          throw new BadRequestException(HEATMAP_LIMIT_MESSAGE);
+        }
+        const heatmap = await this.plagiarismHeatmapService.buildFromRoot(
+          tempRoot,
+          recursive,
+          normalizedDepth,
+          async (completedPairs, totalPairs, folder1, folder2) => {
+            if (!input.onProgress) {
+              return;
+            }
+            const safeTotal = Math.max(1, totalPairs);
+            const progress = this.mapProgressRange(22, 98, completedPairs, safeTotal);
+            const toProgressLabel = (value?: string): string => {
+              const raw = String(value || "").trim();
+              if (!raw) {
+                return "";
+              }
+              const relative = this.normalizePath(path.relative(tempRoot, raw)).replace(
+                /^\/+|\/+$/g,
+                ""
+              );
+              const normalized = relative || this.normalizePath(path.basename(raw));
+              if (!normalized) {
+                return "";
+              }
+              if (normalizedDepth && normalizedDepth > 0) {
+                const segments = normalized.split("/").filter(Boolean);
+                if (segments.length >= normalizedDepth) {
+                  return (
+                    segments[normalizedDepth - 1] || segments[segments.length - 1] || normalized
+                  );
+                }
+                return segments[segments.length - 1] || normalized;
+              }
+              return normalized.split("/").filter(Boolean).pop() || normalized;
+            };
+            const pairLabel = [folder1, folder2]
+              .map((value) => toProgressLabel(value))
+              .filter(Boolean)
+              .join(" ↔ ");
+            await input.onProgress(
+              pairLabel
+                ? `Считаем тепловую карту: ${pairLabel} (${completedPairs}/${safeTotal})`
+                : `Считаем тепловую карту: пары ${completedPairs}/${safeTotal}`,
+              progress
+            );
+          },
+          normalizedLevels
+        );
+        return {
+          folderCount,
+          heatmap: heatmap
+            ? this.normalizePlagiarismHeatmapPayload(heatmap, tempRoot, normalizedDepth)
+            : null
+        };
+      },
+      input.onProgress,
+      this.buildSelectedLevelsZipEntryFilter(normalizedLevels)
+    );
+
+    return {
+      runId: normalizedRunId,
+      folderCount: output.folderCount,
+      maxAllowed: HEATMAP_MAX_WORKS,
+      plagiarismHeatmap: output.heatmap
+    };
+  }
+
+  async enqueueHeatmapBuildByRunFilters(input: {
+    userId: number;
+    runId: string;
+    depth?: number;
+    selectedLevels?: string[][];
+  }) {
+    const normalizedRunId = String(input.runId || "").trim();
+    if (!normalizedRunId) {
+      throw new BadRequestException("runId path parameter is required");
+    }
+
+    const details = await this.getSavedResultsByRunId(input.userId, normalizedRunId);
+    const direction = String(details.direction || "html_css").trim() || "html_css";
+
+    const jobId = randomUUID();
+    const created = this.analysisJobRepo.create({
+      id: jobId,
+      userId: input.userId,
+      direction,
+      status: "queued",
+      archiveName: `heatmap:${normalizedRunId}`,
+      progressPercent: 0,
+      stage: "Ожидание",
+      errorMessage: null,
+      requestPayload: {
+        kind: "heatmap_build",
+        runId: normalizedRunId,
+        depth: input.depth ?? null,
+        selectedLevels: input.selectedLevels || []
+      },
+      resultPayload: null,
+      startedAt: null,
+      finishedAt: null,
+      heartbeatAt: null
+    });
+    await this.analysisJobRepo.save(created);
+
+    this.queuedJobs.push({
+      jobId,
+      input: {
+        userId: input.userId,
+        runId: normalizedRunId,
+        depth: input.depth,
+        selectedLevels: input.selectedLevels || []
       }
     });
     void this.processQueue();
@@ -693,6 +1255,7 @@ export class AnalysisService implements OnModuleInit {
     r?: boolean;
     depth?: number;
     includeGitMetrics?: boolean;
+    includePlagiarismHeatmap?: boolean;
   }) {
     const zipPathRaw = String(input.zipPath || "").trim();
     if (!zipPathRaw) {
@@ -717,7 +1280,8 @@ export class AnalysisService implements OnModuleInit {
       student: input.student,
       r: input.r,
       depth: input.depth,
-      includeGitMetrics: input.includeGitMetrics
+      includeGitMetrics: input.includeGitMetrics,
+      includePlagiarismHeatmap: input.includePlagiarismHeatmap
     });
   }
 
@@ -748,7 +1312,7 @@ export class AnalysisService implements OnModuleInit {
       estimatedTotalSeconds === null &&
       job.status === "running" &&
       persistedProgress !== null &&
-      persistedProgress > 0 &&
+      persistedProgress >= 5 &&
       persistedProgress < 100 &&
       elapsedSeconds > 0
     ) {
@@ -759,7 +1323,9 @@ export class AnalysisService implements OnModuleInit {
       job.status === "success"
         ? 0
         : estimatedTotalSeconds !== null
-          ? Math.max(0, estimatedTotalSeconds - elapsedSeconds)
+          ? job.status === "running"
+            ? Math.max(1, estimatedTotalSeconds - elapsedSeconds)
+            : Math.max(0, estimatedTotalSeconds - elapsedSeconds)
           : null;
 
     const progressPercent =
@@ -924,6 +1490,10 @@ export class AnalysisService implements OnModuleInit {
       where: { userId, runId: normalizedRunId },
       order: { id: "ASC" }
     });
+    const plagiarism = await this.analysisPlagiarismRepo.findOne({
+      where: { userId, runId: normalizedRunId }
+    });
+    const requestedFeatures = await this.getRunRequestedFeatures(userId, normalizedRunId);
     const resolveYearFromGit = this.buildGitYearResolverFromGitRows(gitRows);
     const fallbackRootLabel = this.inferFallbackRootLabel([
       ...rows.map((row) => row.path),
@@ -944,6 +1514,7 @@ export class AnalysisService implements OnModuleInit {
       runId: normalizedRunId,
       direction,
       path: pathValue,
+      requestedFeatures: requestedFeatures || undefined,
       data: rows.map((row) => ({
         runId: row.runId,
         createdAt: row.createdAt,
@@ -971,7 +1542,8 @@ export class AnalysisService implements OnModuleInit {
         changes: row.changes,
         added: row.added,
         deleted: row.deleted
-      }))
+      })),
+      plagiarismHeatmap: plagiarism?.payload || null
     };
   }
 
@@ -1180,6 +1752,14 @@ export class AnalysisService implements OnModuleInit {
     const filteredRows = rows.filter((row) => matches(row.path));
     const filteredGitRows = gitRows.filter((row) => matches(row.path));
     const resolveYearFromGit = this.buildGitYearResolverFromGitRows(filteredGitRows);
+    const plagiarism =
+      input.kind === "metrics"
+        ? await this.analysisPlagiarismRepo.findOne({
+            where: { userId, runId: normalizedRunId }
+          })
+        : null;
+    const requestedFeatures =
+      input.kind === "metrics" ? await this.getRunRequestedFeatures(userId, normalizedRunId) : null;
 
     if (input.kind === "git") {
       return {
@@ -1222,6 +1802,8 @@ export class AnalysisService implements OnModuleInit {
       depth,
       selectedLevels,
       metrics,
+      requestedFeatures: requestedFeatures || undefined,
+      plagiarismHeatmap: plagiarism?.payload || null,
       rows: filteredRows.map((row) => ({
         runId: row.runId,
         createdAt: row.createdAt,
@@ -1250,6 +1832,218 @@ export class AnalysisService implements OnModuleInit {
         added: row.added,
         deleted: row.deleted
       }))
+    };
+  }
+
+  async getRunHeatmapHistory(userId: number, runId: string) {
+    const normalizedRunId = String(runId || "").trim();
+    if (!normalizedRunId) {
+      throw new BadRequestException("runId path parameter is required");
+    }
+
+    const jobs = await this.analysisJobRepo.find({
+      where: {
+        userId,
+        status: "success",
+        archiveName: `heatmap:${normalizedRunId}`
+      },
+      order: { createdAt: "DESC" },
+      take: 50
+    });
+
+    const history = jobs
+      .map((job) => {
+        const payload = (job.resultPayload || {}) as Record<string, unknown>;
+        const request = (job.requestPayload || {}) as Record<string, unknown>;
+        const plagiarismHeatmap = (payload.plagiarismHeatmap ||
+          null) as AnalysisResponse["plagiarismHeatmap"];
+        if (!plagiarismHeatmap) {
+          return null;
+        }
+
+        const selectedLevelsRaw = Array.isArray(request.selectedLevels)
+          ? request.selectedLevels
+          : [];
+        const selectedLevels = selectedLevelsRaw.map((levelValues) =>
+          (Array.isArray(levelValues) ? levelValues : [])
+            .map((value) => String(value || "").trim())
+            .filter(Boolean)
+        );
+
+        return {
+          jobId: job.id,
+          createdAt: job.createdAt,
+          depth:
+            request.depth === undefined ||
+            request.depth === null ||
+            !Number.isFinite(Number(request.depth))
+              ? null
+              : Math.max(1, Math.trunc(Number(request.depth))),
+          selectedLevels,
+          folderCount:
+            payload.rowsTotal === undefined ||
+            payload.rowsTotal === null ||
+            !Number.isFinite(Number(payload.rowsTotal))
+              ? null
+              : Math.max(0, Math.trunc(Number(payload.rowsTotal))),
+          plagiarismHeatmap
+        };
+      })
+      .filter((item): item is NonNullable<typeof item> => Boolean(item));
+
+    return {
+      runId: normalizedRunId,
+      data: history
+    };
+  }
+
+  async getStandaloneHeatmapList(
+    userId: number,
+    filters?: {
+      folder?: string;
+      dateFrom?: Date;
+      dateTo?: Date;
+      limit?: number;
+    }
+  ) {
+    const jobs = await this.analysisJobRepo.find({
+      where: {
+        userId,
+        status: "success"
+      },
+      order: { finishedAt: "DESC", createdAt: "DESC" },
+      take: Math.max(1, Math.min(500, Math.trunc(Number(filters?.limit) || 200)))
+    });
+
+    const folderFilter = String(filters?.folder || "")
+      .trim()
+      .toLowerCase();
+    const dateFromMs = filters?.dateFrom ? filters.dateFrom.getTime() : null;
+    const dateToMs = filters?.dateTo ? filters.dateTo.getTime() : null;
+
+    const data: Array<{
+      jobId: string;
+      archiveName: string | null;
+      folder: string;
+      folderCount: number;
+      createdAt: Date;
+      finishedAt: Date;
+      plagiarismHeatmap: NonNullable<AnalysisResponse["plagiarismHeatmap"]>;
+    }> = [];
+
+    for (const job of jobs) {
+      const request = (job.requestPayload || {}) as Record<string, unknown>;
+      if (request.kind !== "standalone_heatmap" && request.kind !== "heatmap_build") {
+        continue;
+      }
+
+      const payload = (job.resultPayload || {}) as Record<string, unknown>;
+      const heatmap = (payload.plagiarismHeatmap || null) as AnalysisResponse["plagiarismHeatmap"];
+      if (!heatmap) {
+        continue;
+      }
+
+      let folder = String(payload.path || "").trim();
+      if (!folder || /^analysis-heatmap-/i.test(folder)) {
+        if (request.kind === "standalone_heatmap") {
+          folder = this.getArchiveDisplayName(
+            String(request.originalName || request.key || job.archiveName || "")
+          );
+        } else {
+          const runId = String(request.runId || "").trim();
+          const sourceJob = runId
+            ? await this.findSuccessfulJobByRunId(userId, runId, { requireSourceKey: true })
+            : null;
+          const sourceKey = String(sourceJob?.requestPayload?.key || "").trim();
+          folder = sourceKey
+            ? this.getArchiveDisplayName(sourceKey)
+            : this.getArchiveDisplayName(runId || job.archiveName || "");
+        }
+      }
+      if (!folder) {
+        folder = String(heatmap.rootPath || job.archiveName || "Архив").trim() || "Архив";
+      }
+
+      const finishedAt = job.finishedAt || job.createdAt;
+      const timestamp = new Date(finishedAt).getTime();
+      if (folderFilter && !folder.toLowerCase().includes(folderFilter)) {
+        continue;
+      }
+      if (dateFromMs !== null && (!Number.isFinite(timestamp) || timestamp < dateFromMs)) {
+        continue;
+      }
+      if (dateToMs !== null && (!Number.isFinite(timestamp) || timestamp > dateToMs)) {
+        continue;
+      }
+
+      data.push({
+        jobId: job.id,
+        archiveName: job.archiveName,
+        folder,
+        folderCount: Number(payload.rowsTotal || heatmap.labels.length || 0),
+        createdAt: job.createdAt,
+        finishedAt,
+        plagiarismHeatmap: heatmap
+      });
+    }
+
+    return { data };
+  }
+
+  async getStandaloneHeatmapDetails(userId: number, jobId: string) {
+    const normalizedJobId = String(jobId || "").trim();
+    if (!normalizedJobId) {
+      throw new BadRequestException("jobId path parameter is required");
+    }
+
+    const job = await this.analysisJobRepo.findOne({
+      where: {
+        id: normalizedJobId,
+        userId
+      }
+    });
+    if (!job) {
+      throw new NotFoundException("Тепловая карта не найдена");
+    }
+    const request = (job.requestPayload || {}) as Record<string, unknown>;
+    if (request.kind !== "standalone_heatmap" && request.kind !== "heatmap_build") {
+      throw new NotFoundException("Тепловая карта не найдена");
+    }
+    const payload = (job.resultPayload || {}) as Record<string, unknown>;
+    const heatmap = (payload.plagiarismHeatmap || null) as AnalysisResponse["plagiarismHeatmap"];
+    if (!heatmap) {
+      throw new NotFoundException("Данные тепловой карты не найдены");
+    }
+
+    let folder = String(payload.path || "").trim();
+    if (!folder || /^analysis-heatmap-/i.test(folder)) {
+      if (request.kind === "standalone_heatmap") {
+        folder = this.getArchiveDisplayName(
+          String(request.originalName || request.key || job.archiveName || "")
+        );
+      } else {
+        const runId = String(request.runId || "").trim();
+        const sourceJob = runId
+          ? await this.findSuccessfulJobByRunId(userId, runId, { requireSourceKey: true })
+          : null;
+        const sourceKey = String(sourceJob?.requestPayload?.key || "").trim();
+        folder = sourceKey
+          ? this.getArchiveDisplayName(sourceKey)
+          : this.getArchiveDisplayName(runId || job.archiveName || "");
+      }
+    }
+    if (!folder) {
+      folder = String(heatmap.rootPath || job.archiveName || "Архив").trim() || "Архив";
+    }
+
+    return {
+      jobId: job.id,
+      archiveName: job.archiveName,
+      folder,
+      folderCount: Number(payload.rowsTotal || heatmap.labels.length || 0),
+      createdAt: job.createdAt,
+      finishedAt: job.finishedAt || job.createdAt,
+      plagiarismHeatmap: heatmap
     };
   }
 
@@ -1363,6 +2157,11 @@ export class AnalysisService implements OnModuleInit {
       throw new NotFoundException("Результаты запуска не найдены");
     }
 
+    const sourceJob = await this.findSuccessfulJobByRunId(userId, normalizedRunId, {
+      requireSourceKey: true
+    });
+    const sourceKey = String(sourceJob?.requestPayload?.key || "").trim();
+
     const metricsDeleteResult = await this.analysisResultRepo.delete({
       userId,
       runId: normalizedRunId
@@ -1371,6 +2170,13 @@ export class AnalysisService implements OnModuleInit {
       userId,
       runId: normalizedRunId
     });
+    await this.analysisPlagiarismRepo.delete({
+      userId,
+      runId: normalizedRunId
+    });
+    if (sourceKey) {
+      await this.deleteS3ObjectIfOwned(userId, sourceKey);
+    }
 
     return {
       runId: normalizedRunId,
@@ -1434,6 +2240,7 @@ export class AnalysisService implements OnModuleInit {
         this.normalizePath(path.relative(rootAbsolutePath, repoPath) || "."),
         rootDisplayLabel
       );
+      await options?.onRepoProgress?.(index, totalRepos, relativeRepoPath);
       const parsed = this.pathParserService.parse(relativeRepoPath);
       const repoRows = await this.processGitRepo(repoPath, relativeRepoPath, parsed, {
         allBranches: Boolean(options?.allBranches)
@@ -2058,6 +2865,704 @@ export class AnalysisService implements OnModuleInit {
     return value !== false;
   }
 
+  private resolveIncludePlagiarismHeatmap(value: boolean | undefined): boolean {
+    return value !== false;
+  }
+
+  private normalizeFeatureFlag(value: unknown): boolean {
+    return value !== false;
+  }
+
+  private escapeLikePattern(value: string): string {
+    return String(value || "").replace(/[\\%_]/g, "\\$&");
+  }
+
+  private async findSuccessfulJobByRunId(
+    userId: number,
+    runId: string,
+    options?: { requireSourceKey?: boolean }
+  ): Promise<AnalysisJob | null> {
+    const normalizedRunId = String(runId || "").trim();
+    if (!normalizedRunId) {
+      return null;
+    }
+
+    const runIdPattern = `%\"runId\":\"${this.escapeLikePattern(normalizedRunId)}\"%`;
+    const query = this.analysisJobRepo
+      .createQueryBuilder("job")
+      .where("job.userId = :userId", { userId })
+      .andWhere("job.status = :status", { status: "success" as AnalysisJobStatus })
+      .andWhere("job.resultPayload LIKE :pattern ESCAPE '\\'", { pattern: runIdPattern })
+      .orderBy("job.finishedAt", "DESC")
+      .addOrderBy("job.createdAt", "DESC");
+
+    if (options?.requireSourceKey) {
+      query.andWhere("job.requestPayload LIKE :keyPattern ESCAPE '\\'", {
+        keyPattern: '%"key":"uploads/%'
+      });
+    }
+
+    return query.getOne();
+  }
+
+  private async withExtractedS3ObjectRoot<T>(
+    key: string,
+    fn: (tempRoot: string) => Promise<T>,
+    onProgress?: (stage: string, progressPercent: number) => Promise<void> | void,
+    entryFilter?: ZipEntryFilter
+  ): Promise<T> {
+    await onProgress?.("Проверяем архив", 3);
+    const head = await this.headS3SourceArchive(key);
+    const objectSize = Number(head.ContentLength || 0);
+    const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "analysis-heatmap-"));
+
+    try {
+      await onProgress?.("Читаем архив", 5);
+      await this.extractS3ZipObjectToDir(key, tempRoot, {
+        expectedBytes: objectSize,
+        preserveMultiRootShape: true,
+        entryFilter,
+        onProgress: async (extractProgress) => {
+          const progress = 5 + Math.floor((Math.max(0, Math.min(100, extractProgress)) * 15) / 100);
+          await onProgress?.("Распаковываем выбранные файлы", progress);
+        }
+      });
+      return await fn(tempRoot);
+    } finally {
+      try {
+        await fs.rm(tempRoot, { recursive: true, force: true });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        this.logger.warn(`Не удалось удалить временную папку ${tempRoot}: ${message}`);
+      }
+    }
+  }
+
+  private async headS3SourceArchive(key: string) {
+    try {
+      return await this.getS3Client().send(
+        new HeadObjectCommand({
+          Bucket: this.getS3Bucket(),
+          Key: key
+        })
+      );
+    } catch (error) {
+      const code = String((error as { name?: string; Code?: string })?.name || "");
+      if (code === "NoSuchKey" || code === "NotFound" || code === "NotFoundException") {
+        throw new NotFoundException(
+          "Исходный архив уже удален из хранилища по политике очистки. Запустите анализ заново, чтобы построить новую тепловую карту."
+        );
+      }
+      throw error;
+    }
+  }
+
+  private formatBytes(bytes: number): string {
+    const safe = Math.max(0, Number(bytes) || 0);
+    if (safe >= 1024 * 1024 * 1024) {
+      return `${(safe / (1024 * 1024 * 1024)).toFixed(1)} GB`;
+    }
+    if (safe >= 1024 * 1024) {
+      return `${(safe / (1024 * 1024)).toFixed(1)} MB`;
+    }
+    if (safe >= 1024) {
+      return `${(safe / 1024).toFixed(1)} KB`;
+    }
+    return `${Math.trunc(safe)} B`;
+  }
+
+  private buildHeatmapArchiveSizeLimitMessage(actualBytes: number): string {
+    return `Архив слишком большой для построения тепловой карты (${this.formatBytes(
+      actualBytes
+    )}). Максимально допустимо: ${this.formatBytes(this.heatmapMaxArchiveBytes)}.`;
+  }
+
+  private async assertHeatmapArchiveSizeAllowed(key: string): Promise<void> {
+    const head = await this.headS3SourceArchive(key);
+    const archiveBytes = Number(head.ContentLength || 0);
+    if (
+      Number.isFinite(archiveBytes) &&
+      archiveBytes > 0 &&
+      archiveBytes > this.heatmapMaxArchiveBytes
+    ) {
+      throw new BadRequestException(this.buildHeatmapArchiveSizeLimitMessage(archiveBytes));
+    }
+  }
+
+  private isHeatmapServiceZipSegment(segment: string): boolean {
+    const normalized = String(segment || "").toLowerCase();
+    return normalized === "__macosx" || normalized === "macosx" || normalized.startsWith(".");
+  }
+
+  private mapProgressRange(
+    rangeStart: number,
+    rangeEnd: number,
+    completed: number,
+    total: number
+  ): number {
+    const safeStart = Math.trunc(rangeStart);
+    const safeEnd = Math.max(safeStart, Math.trunc(rangeEnd));
+    const safeTotal = Math.max(1, Math.trunc(Number(total) || 0));
+    const safeCompleted = Math.max(0, Math.min(safeTotal, Math.trunc(Number(completed) || 0)));
+    const ratio = Math.max(0, Math.min(1, safeCompleted / safeTotal));
+    return safeStart + Math.floor((safeEnd - safeStart) * ratio);
+  }
+
+  private matchesHeatmapSelectedLevels(
+    folderSegments: string[],
+    selectedLevels?: string[][]
+  ): boolean {
+    if (!Array.isArray(selectedLevels) || selectedLevels.length === 0) {
+      return true;
+    }
+
+    for (let index = 0; index < selectedLevels.length; index += 1) {
+      const options = Array.isArray(selectedLevels[index]) ? selectedLevels[index] : [];
+      if (!options.length) {
+        continue;
+      }
+      const segment = folderSegments[index] || "";
+      if (!options.includes(segment)) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  private async openS3ZipDirectory(
+    key: string
+  ): Promise<{ files?: Array<Record<string, unknown>> }> {
+    let lastZipReadError: unknown = null;
+
+    for (const tailSize of DEFAULT_S3_ZIP_TAIL_SIZES) {
+      try {
+        return (await unzipper.Open.s3_v3(
+          this.getS3Client(),
+          {
+            Bucket: this.getS3Bucket(),
+            Key: key
+          },
+          { tailSize }
+        )) as { files?: Array<Record<string, unknown>> };
+      } catch (error) {
+        if (!this.isZipReadFailure(error)) {
+          throw error;
+        }
+        lastZipReadError = error;
+      }
+    }
+
+    throw lastZipReadError instanceof Error
+      ? lastZipReadError
+      : new Error("Unable to read ZIP central directory from S3");
+  }
+
+  private async countHeatmapFoldersFromZipStream(
+    key: string,
+    options: {
+      recursive: boolean;
+      depth: number;
+      selectedLevels?: string[][];
+      earlyStopLimit?: number;
+    }
+  ): Promise<number> {
+    const includedExtensions = new Set([".html", ".css", ".js", ".ts"]);
+    const excludedFiles = new Set(["normalize.css", "reset.css", "README.md"]);
+    const recursive = Boolean(options.recursive);
+    const depth = Math.max(1, Math.trunc(Number(options.depth) || 1));
+    const selectedLevels = Array.isArray(options.selectedLevels) ? options.selectedLevels : [];
+    const shiftedDepth = Math.max(1, depth - 1);
+    const shiftedSelectedLevels = selectedLevels.slice(1);
+    const hasSelectedLevels = selectedLevels.some((level) => Array.isArray(level) && level.length);
+    const earlyStopLimit =
+      options.earlyStopLimit && Number.isFinite(options.earlyStopLimit)
+        ? Math.max(1, Math.trunc(options.earlyStopLimit))
+        : null;
+    const sourceStream = await this.getS3ObjectBody(key);
+    const zipStream = sourceStream.pipe(unzipper.Parse({ forceStream: true }));
+    sourceStream.on("error", (error) => {
+      zipStream.destroy(error);
+    });
+
+    const topLevelDirs = new Set<string>();
+    const uniqueFolders = new Set<string>();
+    const uniqueFoldersUnshifted = new Set<string>();
+    const uniqueFoldersShifted = new Set<string>();
+
+    for await (const entry of zipStream) {
+      const rawPath = this.normalizePath(String(entry.path || "")).replace(/^\/+|\/+$/g, "");
+      if (!rawPath) {
+        entry.autodrain();
+        continue;
+      }
+
+      const pathSegments = rawPath.split("/").filter(Boolean);
+      if (!pathSegments.length) {
+        entry.autodrain();
+        continue;
+      }
+
+      const hasServiceSegment = pathSegments.some((segment) =>
+        this.isHeatmapServiceZipSegment(segment)
+      );
+      if (hasServiceSegment) {
+        entry.autodrain();
+        continue;
+      }
+
+      if (pathSegments[0]) {
+        topLevelDirs.add(pathSegments[0]);
+      }
+
+      const fileName = pathSegments[pathSegments.length - 1] || "";
+      const ext = path.extname(fileName).toLowerCase();
+      const isDirectory = entry.type === "Directory" || rawPath.endsWith("/");
+      entry.autodrain();
+      if (isDirectory || !includedExtensions.has(ext) || excludedFiles.has(fileName)) {
+        continue;
+      }
+
+      const dirSegments = pathSegments.slice(0, -1);
+      if (!dirSegments.length) {
+        continue;
+      }
+
+      if (!hasSelectedLevels) {
+        if (recursive) {
+          if (dirSegments.length >= depth) {
+            uniqueFolders.add(dirSegments.slice(0, depth).join("/"));
+          }
+        } else if (depth === 1 && dirSegments[0]) {
+          uniqueFolders.add(dirSegments[0]);
+        }
+
+        if (earlyStopLimit !== null && uniqueFolders.size >= earlyStopLimit) {
+          break;
+        }
+        continue;
+      }
+
+      if (recursive) {
+        if (dirSegments.length >= depth) {
+          const unshiftedFolderSegments = dirSegments.slice(0, depth);
+          if (this.matchesHeatmapSelectedLevels(unshiftedFolderSegments, selectedLevels)) {
+            uniqueFoldersUnshifted.add(unshiftedFolderSegments.join("/"));
+          }
+        }
+
+        const shiftedSegments = dirSegments.slice(1);
+        if (shiftedSegments.length >= shiftedDepth) {
+          const shiftedFolderSegments = shiftedSegments.slice(0, shiftedDepth);
+          if (this.matchesHeatmapSelectedLevels(shiftedFolderSegments, shiftedSelectedLevels)) {
+            uniqueFoldersShifted.add(shiftedFolderSegments.join("/"));
+          }
+        }
+      } else if (depth === 1) {
+        const topFolder = dirSegments[0];
+        if (topFolder && this.matchesHeatmapSelectedLevels([topFolder], selectedLevels)) {
+          uniqueFoldersUnshifted.add(topFolder);
+        }
+        const shiftedTopFolder = dirSegments[1];
+        if (
+          shiftedTopFolder &&
+          this.matchesHeatmapSelectedLevels([shiftedTopFolder], shiftedSelectedLevels)
+        ) {
+          uniqueFoldersShifted.add(shiftedTopFolder);
+        }
+      }
+
+      if (
+        earlyStopLimit !== null &&
+        uniqueFoldersUnshifted.size >= earlyStopLimit &&
+        uniqueFoldersShifted.size >= earlyStopLimit
+      ) {
+        break;
+      }
+    }
+
+    if (!hasSelectedLevels) {
+      return uniqueFolders.size;
+    }
+
+    const useShifted = topLevelDirs.size === 1;
+    return useShifted ? uniqueFoldersShifted.size : uniqueFoldersUnshifted.size;
+  }
+
+  private async countHeatmapFoldersFromZipEntriesFast(
+    key: string,
+    options: {
+      recursive: boolean;
+      depth: number;
+      selectedLevels?: string[][];
+      earlyStopLimit?: number;
+    }
+  ): Promise<number> {
+    const includedExtensions = new Set([".html", ".css", ".js", ".ts"]);
+    const excludedFiles = new Set(["normalize.css", "reset.css", "README.md"]);
+    const recursive = Boolean(options.recursive);
+    const depth = Math.max(1, Math.trunc(Number(options.depth) || 1));
+    const selectedLevels = Array.isArray(options.selectedLevels) ? options.selectedLevels : [];
+    const shiftedDepth = Math.max(1, depth - 1);
+    const shiftedSelectedLevels = selectedLevels.slice(1);
+    const hasSelectedLevels = selectedLevels.some((level) => Array.isArray(level) && level.length);
+    const earlyStopLimit =
+      options.earlyStopLimit && Number.isFinite(options.earlyStopLimit)
+        ? Math.max(1, Math.trunc(options.earlyStopLimit))
+        : null;
+
+    try {
+      const directory = await this.openS3ZipDirectory(key);
+      const entries = Array.isArray(directory.files) ? directory.files : [];
+
+      // Fast path: when selected levels are not specified (the primary standalone heatmap case),
+      // cardinality does not depend on single-root shifting, so one counter is enough.
+      if (!hasSelectedLevels) {
+        const uniqueFolders = new Set<string>();
+        for (const entry of entries) {
+          const rawPath = this.normalizePath(String(entry.path || "")).replace(/^\/+|\/+$/g, "");
+          if (!rawPath) {
+            continue;
+          }
+
+          const pathSegments = rawPath.split("/").filter(Boolean);
+          if (!pathSegments.length) {
+            continue;
+          }
+
+          const hasServiceSegment = pathSegments.some((segment) =>
+            this.isHeatmapServiceZipSegment(segment)
+          );
+          if (hasServiceSegment) {
+            continue;
+          }
+
+          const fileName = pathSegments[pathSegments.length - 1] || "";
+          const ext = path.extname(fileName).toLowerCase();
+          const isDirectory = entry.type === "Directory" || rawPath.endsWith("/");
+          if (isDirectory || !includedExtensions.has(ext) || excludedFiles.has(fileName)) {
+            continue;
+          }
+
+          const dirSegments = pathSegments.slice(0, -1);
+          if (!dirSegments.length) {
+            continue;
+          }
+
+          if (recursive) {
+            if (dirSegments.length >= depth) {
+              uniqueFolders.add(dirSegments.slice(0, depth).join("/"));
+            }
+          } else if (depth === 1 && dirSegments[0]) {
+            uniqueFolders.add(dirSegments[0]);
+          }
+
+          if (earlyStopLimit !== null && uniqueFolders.size >= earlyStopLimit) {
+            break;
+          }
+        }
+        return uniqueFolders.size;
+      }
+
+      const topLevelDirs = new Set<string>();
+      const uniqueFoldersUnshifted = new Set<string>();
+      const uniqueFoldersShifted = new Set<string>();
+
+      for (const entry of entries) {
+        const rawPath = this.normalizePath(String(entry.path || "")).replace(/^\/+|\/+$/g, "");
+        if (!rawPath) {
+          continue;
+        }
+
+        const pathSegments = rawPath.split("/").filter(Boolean);
+        if (!pathSegments.length) {
+          continue;
+        }
+
+        const hasServiceSegment = pathSegments.some((segment) =>
+          this.isHeatmapServiceZipSegment(segment)
+        );
+        if (hasServiceSegment) {
+          continue;
+        }
+
+        if (pathSegments[0]) {
+          topLevelDirs.add(pathSegments[0]);
+        }
+
+        const fileName = pathSegments[pathSegments.length - 1] || "";
+        const ext = path.extname(fileName).toLowerCase();
+        const isDirectory = entry.type === "Directory" || rawPath.endsWith("/");
+        if (isDirectory || !includedExtensions.has(ext) || excludedFiles.has(fileName)) {
+          continue;
+        }
+
+        const dirSegments = pathSegments.slice(0, -1);
+        if (!dirSegments.length) {
+          continue;
+        }
+
+        if (recursive) {
+          if (dirSegments.length >= depth) {
+            const unshiftedFolderSegments = dirSegments.slice(0, depth);
+            if (this.matchesHeatmapSelectedLevels(unshiftedFolderSegments, selectedLevels)) {
+              uniqueFoldersUnshifted.add(unshiftedFolderSegments.join("/"));
+            }
+          }
+
+          const shiftedSegments = dirSegments.slice(1);
+          if (shiftedSegments.length >= shiftedDepth) {
+            const shiftedFolderSegments = shiftedSegments.slice(0, shiftedDepth);
+            if (this.matchesHeatmapSelectedLevels(shiftedFolderSegments, shiftedSelectedLevels)) {
+              uniqueFoldersShifted.add(shiftedFolderSegments.join("/"));
+            }
+          }
+        } else if (depth === 1) {
+          const topFolder = dirSegments[0];
+          if (topFolder && this.matchesHeatmapSelectedLevels([topFolder], selectedLevels)) {
+            uniqueFoldersUnshifted.add(topFolder);
+          }
+          const shiftedTopFolder = dirSegments[1];
+          if (
+            shiftedTopFolder &&
+            this.matchesHeatmapSelectedLevels([shiftedTopFolder], shiftedSelectedLevels)
+          ) {
+            uniqueFoldersShifted.add(shiftedTopFolder);
+          }
+        }
+
+        if (
+          earlyStopLimit !== null &&
+          uniqueFoldersUnshifted.size >= earlyStopLimit &&
+          uniqueFoldersShifted.size >= earlyStopLimit
+        ) {
+          break;
+        }
+      }
+
+      const useShifted = topLevelDirs.size === 1;
+      return useShifted ? uniqueFoldersShifted.size : uniqueFoldersUnshifted.size;
+    } catch (error) {
+      if (this.isZipReadFailure(error)) {
+        return this.countHeatmapFoldersFromZipStream(key, options);
+      }
+      throw error;
+    }
+  }
+
+  private isZipReadFailure(error: unknown): boolean {
+    const message = error instanceof Error ? error.message.toLowerCase() : "";
+    return (
+      message.includes("unexpected end of file") ||
+      message.includes("file_ended") ||
+      message.includes("invalid") ||
+      message.includes("corrupt") ||
+      message.includes("eio")
+    );
+  }
+
+  private getInvalidZipMessage(): string {
+    return "Не удалось прочитать ZIP-архив. Файл поврежден, недоступен или загружен не полностью.";
+  }
+
+  private async getRunRequestedFeatures(
+    userId: number,
+    runId: string
+  ): Promise<{ includeGitMetrics: boolean; includePlagiarismHeatmap: boolean } | null> {
+    const job = await this.findSuccessfulJobByRunId(userId, runId, { requireSourceKey: true });
+
+    if (!job) {
+      return null;
+    }
+
+    return {
+      includeGitMetrics: this.normalizeFeatureFlag(job.requestPayload?.includeGitMetrics),
+      includePlagiarismHeatmap: this.normalizeFeatureFlag(
+        job.requestPayload?.includePlagiarismHeatmap
+      )
+    };
+  }
+
+  private async buildPlagiarismHeatmapIfNeeded(
+    rootAbsolutePath: string,
+    input: Pick<ZipAnalysisInput, "includePlagiarismHeatmap" | "r" | "depth" | "onProgress">
+  ) {
+    if (!this.resolveIncludePlagiarismHeatmap(input.includePlagiarismHeatmap)) {
+      return null;
+    }
+
+    try {
+      const raw = await this.plagiarismHeatmapService.buildFromRoot(
+        rootAbsolutePath,
+        Boolean(input.r),
+        input.depth,
+        async (completedPairs, totalPairs, folder1, folder2) => {
+          if (!input.onProgress) {
+            return;
+          }
+          const safeTotal = Math.max(1, totalPairs);
+          const progress = this.mapProgressRange(92, 97, completedPairs, safeTotal);
+          const pairLabel = [folder1, folder2]
+            .map((value) => this.extractWorkLabel(String(value || "")))
+            .filter(Boolean)
+            .join(" ↔ ");
+          await input.onProgress(
+            pairLabel
+              ? `Считаем тепловую карту: ${pairLabel} (${completedPairs}/${safeTotal})`
+              : `Считаем тепловую карту: пары ${completedPairs}/${safeTotal}`,
+            progress
+          );
+        }
+      );
+      if (!raw) {
+        return null;
+      }
+      return this.normalizePlagiarismHeatmapPayload(raw, rootAbsolutePath, input.depth);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unknown plagiarism heatmap error";
+      this.logger.warn(`Plagiarism heatmap calculation failed: ${message}`);
+      return null;
+    }
+  }
+
+  private async buildStandaloneHeatmapFromS3(input: {
+    userId: number;
+    key: string;
+    originalName?: string;
+    r?: boolean;
+    depth?: number;
+    onProgress?: (stage: string, progressPercent: number) => Promise<void> | void;
+  }) {
+    const key = String(input.key || "").trim();
+    if (!key) {
+      throw new BadRequestException("key is required");
+    }
+    this.assertOwnedObjectKey(input.userId, key);
+    await this.assertHeatmapArchiveSizeAllowed(key);
+    const recursive = input.r === undefined ? true : Boolean(input.r);
+
+    return this.withExtractedS3ObjectRoot(
+      key,
+      async (tempRoot) => {
+        await input.onProgress?.("Определяем папки для сравнения", 21);
+        const folderCount = await this.plagiarismHeatmapService.countFromRoot(
+          tempRoot,
+          recursive,
+          input.depth
+        );
+        if (folderCount > HEATMAP_MAX_WORKS) {
+          throw new BadRequestException(HEATMAP_LIMIT_MESSAGE);
+        }
+
+        const heatmap = await this.plagiarismHeatmapService.buildFromRoot(
+          tempRoot,
+          recursive,
+          input.depth,
+          async (completedPairs, totalPairs, folder1, folder2) => {
+            if (!input.onProgress) {
+              return;
+            }
+            const safeTotal = Math.max(1, totalPairs);
+            const progress = this.mapProgressRange(22, 98, completedPairs, safeTotal);
+            const toProgressLabel = (value?: string): string => {
+              const raw = String(value || "").trim();
+              if (!raw) {
+                return "";
+              }
+              const relative = this.normalizePath(path.relative(tempRoot, raw)).replace(
+                /^\/+|\/+$/g,
+                ""
+              );
+              const normalized = relative || this.normalizePath(path.basename(raw));
+              if (!normalized) {
+                return "";
+              }
+              const segments = normalized.split("/").filter(Boolean);
+              const targetDepth = Math.max(1, Math.trunc(Number(input.depth) || 2));
+              if (segments.length >= targetDepth) {
+                return segments[targetDepth - 1] || segments[segments.length - 1] || normalized;
+              }
+              return segments[segments.length - 1] || normalized;
+            };
+            const pairLabel = [folder1, folder2]
+              .map((value) => toProgressLabel(value))
+              .filter(Boolean)
+              .join(" ↔ ");
+            await input.onProgress(
+              pairLabel
+                ? `Считаем тепловую карту: ${pairLabel} (${completedPairs}/${safeTotal})`
+                : `Считаем тепловую карту: пары ${completedPairs}/${safeTotal}`,
+              progress
+            );
+          }
+        );
+        const inferredFolder = await this.inferRootDisplayLabel(tempRoot);
+        const archiveLabel = this.getArchiveDisplayName(input.originalName || input.key);
+        const folder =
+          inferredFolder && !/^analysis-heatmap-/i.test(inferredFolder)
+            ? inferredFolder
+            : archiveLabel;
+        if (!heatmap) {
+          throw new BadRequestException("Недостаточно данных для построения тепловой карты.");
+        }
+        return {
+          folder,
+          folderCount,
+          plagiarismHeatmap: this.normalizePlagiarismHeatmapPayload(heatmap, tempRoot, input.depth)
+        };
+      },
+      input.onProgress
+    );
+  }
+
+  private normalizePlagiarismHeatmapPayload(
+    raw: NonNullable<AnalysisResponse["plagiarismHeatmap"]>,
+    rootAbsolutePath: string,
+    depth?: number
+  ) {
+    const normalizeFolderPath = (value: string): string => {
+      const relative = this.normalizePath(path.relative(rootAbsolutePath, value) || "");
+      const normalized = relative.replace(/^\/+|\/+$/g, "");
+      if (normalized && depth && depth > 0) {
+        const segments = normalized.split("/").filter(Boolean);
+        if (segments.length >= depth) {
+          return segments[depth - 1] || segments[segments.length - 1] || normalized;
+        }
+        if (segments.length) {
+          return segments[segments.length - 1] || normalized;
+        }
+      }
+      if (normalized) {
+        return normalized;
+      }
+      return this.normalizePath(path.basename(value || "")).replace(/^\/+|\/+$/g, "");
+    };
+
+    return {
+      ...raw,
+      rootPath: this.normalizePath(path.basename(rootAbsolutePath || "")).replace(/^\/+|\/+$/g, ""),
+      labels: raw.labels.map((label) => normalizeFolderPath(label)),
+      folders: raw.folders.map((folder) => ({
+        ...folder,
+        path: normalizeFolderPath(folder.path)
+      })),
+      pairs: raw.pairs.map((pair) => ({
+        ...pair,
+        folder1: normalizeFolderPath(pair.folder1),
+        folder2: normalizeFolderPath(pair.folder2)
+      }))
+    };
+  }
+
+  private getArchiveDisplayName(value: string): string {
+    const raw = String(value || "").trim();
+    if (!raw) {
+      return "Архив";
+    }
+    const base = path.basename(raw);
+    const normalized = base.replace(/\.zip$/i, "").trim();
+    return normalized || "Архив";
+  }
+
   private parseYearValue(value: unknown): string | null {
     if (typeof value === "number" && Number.isFinite(value)) {
       const year = Math.trunc(value);
@@ -2141,6 +3646,69 @@ export class AnalysisService implements OnModuleInit {
       result[level] = normalized;
     }
     return result;
+  }
+
+  private buildSelectedLevelsZipEntryFilter(
+    selectedLevels: string[][]
+  ): ZipEntryFilter | undefined {
+    const normalizedLevels = (Array.isArray(selectedLevels) ? selectedLevels : []).map((values) =>
+      Array.from(
+        new Set(
+          (Array.isArray(values) ? values : [])
+            .map((value) =>
+              this.normalizePath(String(value || ""))
+                .replace(/^\/+|\/+$/g, "")
+                .trim()
+            )
+            .filter(Boolean)
+        )
+      )
+    );
+
+    if (!normalizedLevels.some((values) => values.length > 0)) {
+      return undefined;
+    }
+
+    return (relativePath: string): boolean => {
+      const segments = this.normalizePath(relativePath)
+        .replace(/^\/+|\/+$/g, "")
+        .split("/")
+        .filter(Boolean);
+      if (!segments.length) {
+        return false;
+      }
+
+      for (let offset = 0; offset < Math.min(2, segments.length); offset += 1) {
+        const matches = normalizedLevels.every((options, level) => {
+          const segment = segments[offset + level] || "";
+          return options.length === 0 || options.includes(segment);
+        });
+        if (matches) {
+          return true;
+        }
+      }
+
+      return false;
+    };
+  }
+
+  private inferDepthFromSelectedLevels(selectedLevels: string[][]): number | undefined {
+    if (!Array.isArray(selectedLevels) || !selectedLevels.length) {
+      return undefined;
+    }
+
+    let maxSelectedLevel = -1;
+    for (let index = 0; index < selectedLevels.length; index += 1) {
+      const values = Array.isArray(selectedLevels[index]) ? selectedLevels[index] : [];
+      if (values.some((value) => String(value || "").trim().length > 0)) {
+        maxSelectedLevel = index;
+      }
+    }
+
+    if (maxSelectedLevel < 0) {
+      return undefined;
+    }
+    return maxSelectedLevel + 1;
   }
 
   private buildGitYearResolverFromGitRows(
@@ -2261,27 +3829,242 @@ export class AnalysisService implements OnModuleInit {
     return parts.join("/");
   }
 
+  private buildAnalysisZipEntryFilter(includeGitMetrics?: boolean): ZipEntryFilter {
+    const includeGit = this.resolveIncludeGitMetrics(includeGitMetrics);
+    const skippedDirectories = new Set([
+      ".github",
+      ".vscode",
+      "__macosx",
+      "macosx",
+      "node_modules",
+      "bootstrap"
+    ]);
+
+    return (relativePath: string): boolean => {
+      const segments = this.normalizePath(relativePath)
+        .split("/")
+        .map((segment) => segment.trim())
+        .filter(Boolean);
+      if (!segments.length) {
+        return false;
+      }
+
+      for (const segment of segments.slice(0, -1)) {
+        const normalized = segment.toLowerCase();
+        if (normalized.startsWith(".") && normalized !== ".git") {
+          return false;
+        }
+        if (normalized === ".git" && !includeGit) {
+          return false;
+        }
+        if (skippedDirectories.has(normalized)) {
+          return false;
+        }
+      }
+
+      const fileName = segments[segments.length - 1] || "";
+      if (!fileName || fileName.startsWith("._")) {
+        return false;
+      }
+      return true;
+    };
+  }
+
   private async extractZipToDir(
     zipPath: string,
     outputRoot: string,
-    onProgress?: (progressPercent: number) => Promise<void> | void
+    onProgress?: (progressPercent: number) => Promise<void> | void,
+    entryFilter?: ZipEntryFilter
+  ): Promise<number> {
+    const zipStat = await fs.stat(zipPath);
+    const sourceStream = createReadStream(zipPath);
+    return this.extractZipReadableToDir(sourceStream, outputRoot, {
+      expectedBytes: zipStat.size,
+      onProgress,
+      entryFilter
+    });
+  }
+
+  private async extractS3ZipObjectToDir(
+    key: string,
+    outputRoot: string,
+    options: {
+      expectedBytes?: number;
+      onProgress?: (progressPercent: number) => Promise<void> | void;
+      entryFilter?: ZipEntryFilter;
+      preserveMultiRootShape?: boolean;
+    } = {}
   ): Promise<number> {
     try {
-      const zipStat = await fs.stat(zipPath);
-      const zipSize = Math.max(1, zipStat.size);
-      const sourceStream = createReadStream(zipPath);
-      const zipStream = sourceStream.pipe(unzipper.Parse({ forceStream: true }));
+      const directory = await this.openS3ZipDirectory(key);
+      const entries = Array.isArray(directory.files) ? directory.files : [];
+      const topLevelDirs = new Set<string>();
+      const fileEntries: Array<{
+        entry: { path?: string; type?: string; stream: () => NodeJS.ReadableStream };
+        index: number;
+      }> = [];
+
+      entries.forEach(
+        (
+          entry: { path?: string; type?: string; stream?: () => NodeJS.ReadableStream },
+          index: number
+        ) => {
+          const entryPath = String(entry.path || "");
+          const entrySegments = this.normalizePath(entryPath)
+            .replace(/^\/+|\/+$/g, "")
+            .split("/")
+            .filter(Boolean);
+          const firstSegment = entrySegments[0] || "";
+          if (
+            firstSegment &&
+            firstSegment.toLowerCase() !== "__macosx" &&
+            !firstSegment.startsWith(".")
+          ) {
+            topLevelDirs.add(firstSegment);
+          }
+          const isDirectory = entry.type === "Directory" || /[/\\]$/.test(entryPath);
+          const relativePath = this.sanitizeRelativePath(entryPath, index);
+          if (
+            !isDirectory &&
+            typeof entry.stream === "function" &&
+            (!options.entryFilter || options.entryFilter(relativePath))
+          ) {
+            fileEntries.push({
+              entry: entry as { path?: string; type?: string; stream: () => NodeJS.ReadableStream },
+              index
+            });
+          }
+        }
+      );
+
+      let extractedFiles = 0;
+      let processedFiles = 0;
+      let lastReported = 0;
+      let nextIndex = 0;
+      const concurrency = Math.max(
+        1,
+        Math.min(
+          Number(process.env.ZIP_EXTRACT_CONCURRENCY || DEFAULT_ZIP_EXTRACT_CONCURRENCY),
+          fileEntries.length || 1
+        )
+      );
+
+      const reportProgress = async () => {
+        if (!options.onProgress || !fileEntries.length) {
+          return;
+        }
+        const percent = Math.floor((processedFiles / fileEntries.length) * 100);
+        if (percent >= lastReported + 2 || percent === 100) {
+          lastReported = percent;
+          await options.onProgress(percent);
+        }
+      };
+
+      const extractOne = async (item: {
+        entry: { path?: string; stream: () => NodeJS.ReadableStream };
+        index: number;
+      }) => {
+        const entryPath = String(item.entry.path || "");
+        const relativePath = this.sanitizeRelativePath(entryPath, item.index);
+        const absolutePath = path.resolve(outputRoot, relativePath);
+        const normalizedRoot = `${path.resolve(outputRoot)}${path.sep}`;
+        if (!absolutePath.startsWith(normalizedRoot)) {
+          processedFiles += 1;
+          await reportProgress();
+          return;
+        }
+
+        await fs.mkdir(path.dirname(absolutePath), { recursive: true });
+        await pipeline(item.entry.stream(), createWriteStream(absolutePath));
+        extractedFiles += 1;
+        processedFiles += 1;
+        await reportProgress();
+      };
+
+      const worker = async () => {
+        while (true) {
+          const item = fileEntries[nextIndex];
+          nextIndex += 1;
+          if (!item) {
+            return;
+          }
+          await extractOne(item);
+        }
+      };
+
+      await Promise.all(Array.from({ length: concurrency }, () => worker()));
+
+      if (options.preserveMultiRootShape && topLevelDirs.size > 1) {
+        await fs.mkdir(path.join(outputRoot, "__analysis_root_marker__"), { recursive: true });
+      }
+      if (options.onProgress) {
+        await options.onProgress(100);
+      }
+      return extractedFiles;
+    } catch (error) {
+      if (this.isZipReadFailure(error)) {
+        const sourceStream = await this.getS3ObjectBody(key);
+        return this.extractZipReadableToDir(sourceStream, outputRoot, options);
+      }
+      throw error;
+    }
+  }
+
+  private async extractZipReadableToDir(
+    sourceStream: NodeJS.ReadableStream,
+    outputRoot: string,
+    options: {
+      expectedBytes?: number;
+      onProgress?: (progressPercent: number) => Promise<void> | void;
+      entryFilter?: ZipEntryFilter;
+      preserveMultiRootShape?: boolean;
+    } = {}
+  ): Promise<number> {
+    try {
+      const zipSize = Math.max(1, Number(options.expectedBytes || 0));
+      let bytesRead = 0;
+      const countBytes = new Transform({
+        transform(chunk: Buffer, _encoding, callback) {
+          bytesRead += chunk.length;
+          callback(null, chunk);
+        }
+      });
+      const zipStream = sourceStream.pipe(countBytes).pipe(unzipper.Parse({ forceStream: true }));
+      // Forward low-level fs read errors to unzip stream so they are handled by try/catch below.
+      sourceStream.on("error", (error) => {
+        zipStream.destroy(error);
+      });
       let extractedFiles = 0;
       let lastReported = 0;
+      const topLevelDirs = new Set<string>();
 
       for await (const entry of zipStream) {
         const isDirectory = entry.type === "Directory";
+        const entryPath = String(entry.path || "");
+        const entrySegments = this.normalizePath(entryPath)
+          .replace(/^\/+|\/+$/g, "")
+          .split("/")
+          .filter(Boolean);
+        const firstSegment = entrySegments[0] || "";
+        if (
+          firstSegment &&
+          firstSegment.toLowerCase() !== "__macosx" &&
+          !firstSegment.startsWith(".")
+        ) {
+          topLevelDirs.add(firstSegment);
+        }
+
         if (isDirectory) {
           entry.autodrain();
           continue;
         }
 
-        const relativePath = this.sanitizeRelativePath(String(entry.path || ""), extractedFiles);
+        const relativePath = this.sanitizeRelativePath(entryPath, extractedFiles);
+        if (options.entryFilter && !options.entryFilter(relativePath)) {
+          entry.autodrain();
+          continue;
+        }
+
         const absolutePath = path.resolve(outputRoot, relativePath);
         const normalizedRoot = `${path.resolve(outputRoot)}${path.sep}`;
         if (!absolutePath.startsWith(normalizedRoot)) {
@@ -2293,27 +4076,26 @@ export class AnalysisService implements OnModuleInit {
         await pipeline(entry, createWriteStream(absolutePath));
         extractedFiles += 1;
 
-        if (onProgress) {
-          const ratio = Math.max(0, Math.min(1, sourceStream.bytesRead / zipSize));
+        if (options.onProgress && zipSize > 0) {
+          const ratio = Math.max(0, Math.min(1, bytesRead / zipSize));
           const percent = Math.floor(ratio * 100);
           if (percent >= lastReported + 2 || percent === 100) {
             lastReported = percent;
-            await onProgress(percent);
+            await options.onProgress(percent);
           }
         }
       }
 
+      if (options.preserveMultiRootShape && topLevelDirs.size > 1) {
+        await fs.mkdir(path.join(outputRoot, "__analysis_root_marker__"), { recursive: true });
+      }
+      if (options.onProgress) {
+        await options.onProgress(100);
+      }
       return extractedFiles;
     } catch (error) {
-      const message = error instanceof Error ? error.message.toLowerCase() : "";
-      if (
-        message.includes("unexpected end of file") ||
-        message.includes("invalid") ||
-        message.includes("corrupt")
-      ) {
-        throw new BadRequestException(
-          "ZIP-архив поврежден или загружен не полностью. Пересоздайте архив и повторите попытку."
-        );
+      if (this.isZipReadFailure(error)) {
+        throw new BadRequestException(this.getInvalidZipMessage());
       }
       throw error;
     }
@@ -2374,6 +4156,16 @@ export class AnalysisService implements OnModuleInit {
       await this.analysisGitResultRepo.save(gitEntities);
     }
 
+    if (result.plagiarismHeatmap) {
+      const plagiarismEntity = this.analysisPlagiarismRepo.create({
+        userId,
+        runId,
+        direction: result.direction,
+        payload: result.plagiarismHeatmap
+      });
+      await this.analysisPlagiarismRepo.save(plagiarismEntity);
+    }
+
     return runId;
   }
 
@@ -2408,10 +4200,9 @@ export class AnalysisService implements OnModuleInit {
 
   private async buildZipCacheKey(
     input: ZipAnalysisInput,
-    archivePath: string,
+    archivePath: string | undefined,
     selectedMetrics: string[]
   ): Promise<string> {
-    const stats = await fs.stat(archivePath);
     const metricsPart = [...selectedMetrics].sort().join(",");
     const requestPart = [
       `direction=${input.direction}`,
@@ -2420,13 +4211,19 @@ export class AnalysisService implements OnModuleInit {
       `student=${input.student || ""}`,
       `r=${input.r ? "1" : "0"}`,
       `depth=${input.depth ?? ""}`,
-      `includeGitMetrics=${this.resolveIncludeGitMetrics(input.includeGitMetrics) ? "1" : "0"}`
+      `includeGitMetrics=${this.resolveIncludeGitMetrics(input.includeGitMetrics) ? "1" : "0"}`,
+      `includePlagiarismHeatmap=${this.resolveIncludePlagiarismHeatmap(input.includePlagiarismHeatmap) ? "1" : "0"}`
     ].join("|");
 
     if (input.sourceFingerprint) {
       return `${input.sourceFingerprint}|${requestPart}`;
     }
 
+    if (!archivePath) {
+      throw new BadRequestException("archive path is required for cache key");
+    }
+
+    const stats = await fs.stat(archivePath);
     if (input.cleanupArchivePath === false) {
       const absolute = path.resolve(archivePath);
       return `path|${absolute}|size=${stats.size}|mtime=${stats.mtimeMs}|${requestPart}`;
@@ -2477,6 +4274,9 @@ export class AnalysisService implements OnModuleInit {
       },
       order: { id: "ASC" }
     });
+    const plagiarism = await this.analysisPlagiarismRepo.findOne({
+      where: { userId, runId: latest.runId }
+    });
     const resolveYearFromGit = this.buildGitYearResolverFromGitRows(gitRows);
 
     if (!rows.length && !gitRows.length) {
@@ -2510,7 +4310,8 @@ export class AnalysisService implements OnModuleInit {
         changes: row.changes,
         added: row.added,
         deleted: row.deleted
-      }))
+      })),
+      plagiarismHeatmap: plagiarism?.payload || null
     };
   }
 
@@ -2562,6 +4363,162 @@ export class AnalysisService implements OnModuleInit {
     this.logger.warn(`Помечено как failed после рестарта: ${staleJobs.length} задач`);
   }
 
+  private async cleanupStaleLocalUploads(): Promise<void> {
+    const before = new Date(Date.now() - this.uploadCleanupTtlHours * 60 * 60 * 1000);
+    const staleUploads = await this.analysisUploadRepo
+      .createQueryBuilder("upload")
+      .where("upload.updatedAt < :before", { before })
+      .andWhere("upload.status IN (:...statuses)", { statuses: ["uploaded", "done", "failed"] })
+      .limit(200)
+      .getMany();
+
+    if (!staleUploads.length) {
+      return;
+    }
+
+    for (const upload of staleUploads) {
+      if (upload.storedPath) {
+        try {
+          await fs.rm(upload.storedPath, { force: true });
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          this.logger.warn(`Не удалось удалить старый архив ${upload.storedPath}: ${message}`);
+        }
+      }
+    }
+
+    await this.analysisUploadRepo.delete(staleUploads.map((upload) => upload.id));
+    this.logger.log(`Удалено старых локальных upload-архивов: ${staleUploads.length}`);
+  }
+
+  private extractS3KeyFromRequestPayload(payload: unknown): string | null {
+    if (!payload || typeof payload !== "object") {
+      return null;
+    }
+    const key = String((payload as Record<string, unknown>).key || "").trim();
+    return key.startsWith("uploads/") ? key : null;
+  }
+
+  private async getActiveS3UploadKeys(): Promise<Set<string>> {
+    const jobs = await this.analysisJobRepo.find({
+      where: {
+        status: In(["queued", "running"] as AnalysisJobStatus[])
+      },
+      select: ["requestPayload"]
+    });
+    const active = new Set<string>();
+    for (const job of jobs) {
+      const key = this.extractS3KeyFromRequestPayload(job.requestPayload);
+      if (key) {
+        active.add(key);
+      }
+    }
+    return active;
+  }
+
+  private async cleanupStaleS3Uploads(): Promise<void> {
+    if (!this.s3Bucket) {
+      return;
+    }
+
+    await this.ensureS3BucketExists();
+    await this.cleanupStaleS3MultipartUploads();
+
+    const cutoffMs = Date.now() - this.sourceArchiveTtlHours * 60 * 60 * 1000;
+    const activeKeys = await this.getActiveS3UploadKeys();
+    let continuationToken: string | undefined;
+    let deleted = 0;
+
+    do {
+      const response = await this.getS3Client().send(
+        new ListObjectsV2Command({
+          Bucket: this.getS3Bucket(),
+          Prefix: "uploads/",
+          ContinuationToken: continuationToken,
+          MaxKeys: 500
+        })
+      );
+
+      for (const object of response.Contents || []) {
+        const key = String(object.Key || "").trim();
+        const lastModifiedMs = object.LastModified?.getTime() || 0;
+        if (!key || activeKeys.has(key) || !lastModifiedMs || lastModifiedMs >= cutoffMs) {
+          continue;
+        }
+        await this.deleteS3ObjectIfOwned(this.parseUserIdFromUploadKey(key), key);
+        deleted += 1;
+      }
+
+      continuationToken = response.IsTruncated ? response.NextContinuationToken : undefined;
+    } while (continuationToken);
+
+    if (deleted > 0) {
+      this.logger.log(
+        `Удалено старых S3 upload-архивов: ${deleted}. TTL: ${this.sourceArchiveTtlHours} ч.`
+      );
+    }
+  }
+
+  private async cleanupStaleS3MultipartUploads(): Promise<void> {
+    const cutoffMs = Date.now() - this.sourceArchiveTtlHours * 60 * 60 * 1000;
+    let keyMarker: string | undefined;
+    let uploadIdMarker: string | undefined;
+    let aborted = 0;
+
+    do {
+      const response = await this.getS3Client().send(
+        new ListMultipartUploadsCommand({
+          Bucket: this.getS3Bucket(),
+          Prefix: "uploads/",
+          KeyMarker: keyMarker,
+          UploadIdMarker: uploadIdMarker,
+          MaxUploads: 500
+        })
+      );
+
+      for (const upload of response.Uploads || []) {
+        const key = String(upload.Key || "").trim();
+        const uploadId = String(upload.UploadId || "").trim();
+        const initiatedMs = upload.Initiated?.getTime() || 0;
+        if (!key || !uploadId || !initiatedMs || initiatedMs >= cutoffMs) {
+          continue;
+        }
+
+        try {
+          await this.getS3Client().send(
+            new AbortMultipartUploadCommand({
+              Bucket: this.getS3Bucket(),
+              Key: key,
+              UploadId: uploadId
+            })
+          );
+          aborted += 1;
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          this.logger.warn(`Не удалось отменить старый multipart upload ${key}: ${message}`);
+        }
+      }
+
+      keyMarker = response.IsTruncated ? response.NextKeyMarker : undefined;
+      uploadIdMarker = response.IsTruncated ? response.NextUploadIdMarker : undefined;
+    } while (keyMarker || uploadIdMarker);
+
+    if (aborted > 0) {
+      this.logger.log(
+        `Отменено старых незавершенных multipart uploads: ${aborted}. TTL: ${this.sourceArchiveTtlHours} ч.`
+      );
+    }
+  }
+
+  private parseUserIdFromUploadKey(key: string): number {
+    const match = String(key || "").match(/^uploads\/(\d+)\//);
+    const userId = match ? Number(match[1]) : NaN;
+    if (!Number.isFinite(userId) || userId <= 0) {
+      throw new BadRequestException("Недопустимый key объекта");
+    }
+    return userId;
+  }
+
   private async runQueuedJob(job: QueuedJob): Promise<void> {
     const entity = await this.analysisJobRepo.findOne({ where: { id: job.jobId } });
     if (!entity) {
@@ -2577,7 +4534,12 @@ export class AnalysisService implements OnModuleInit {
     await this.analysisJobRepo.save(entity);
 
     const heartbeatTimer = setInterval(() => {
-      void this.analysisJobRepo.update({ id: entity.id }, { heartbeatAt: new Date() });
+      void this.analysisJobRepo
+        .update({ id: entity.id }, { heartbeatAt: new Date() })
+        .catch((error) => {
+          const message = error instanceof Error ? error.message : String(error);
+          this.logger.warn(`Не удалось обновить heartbeat задачи ${entity.id}: ${message}`);
+        });
     }, 10_000);
 
     let lastProgressWriteMs = 0;
@@ -2599,45 +4561,40 @@ export class AnalysisService implements OnModuleInit {
     };
 
     try {
-      let result: AnalysisResponse;
+      let result:
+        | AnalysisResponse
+        | {
+            runId: string;
+            folder: string;
+            folderCount: number;
+            plagiarismHeatmap: AnalysisResponse["plagiarismHeatmap"];
+          }
+        | {
+            runId: string;
+            folderCount: number;
+            maxAllowed: number;
+            plagiarismHeatmap: AnalysisResponse["plagiarismHeatmap"];
+          };
 
       if ("archive" in job.input) {
         result = await this.runFromZip({
           ...job.input,
           onProgress: writeProgress
         });
-      } else {
+      } else if ("key" in job.input && "direction" in job.input) {
         await writeProgress("Подготовка данных", 2);
-        const head = await this.getS3Client().send(
-          new HeadObjectCommand({
-            Bucket: this.getS3Bucket(),
-            Key: job.input.key
-          })
-        );
+        const head = await this.headS3SourceArchive(job.input.key);
         const objectSize = Number(head.ContentLength || 0);
         const objectEtag = String(head.ETag || "").replaceAll('"', "");
-        const tempZipPath = path.join(os.tmpdir(), `analysis-s3-${randomUUID()}.zip`);
-
-        await writeProgress("Получаем архив для проверки", 4);
-        await this.downloadS3ObjectToFile(
-          job.input.key,
-          tempZipPath,
-          objectSize,
-          async (downloadPercent) => {
-            const mappedProgress =
-              4 + Math.floor((Math.max(0, Math.min(100, downloadPercent)) * 21) / 100);
-            await writeProgress("Получаем архив для проверки", mappedProgress);
-          }
-        );
+        await writeProgress("Открываем архив для проверки", 4);
 
         result = await this.runFromZip({
           userId: job.input.userId,
           archive: {
             originalname: path.basename(job.input.key),
-            path: tempZipPath,
+            s3Key: job.input.key,
             size: objectSize
           },
-          cleanupArchivePath: true,
           sourceFingerprint: `s3|bucket=${this.getS3Bucket()}|key=${job.input.key}|etag=${objectEtag}|size=${objectSize}`,
           direction: job.input.direction,
           metrics: job.input.metrics,
@@ -2646,6 +4603,32 @@ export class AnalysisService implements OnModuleInit {
           r: job.input.r,
           depth: job.input.depth,
           includeGitMetrics: job.input.includeGitMetrics,
+          includePlagiarismHeatmap: job.input.includePlagiarismHeatmap,
+          onProgress: writeProgress
+        });
+      } else if ("key" in job.input) {
+        await writeProgress("Подготовка тепловой карты", 2);
+        const standalone = await this.buildStandaloneHeatmapFromS3({
+          userId: job.input.userId,
+          key: job.input.key,
+          originalName: job.input.originalName,
+          r: job.input.r,
+          depth: job.input.depth,
+          onProgress: writeProgress
+        });
+        result = {
+          runId: `heatmap:${job.jobId}`,
+          folder: standalone.folder,
+          folderCount: standalone.folderCount,
+          plagiarismHeatmap: standalone.plagiarismHeatmap
+        };
+      } else {
+        await writeProgress("Подготовка тепловой карты", 2);
+        result = await this.buildPlagiarismHeatmapByRunFilters({
+          userId: job.input.userId,
+          runId: job.input.runId,
+          depth: job.input.depth,
+          selectedLevels: job.input.selectedLevels,
           onProgress: writeProgress
         });
       }
@@ -2655,20 +4638,55 @@ export class AnalysisService implements OnModuleInit {
       entity.heartbeatAt = entity.finishedAt;
       entity.progressPercent = 100;
       entity.stage = "Готово";
-      entity.resultPayload = {
-        direction: result.direction,
-        metrics: result.metrics,
-        rowsTotal: result.data.length,
-        gitRowsTotal: result.gitData?.length || 0,
-        runId: result.runId || null,
-        path: this.extractRunPath([
-          ...result.data.map((row) => this.normalizeResultPath(String(row.path || ""))),
-          ...(result.gitData || []).map((row) => this.normalizeResultPath(String(row.path || "")))
-        ])
-      };
+      if ("metrics" in result) {
+        entity.resultPayload = {
+          direction: result.direction,
+          metrics: result.metrics,
+          rowsTotal: result.data.length,
+          gitRowsTotal: result.gitData?.length || 0,
+          runId: result.runId || null,
+          path: this.extractRunPath([
+            ...result.data.map((row) => this.normalizeResultPath(String(row.path || ""))),
+            ...(result.gitData || []).map((row) => this.normalizeResultPath(String(row.path || "")))
+          ])
+        };
+      } else if ("folder" in result) {
+        entity.resultPayload = {
+          direction: entity.direction,
+          metrics: [],
+          rowsTotal: result.folderCount,
+          gitRowsTotal: 0,
+          runId: result.runId,
+          path: result.folder,
+          plagiarismHeatmap: result.plagiarismHeatmap
+        };
+      } else {
+        const runInput = job.input as QueuedHeatmapJob["input"];
+        const sourceJob = await this.findSuccessfulJobByRunId(runInput.userId, runInput.runId, {
+          requireSourceKey: true
+        });
+        const sourceKey = String(sourceJob?.requestPayload?.key || "").trim();
+        const heatmapPath = sourceKey
+          ? this.getArchiveDisplayName(sourceKey)
+          : this.getArchiveDisplayName(runInput.runId);
+        entity.resultPayload = {
+          direction: entity.direction,
+          metrics: [],
+          rowsTotal: result.folderCount,
+          gitRowsTotal: 0,
+          runId: result.runId,
+          path: heatmapPath,
+          plagiarismHeatmap: result.plagiarismHeatmap
+        };
+      }
       await this.analysisJobRepo.save(entity);
       if ("onSuccess" in job && job.onSuccess) {
         await job.onSuccess();
+      }
+      if ("key" in job.input && !("direction" in job.input)) {
+        await this.deleteS3ObjectIfOwned(job.input.userId, job.input.key);
+      } else if ("key" in job.input) {
+        await this.deleteS3ObjectIfOwned(job.input.userId, job.input.key);
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : "Неизвестная ошибка";
@@ -2678,9 +4696,27 @@ export class AnalysisService implements OnModuleInit {
       entity.stage = "Ошибка";
       entity.errorMessage = message;
       entity.resultPayload = null;
-      await this.analysisJobRepo.save(entity);
+      try {
+        await this.analysisJobRepo.save(entity);
+      } catch (saveError) {
+        const saveMessage = saveError instanceof Error ? saveError.message : String(saveError);
+        this.logger.error(
+          `Не удалось сохранить ошибку задачи ${entity.id}: ${saveMessage}. Исходная ошибка: ${message}`
+        );
+      }
       if ("onError" in job && job.onError) {
-        await job.onError(message);
+        try {
+          await job.onError(message);
+        } catch (callbackError) {
+          const callbackMessage =
+            callbackError instanceof Error ? callbackError.message : String(callbackError);
+          this.logger.warn(
+            `Не удалось выполнить обработчик ошибки задачи ${entity.id}: ${callbackMessage}`
+          );
+        }
+      }
+      if ("key" in job.input) {
+        await this.deleteS3ObjectIfOwned(job.input.userId, job.input.key);
       }
     } finally {
       clearInterval(heartbeatTimer);
@@ -2747,8 +4783,9 @@ export class AnalysisService implements OnModuleInit {
         ? ""
         : String(requestPayload.depth);
     const includeGitMetrics = requestPayload?.includeGitMetrics === false ? "0" : "1";
+    const includePlagiarismHeatmap = requestPayload?.includePlagiarismHeatmap === false ? "0" : "1";
 
-    return `${direction}|metrics=${metrics}|r=${recursive}|depth=${depth}|git=${includeGitMetrics}`;
+    return `${direction}|metrics=${metrics}|r=${recursive}|depth=${depth}|git=${includeGitMetrics}|plag=${includePlagiarismHeatmap}`;
   }
 
   private getS3Bucket(): string {
@@ -2817,12 +4854,7 @@ export class AnalysisService implements OnModuleInit {
     }
   }
 
-  private async downloadS3ObjectToFile(
-    key: string,
-    destinationPath: string,
-    expectedBytes?: number,
-    onProgress?: (progressPercent: number) => Promise<void> | void
-  ): Promise<void> {
+  private async getS3ObjectBody(key: string): Promise<Readable> {
     const response = await this.getS3Client().send(
       new GetObjectCommand({
         Bucket: this.getS3Bucket(),
@@ -2830,42 +4862,31 @@ export class AnalysisService implements OnModuleInit {
       })
     );
 
-    const body = response.Body as NodeJS.ReadableStream | undefined;
+    const body = response.Body as Readable | undefined;
     if (!body) {
       throw new BadRequestException("S3 object body is empty");
     }
-    const output = createWriteStream(destinationPath);
-    const totalBytes = Math.max(0, Number(expectedBytes || response.ContentLength || 0));
-    let downloadedBytes = 0;
-    let lastReported = 0;
+    return body;
+  }
 
-    for await (const chunk of body as AsyncIterable<Buffer>) {
-      if (!output.write(chunk)) {
-        await once(output, "drain");
-      }
-      downloadedBytes += chunk.length;
-
-      if (onProgress && totalBytes > 0) {
-        const percent = Math.max(
-          0,
-          Math.min(100, Math.floor((downloadedBytes / totalBytes) * 100))
-        );
-        if (percent >= lastReported + 2 || percent === 100) {
-          lastReported = percent;
-          await onProgress(percent);
-        }
-      }
+  private async deleteS3ObjectIfOwned(userId: number, key: string): Promise<void> {
+    const normalizedKey = String(key || "").trim();
+    if (!normalizedKey || !this.s3Bucket) {
+      return;
     }
+    this.assertOwnedObjectKey(userId, normalizedKey);
 
-    await new Promise<void>((resolve, reject) => {
-      output.end((error?: Error | null) => {
-        if (error) {
-          reject(error);
-          return;
-        }
-        resolve();
-      });
-    });
+    try {
+      await this.getS3Client().send(
+        new DeleteObjectCommand({
+          Bucket: this.getS3Bucket(),
+          Key: normalizedKey
+        })
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.warn(`Не удалось удалить архив ${normalizedKey} из S3: ${message}`);
+    }
   }
 
   private extractWorkLabel(currentPath: string): string {

@@ -14,7 +14,6 @@
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",
-    "@mantine/charts": "^8.3.6",
     "@mantine/core": "^8.3.6",
     "@mantine/dates": "^8.3.18",
     "@mantine/hooks": "^8.3.6",
@@ -34,7 +33,10 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.39.4",
+    "@types/d3-array": "^3.2.2",
+    "@types/d3-scale": "^4.0.9",
     "@types/d3-scale-chromatic": "^3.1.0",
+    "@types/d3-shape": "^3.1.8",
     "@types/node": "^24.0.0",
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",

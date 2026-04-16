@@ -5,13 +5,16 @@ import { type UploadedArchiveInfo, useArchiveUpload } from "../model"
 type Props = {
   file: File | null
   disabled?: boolean
+  restoredArchiveName?: string
   onUploaded: (archive: UploadedArchiveInfo | null) => void
 }
 
-export function ArchiveUploadStep({ file, disabled, onUploaded }: Props) {
+export function ArchiveUploadStep({ file, disabled, restoredArchiveName, onUploaded }: Props) {
   const {
+    displayProgressPercent,
     handleUpload,
     isUploading,
+    progressDetails,
     progressPercent,
     statusText,
     toMb,
@@ -21,14 +24,19 @@ export function ArchiveUploadStep({ file, disabled, onUploaded }: Props) {
 
   return (
     <Stack gap="md">
-      <Progress value={progressPercent} />
+      <Progress value={displayProgressPercent} />
 
       <Text c="dimmed" size="xs">
-        {statusText}
+        {!file && restoredArchiveName ? `Архив: ${restoredArchiveName}` : statusText}
         {uploadedArchive
           ? ` (${uploadedArchive.fileName}, ${toMb(uploadedArchive.fileSize)}, частей: ${uploadedArchive.partsTotal})`
           : ""}
       </Text>
+      {progressDetails ? (
+        <Text c="dimmed" size="xs">
+          {progressDetails} · {Math.floor(progressPercent)}%
+        </Text>
+      ) : null}
 
       {uploadError ? <Alert color="red">{uploadError}</Alert> : null}
 
