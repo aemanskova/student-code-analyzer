@@ -1,0 +1,73 @@
+import type { Direction } from "@entities/analysis/api"
+
+export const DIRECTION_OPTIONS: Array<{ value: Direction; label: string }> = [
+  { value: "html_css", label: "html/css" },
+  { value: "js", label: "js" }
+]
+
+const HTML_CSS_METRICS = [
+  "html_files",
+  "css_files",
+  "html_bytes_total",
+  "css_bytes_total",
+  "image_files_total",
+  "image_bytes_total",
+  "avg_image_size_bytes",
+  "font_files_total",
+  "font_bytes_total",
+  "avg_font_size_bytes",
+  "uses_avif",
+  "uses_webp",
+  "dom_nodes_avg",
+  "max_dom_depth_max",
+  "semantic_ratio_avg",
+  "semantic_elements_total",
+  "nonsemantic_containers_total",
+  "semantic_element_usage_ratio_overall",
+  "heading_order_violations_total",
+  "img_missing_alt_total",
+  "img_total",
+  "img_missing_alt_ratio",
+  "form_controls_missing_label_total",
+  "form_controls_total",
+  "form_controls_missing_label_ratio",
+  "duplicate_ids_total",
+  "duplicate_id_values_total",
+  "vnu_files_checked",
+  "vnu_errors_total",
+  "vnu_warnings_total",
+  "vnu_unparsed_files",
+  "rules_total",
+  "selectors_total",
+  "avg_declarations_per_rule_avg",
+  "max_declarations_per_rule_max",
+  "import_count_total",
+  "avg_specificity_avg",
+  "max_specificity_max",
+  "specificity_variance_overall",
+  "complex_selectors_ratio_avg",
+  "total_selector_complexity_total",
+  "avg_selector_complexity_overall",
+  "max_selector_complexity_max",
+  "unique_css_properties_work",
+  "unique_css_properties_avg",
+  "dup_decl_ratio_avg",
+  "axe_violations_total",
+  "axe_critical",
+  "axe_serious",
+  "axe_moderate",
+  "axe_minor"
+]
+
+const JS_METRICS = [
+  "loc",
+  "cyclomatic_complexity",
+  "functions_total",
+  "eslint_errors_total",
+  "eslint_warnings_total"
+]
+
+export const METRICS_BY_DIRECTION: Record<Direction, string[]> = {
+  html_css: HTML_CSS_METRICS,
+  js: JS_METRICS
+}
