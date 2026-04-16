@@ -24,17 +24,15 @@ export function Sidebar({ links }: Props) {
               root: {
                 border: "none",
                 borderRadius: 10,
-                color: "inherit"
+                color: "inherit",
+                "&[data-active]": {
+                  color: "inherit"
+                }
               },
               label: {
                 color: "inherit"
               },
               section: {
-                color: "inherit"
-              }
-            }}
-            sx={{
-              "&[data-active]": {
                 color: "inherit"
               }
             }}

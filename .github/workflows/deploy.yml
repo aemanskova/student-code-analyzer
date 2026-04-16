@@ -1,0 +1,92 @@
+name: Deploy to Timeweb VPS
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-prod
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          echo "${{ secrets.DEPLOY_KNOWN_HOSTS }}" > ~/.ssh/known_hosts
+          chmod 644 ~/.ssh/known_hosts
+
+      - name: Debug (temporary)
+        env:
+          HOST: ${{ secrets.DEPLOY_HOST }}
+          USER: ${{ secrets.DEPLOY_USER }}
+          PORT: ${{ secrets.DEPLOY_PORT }}
+          DIR:  ${{ secrets.DEPLOY_PATH }}
+        run: |
+          # Длина DIR — чтобы увидеть лишние \r или пробелы, не раскрывая значение
+          printf 'DIR length: %d\n' "${#DIR}"
+          ssh -p "$PORT" -i ~/.ssh/id_ed25519 "$USER@$HOST" DIR="$DIR" bash -se <<'REMOTE'
+            echo "whoami=$(whoami)"
+            echo "home=$HOME"
+            printf 'DIR length on VPS: %d\n' "${#DIR}"
+            printf 'DIR hex: '; printf '%s' "$DIR" | od -c | head -n 2
+            ls -la "$DIR" || true
+            ls -la /home/deploy || true
+            stat -c '%U:%G %a %n' /home /home/deploy "$DIR" 2>&1 || true
+          REMOTE
+
+      - name: Deploy over SSH
+        env:
+          HOST: ${{ secrets.DEPLOY_HOST }}
+          USER: ${{ secrets.DEPLOY_USER }}
+          PORT: ${{ secrets.DEPLOY_PORT }}
+          DIR:  ${{ secrets.DEPLOY_PATH }}
+          SHA:  ${{ github.sha }}
+        run: |
+          ssh -p "$PORT" -i ~/.ssh/id_ed25519 "$USER@$HOST" \
+            DIR="$DIR" SHA="$SHA" bash -se <<'REMOTE'
+            set -Eeuo pipefail
+            cd "$DIR"
+
+            echo "[deploy] current: $(git rev-parse --short HEAD)"
+            git fetch --all --prune
+            git reset --hard origin/main
+            echo "[deploy] new:     $(git rev-parse --short HEAD) ($SHA)"
+
+            # Backend в контейнере работает от uid 1000 — иначе SQLITE_READONLY.
+            mkdir -p data csv works
+            chown -R 1000:1000 data csv works 2>/dev/null || \
+              sudo chown -R 1000:1000 data csv works
+
+            docker compose -f docker-compose.prod.yml pull || true
+            docker compose -f docker-compose.prod.yml build --pull
+            docker compose -f docker-compose.prod.yml up -d --remove-orphans
+
+            docker image prune -f
+          REMOTE
+
+      - name: Smoke-check
+        env:
+          URL: ${{ secrets.SMOKE_URL }}
+        run: |
+          if [ -z "$URL" ]; then
+            echo "SMOKE_URL secret not set, skipping"
+            exit 0
+          fi
+          for i in 1 2 3 4 5; do
+            code=$(curl -skL -o /dev/null -w "%{http_code}" "$URL/")
+            echo "attempt $i -> $code"
+            [[ "$code" =~ ^(200|301|302)$ ]] && exit 0
+            sleep 5
+          done
+          echo "smoke-check failed"; exit 1

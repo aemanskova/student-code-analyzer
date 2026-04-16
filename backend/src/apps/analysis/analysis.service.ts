@@ -31,6 +31,7 @@ import { In, Like, Repository } from "typeorm";
 import { DuckdbService } from "../database/duckdb/duckdb.service";
 import { MetricsService } from "../metrics/metrics.service";
 import { PathParserService } from "../utils/path-parser/path-parser.service";
+import { PathOutsideRootError, resolvePathUnderRoot } from "../../common/path-security";
 import { RunAnalysisDto } from "./dto/run-analysis.dto";
 import { AnalysisResponse, AnalysisRow, GitAnalysisRow } from "./analysis.types";
 import { HtmlCssFullAnalyzerService } from "./html-css-full-analyzer.service";
@@ -261,7 +262,10 @@ export class AnalysisService implements OnModuleInit {
     }
 
     const selectedMetrics = this.resolveSelectedMetrics(input.direction, input.metrics);
-    const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "analysis-zip-"));
+    // Временный каталог должен быть внутри worksRoot, иначе не пройдёт security-проверку
+    // `requirePathUnderRoot` в `run()` (см. SECURITY_FIXES §10 и resolveRootPath).
+    await fs.mkdir(this.worksRoot, { recursive: true });
+    const tempRoot = await fs.mkdtemp(path.join(this.worksRoot, "analysis-zip-"));
     let archivePath = input.archive.path;
     try {
       await input.onProgress?.("Подготовка данных", 3);
@@ -694,9 +698,7 @@ export class AnalysisService implements OnModuleInit {
     if (!zipPathRaw) {
       throw new BadRequestException("zipPath is required");
     }
-    const absoluteZipPath = path.isAbsolute(zipPathRaw)
-      ? zipPathRaw
-      : path.resolve(this.worksRoot, zipPathRaw);
+    const absoluteZipPath = this.requirePathUnderRoot(this.worksRoot, zipPathRaw, "zipPath");
     await this.ensureFileExists(absoluteZipPath);
     if (!absoluteZipPath.toLowerCase().endsWith(".zip")) {
       throw new BadRequestException("zipPath must point to a .zip file");
@@ -1684,7 +1686,11 @@ export class AnalysisService implements OnModuleInit {
 
     for (const row of rows) {
       const parsed = this.pathParserService.parse(row.path);
-      const absoluteSubmissionPath = path.resolve(this.csvRoot, parsed.path);
+      const absoluteSubmissionPath = this.requirePathUnderRoot(
+        this.csvRoot,
+        parsed.path,
+        "CSV path"
+      );
 
       const metricValues = await this.safeComputeMetrics(
         dto.direction,
@@ -1832,19 +1838,28 @@ export class AnalysisService implements OnModuleInit {
     }
   }
 
-  private resolveCsvPath(csvFile?: string): string {
-    const relative = csvFile || "submissions.csv";
-    if (path.isAbsolute(relative)) {
-      return relative;
+  private requirePathUnderRoot(rootDir: string, userPath: string, fieldLabel: string): string {
+    try {
+      return resolvePathUnderRoot(rootDir, userPath);
+    } catch (error) {
+      if (error instanceof PathOutsideRootError) {
+        throw new BadRequestException(`${fieldLabel}: ${error.message}`);
+      }
+      throw error;
     }
-    return path.resolve(this.csvRoot, relative);
+  }
+
+  private resolveCsvPath(csvFile?: string): string {
+    const relative = (csvFile || "submissions.csv").trim();
+    return this.requirePathUnderRoot(this.csvRoot, relative, "csvFile");
   }
 
   private resolveRootPath(rootPath: string): string {
-    if (path.isAbsolute(rootPath)) {
-      return rootPath;
+    const trimmed = String(rootPath || "").trim();
+    if (!trimmed) {
+      throw new BadRequestException("rootPath is required");
     }
-    return path.resolve(this.worksRoot, rootPath);
+    return this.requirePathUnderRoot(this.worksRoot, trimmed, "rootPath");
   }
 
   private async ensureFileExists(filePath: string) {

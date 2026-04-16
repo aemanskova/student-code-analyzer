@@ -1,5 +1,7 @@
 import { Module } from "@nestjs/common";
-import { ConfigModule } from "@nestjs/config";
+import { ConfigModule, ConfigService } from "@nestjs/config";
+import { APP_GUARD } from "@nestjs/core";
+import { ThrottlerGuard, ThrottlerModule } from "@nestjs/throttler";
 import { AuthModule } from "./apps/auth/auth.module";
 import { AnalysisModule } from "./apps/analysis/analysis.module";
 import { SqliteDatabaseModule } from "./apps/database/sqlite/sqlite.module";
@@ -11,6 +13,21 @@ import { UsersModule } from "./apps/users/users.module";
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
+    ThrottlerModule.forRootAsync({
+      imports: [ConfigModule],
+      inject: [ConfigService],
+      useFactory: (config: ConfigService) => {
+        const raw = config.get<string>("THROTTLE_GLOBAL_LIMIT", "400");
+        const limit = Number(raw);
+        return [
+          {
+            name: "default",
+            ttl: 60_000,
+            limit: Number.isFinite(limit) && limit > 0 ? limit : 400
+          }
+        ];
+      }
+    }),
     SqliteDatabaseModule,
     DuckdbModule,
     PathParserModule,
@@ -18,6 +35,7 @@ import { UsersModule } from "./apps/users/users.module";
     UsersModule,
     AuthModule,
     AnalysisModule
-  ]
+  ],
+  providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }]
 })
 export class AppModule {}

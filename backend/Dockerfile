@@ -1,4 +1,5 @@
-FROM node:20-bookworm
+# public.ecr.aws — зеркало официальных образов, без лимита pull Docker Hub
+FROM public.ecr.aws/docker/library/node:20-bookworm
 
 WORKDIR /app
 
@@ -7,14 +8,18 @@ RUN apt-get update \
   && rm -rf /var/lib/apt/lists/*
 
 COPY package*.json ./
-RUN npm install
+RUN npm ci
 
-COPY nest-cli.json tsconfig.json ./
+COPY nest-cli.json tsconfig.json tsconfig.build.json ./
 COPY src ./src
 
-RUN npm run build
+# На слабом VPS без swap `nest build` может падать по памяти (exit 1)
+RUN NODE_OPTIONS="--max-old-space-size=4096" npm run build
 
+# Не делаем chown -R /app — обход node_modules очень долгий на VPS. node читает dist и node_modules с правами «другие».
 RUN mkdir -p /app/data/sqlite /app/data/duckdb /app/csv /app/works
+
+USER node
 
 ENV PORT=3000
 ENV SQLITE_DB_PATH=/app/data/sqlite/app.db

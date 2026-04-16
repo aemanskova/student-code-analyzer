@@ -59,7 +59,7 @@ services:
       - backend
 
   minio:
-    image: minio/minio:latest
+    image: quay.io/minio/minio:latest
     container_name: student-code-analyzer-minio
     command: server /data --console-address ":9001"
     environment:
@@ -72,7 +72,7 @@ services:
       - minio_data:/data
 
   minio-init:
-    image: minio/mc:latest
+    image: quay.io/minio/mc:latest
     container_name: student-code-analyzer-minio-init
     depends_on:
       - minio

@@ -1,0 +1,70 @@
+name: student-code-analyzer
+
+services:
+  backend:
+    build:
+      context: ./backend
+    image: student-code-analyzer-backend
+    container_name: student-code-analyzer-backend
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      NODE_ENV: ${NODE_ENV:-production}
+    volumes:
+      - ${HOST_DATA_DIR:-./data}:/app/data
+      - ${HOST_CSV_DIR:-./csv}:/app/csv
+      - ${HOST_WORKS_DIR:-./works}:/app/works
+    mem_limit: ${BACKEND_MEM_LIMIT:-1536m}
+    depends_on:
+      - minio
+
+  web:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.prod
+      args:
+        VITE_API_URL: ${VITE_API_URL:-/api}
+    image: student-code-analyzer-web
+    container_name: student-code-analyzer-web
+    restart: unless-stopped
+    ports:
+      # По умолчанию 8080: иначе docker-proxy занимает 127.0.0.1:80 и Caddy не сможет слушать :80
+      - "127.0.0.1:${WEB_PORT:-8080}:80"
+    depends_on:
+      - backend
+
+  minio:
+    # Quay.io — без лимита pull Docker Hub для анонимных IP
+    image: quay.io/minio/minio:latest
+    container_name: student-code-analyzer-minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    env_file:
+      - .env
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    # Только localhost: снаружи MinIO не светим; наружу — через reverse proxy (поддомен + TLS).
+    ports:
+      - "127.0.0.1:${MINIO_API_PORT:-9100}:9000"
+      - "127.0.0.1:${MINIO_CONSOLE_PORT:-9101}:9001"
+    volumes:
+      - minio_data:/data
+
+  minio-init:
+    image: quay.io/minio/mc:latest
+    container_name: student-code-analyzer-minio-init
+    env_file:
+      - .env
+    environment:
+      MC_ENDPOINT: http://minio:9000
+    volumes:
+      - ./scripts/minio-init.sh:/minio-init.sh:ro
+    entrypoint: ["/bin/sh", "/minio-init.sh"]
+    depends_on:
+      - minio
+    restart: "no"
+
+volumes:
+  minio_data:

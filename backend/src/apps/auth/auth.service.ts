@@ -1,4 +1,4 @@
-import { Injectable, UnauthorizedException } from "@nestjs/common";
+import { ForbiddenException, Injectable, UnauthorizedException } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { Repository } from "typeorm";
 import { HttpService } from "@nestjs/axios";
@@ -14,6 +14,7 @@ export class AuthService {
   private readonly jwtSecret = process.env.JWT_SECRET || "super_secret_jwt_for_development";
   private readonly accessTtl = process.env.JWT_ACCESS_EXPIRES_IN || "15m";
   private readonly refreshTtl = process.env.JWT_REFRESH_EXPIRES_IN || "30d";
+  private readonly bcryptRounds = AuthService.parseBcryptRounds(process.env.BCRYPT_ROUNDS);
 
   constructor(
     @InjectRepository(User)
@@ -25,8 +26,14 @@ export class AuthService {
   ) {}
 
   async register(dto: RegisterDto) {
+    if (
+      process.env.NODE_ENV === "production" &&
+      process.env.ALLOW_PUBLIC_REGISTRATION === "false"
+    ) {
+      throw new ForbiddenException("Регистрация отключена");
+    }
+
     const { name, surname, email, password, github } = dto;
-    const salt = "$2b$10$1234567890123456789012";
 
     const localEmail = email;
     const isExisting = await this.userRepo.findOne({ where: { email } });
@@ -57,10 +64,10 @@ export class AuthService {
       return { message: "Github page does not exist" };
     }
 
-    const passwordHash = await bcrypt.hash(password, salt);
+    const passwordHash = await bcrypt.hash(password, this.bcryptRounds);
 
     const professorRoleEntity = await this.roleRepo.findOne({
-      where: { name: "Преподаватель" }
+      where: { name: "преподаватель" }
     });
     if (!professorRoleEntity) {
       return { message: "Ошибка подключения к базе таблице ролей" };
@@ -203,7 +210,7 @@ export class AuthService {
       }
     );
 
-    user.refreshTokenHash = await bcrypt.hash(refreshToken, 10);
+    user.refreshTokenHash = await bcrypt.hash(refreshToken, this.bcryptRounds);
     user.refreshTokenExpiresAt = this.extractTokenExpiryDate(refreshToken);
     user.updatedAt = new Date();
     await this.userRepo.save(user);
@@ -212,6 +219,14 @@ export class AuthService {
       accessToken,
       refreshToken
     };
+  }
+
+  private static parseBcryptRounds(raw: string | undefined): number {
+    const n = Number(raw);
+    if (!Number.isFinite(n)) {
+      return 12;
+    }
+    return Math.min(15, Math.max(10, Math.floor(n)));
   }
 
   private extractTokenExpiryDate(token: string): Date | null {
