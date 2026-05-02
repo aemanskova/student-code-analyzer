@@ -40,8 +40,93 @@ export class AnalysisController {
       student: body.student ? String(body.student) : undefined,
       r: this.parseBoolean(body.r),
       depth: this.parseNumber(body.depth),
-      includeGitMetrics: this.parseBoolean(body.includeGitMetrics) ?? true
+      includeGitMetrics: this.parseBoolean(body.includeGitMetrics) ?? true,
+      includePlagiarismHeatmap: this.parseBoolean(body.includePlagiarismHeatmap) ?? true
     });
+  }
+
+  @Post("heatmap/validate-upload")
+  @ApiOperation({ summary: "Проверка лимита работ для тепловой карты до запуска анализа" })
+  async validateHeatmapUpload(
+    @Body() body: Record<string, unknown>,
+    @Req() req: { user?: { sub?: number | string } }
+  ) {
+    const userId = Number(req.user?.sub);
+    if (!Number.isFinite(userId) || userId <= 0) {
+      throw new UnauthorizedException("Invalid token payload");
+    }
+
+    return this.analysisService.validateS3HeatmapLimit({
+      userId,
+      key: String(body.key || ""),
+      r: this.parseBoolean(body.r),
+      depth: this.parseNumber(body.depth),
+      selectedLevels: this.parseSelectedLevels(body)
+    });
+  }
+
+  @Post("heatmap/build/async")
+  @ApiOperation({ summary: "Асинхронно построить тепловую карту по отдельному архиву" })
+  async buildStandaloneHeatmapAsync(
+    @Body() body: Record<string, unknown>,
+    @Req() req: { user?: { sub?: number | string } }
+  ) {
+    const userId = Number(req.user?.sub);
+    if (!Number.isFinite(userId) || userId <= 0) {
+      throw new UnauthorizedException("Invalid token payload");
+    }
+    return this.analysisService.enqueueStandaloneHeatmapBuild({
+      userId,
+      key: String(body.key || ""),
+      originalName: body.originalName ? String(body.originalName) : undefined,
+      r: this.parseBoolean(body.r),
+      depth: this.parseNumber(body.depth)
+    });
+  }
+
+  @Get("heatmap/list")
+  @ApiOperation({ summary: "Список построенных отдельных тепловых карт" })
+  async getStandaloneHeatmapList(
+    @Query("folder") folder: string | undefined,
+    @Query("dateFrom") dateFromValue: string | undefined,
+    @Query("dateTo") dateToValue: string | undefined,
+    @Req() req: { user?: { sub?: number | string } }
+  ) {
+    const userId = Number(req.user?.sub);
+    if (!Number.isFinite(userId) || userId <= 0) {
+      throw new UnauthorizedException("Invalid token payload");
+    }
+    return this.analysisService.getStandaloneHeatmapList(userId, {
+      folder: this.parseText(folder),
+      dateFrom: this.parseDate(dateFromValue, "start"),
+      dateTo: this.parseDate(dateToValue, "end")
+    });
+  }
+
+  @Get("heatmap/:jobId")
+  @ApiOperation({ summary: "Детали отдельной тепловой карты" })
+  async getStandaloneHeatmapDetails(
+    @Param("jobId") jobId: string,
+    @Req() req: { user?: { sub?: number | string } }
+  ) {
+    const userId = Number(req.user?.sub);
+    if (!Number.isFinite(userId) || userId <= 0) {
+      throw new UnauthorizedException("Invalid token payload");
+    }
+    return this.analysisService.getStandaloneHeatmapDetails(userId, String(jobId || ""));
+  }
+
+  @Delete("heatmap/:jobId")
+  @ApiOperation({ summary: "Удалить построенную тепловую карту" })
+  async deleteStandaloneHeatmap(
+    @Param("jobId") jobId: string,
+    @Req() req: { user?: { sub?: number | string } }
+  ) {
+    const userId = Number(req.user?.sub);
+    if (!Number.isFinite(userId) || userId <= 0) {
+      throw new UnauthorizedException("Invalid token payload");
+    }
+    return this.analysisService.deleteStandaloneHeatmap(userId, String(jobId || ""));
   }
 
   @Get("jobs/:jobId")
@@ -134,6 +219,57 @@ export class AnalysisController {
       kind: this.parseFilterKind(query.kind),
       depth: this.parseNumber(query.depth),
       selectedLevels: this.parseSelectedLevels(query)
+    });
+  }
+
+  @Get("results/run/:runId/heatmap/history")
+  @ApiOperation({ summary: "Получить историю построенных тепловых карт по runId" })
+  async getRunHeatmapHistory(
+    @Param("runId") runId: string,
+    @Req() req: { user?: { sub?: number | string } }
+  ) {
+    const userId = Number(req.user?.sub);
+    if (!Number.isFinite(userId) || userId <= 0) {
+      throw new UnauthorizedException("Invalid token payload");
+    }
+    return this.analysisService.getRunHeatmapHistory(userId, runId);
+  }
+
+  @Post("results/run/:runId/heatmap/build")
+  @ApiOperation({ summary: "Построить тепловую карту для выбранного среза runId" })
+  async buildHeatmapForRunView(
+    @Param("runId") runId: string,
+    @Body() body: Record<string, unknown>,
+    @Req() req: { user?: { sub?: number | string } }
+  ) {
+    const userId = Number(req.user?.sub);
+    if (!Number.isFinite(userId) || userId <= 0) {
+      throw new UnauthorizedException("Invalid token payload");
+    }
+    return this.analysisService.buildPlagiarismHeatmapByRunFilters({
+      userId,
+      runId: String(runId || ""),
+      depth: this.parseNumber(body.depth),
+      selectedLevels: this.parseSelectedLevels(body)
+    });
+  }
+
+  @Post("results/run/:runId/heatmap/build/async")
+  @ApiOperation({ summary: "Асинхронно построить тепловую карту для выбранного среза runId" })
+  async buildHeatmapForRunViewAsync(
+    @Param("runId") runId: string,
+    @Body() body: Record<string, unknown>,
+    @Req() req: { user?: { sub?: number | string } }
+  ) {
+    const userId = Number(req.user?.sub);
+    if (!Number.isFinite(userId) || userId <= 0) {
+      throw new UnauthorizedException("Invalid token payload");
+    }
+    return this.analysisService.enqueueHeatmapBuildByRunFilters({
+      userId,
+      runId: String(runId || ""),
+      depth: this.parseNumber(body.depth),
+      selectedLevels: this.parseSelectedLevels(body)
     });
   }
 

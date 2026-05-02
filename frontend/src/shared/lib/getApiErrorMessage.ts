@@ -35,7 +35,7 @@ export const getApiErrorMessage = (error: unknown, fallback: string): string => 
     if (text.includes("aborted")) {
       return "Запрос был прерван. Проверьте соединение и повторите попытку."
     }
-    if (text.includes("unexpected end of file")) {
+    if (text.includes("unexpected end of file") || text.includes("file_ended")) {
       return "ZIP-архив поврежден или загружен не полностью. Пересоздайте архив и повторите попытку."
     }
     if (text.includes("failed to fetch")) {

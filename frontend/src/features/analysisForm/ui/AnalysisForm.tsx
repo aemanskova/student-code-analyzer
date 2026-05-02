@@ -20,15 +20,18 @@ import { getApiErrorMessage } from "@shared/lib"
 import { Controller, useWatch } from "react-hook-form"
 
 type Props = {
+  locked?: boolean
+  restoredArchiveName?: string
   onSuccess: (result: AnalysisRunResult) => void
 }
 
-export function AnalysisForm({ onSuccess }: Props) {
+export function AnalysisForm({ locked = false, restoredArchiveName, onSuccess }: Props) {
   const {
     analyzeError,
     form,
     isAnalyzing,
     onSubmit,
+    resetAnalyzeError,
     runFormError,
     setRunFormError,
     setUploadedArchive,
@@ -38,6 +41,7 @@ export function AnalysisForm({ onSuccess }: Props) {
   const direction = useWatch({ control: form.control, name: "direction" })
   const recursive = useWatch({ control: form.control, name: "recursive" })
   const archive = useWatch({ control: form.control, name: "archive" })
+  const controlsDisabled = locked || isAnalyzing
 
   return (
     <Stack gap="md">
@@ -49,23 +53,31 @@ export function AnalysisForm({ onSuccess }: Props) {
             accept=".zip"
             error={fieldState.error?.message}
             label="ZIP-архив"
-            placeholder="Выберите архив"
+            placeholder={restoredArchiveName || "Выберите архив"}
+            disabled={controlsDisabled}
             value={field.value}
             onChange={(value) => {
+              if (controlsDisabled) {
+                return
+              }
               field.onChange(value)
               setUploadedArchive(null)
               setRunFormError(null)
+              resetAnalyzeError()
+              form.clearErrors()
             }}
           />
         )}
       />
 
       <ArchiveUploadStep
-        disabled={isAnalyzing}
+        disabled={controlsDisabled}
         file={archive}
+        restoredArchiveName={restoredArchiveName}
         onUploaded={(uploaded) => {
           setUploadedArchive(uploaded)
           setRunFormError(null)
+          resetAnalyzeError()
         }}
       />
 
@@ -75,6 +87,7 @@ export function AnalysisForm({ onSuccess }: Props) {
         render={({ field }) => (
           <Select
             data={DIRECTION_OPTIONS}
+            disabled={controlsDisabled}
             label="Направление"
             value={field.value}
             onChange={(value) => field.onChange(value || "html_css")}
@@ -89,6 +102,7 @@ export function AnalysisForm({ onSuccess }: Props) {
           <MultiSelect
             clearable
             data={METRICS_BY_DIRECTION[direction]}
+            disabled={controlsDisabled}
             label="Метрики"
             placeholder="Выберите метрики"
             searchable
@@ -104,6 +118,7 @@ export function AnalysisForm({ onSuccess }: Props) {
         render={({ field }) => (
           <Checkbox
             checked={field.value}
+            disabled={controlsDisabled}
             label="Рекурсивный режим"
             onChange={(event) => {
               const checked = event.currentTarget.checked
@@ -123,6 +138,7 @@ export function AnalysisForm({ onSuccess }: Props) {
           render={({ field, fieldState }) => (
             <NumberInput
               error={fieldState.error?.message}
+              disabled={controlsDisabled}
               label="Глубина"
               min={1}
               value={field.value}
@@ -138,6 +154,7 @@ export function AnalysisForm({ onSuccess }: Props) {
         render={({ field }) => (
           <Checkbox
             checked={field.value}
+            disabled={controlsDisabled}
             label="Дополнительно посчитать Git-метрики"
             onChange={(event) => field.onChange(event.currentTarget.checked)}
           />
@@ -152,7 +169,7 @@ export function AnalysisForm({ onSuccess }: Props) {
       ) : null}
 
       <Group justify="flex-end">
-        <Button disabled={!uploadedArchive} loading={isAnalyzing} onClick={onSubmit}>
+        <Button disabled={!uploadedArchive || locked} loading={isAnalyzing} onClick={onSubmit}>
           Запустить анализ
         </Button>
       </Group>

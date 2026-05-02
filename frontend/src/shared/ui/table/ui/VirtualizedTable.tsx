@@ -37,6 +37,7 @@ export function VirtualizedTable<T>({
   const tableHeight = Math.min(maxHeight, headerHeight + data.length * rowHeight)
   const computedMinWidth =
     minTableWidth || columns.reduce((sum, column) => sum + (column.minWidth || 140), 0)
+  const shouldUsePlainTable = data.length <= 1
 
   const Scroller = forwardRef<HTMLDivElement, React.ComponentProps<"div">>((props, ref) => (
     <div
@@ -64,6 +65,57 @@ export function VirtualizedTable<T>({
       }}
     />
   )
+
+  if (shouldUsePlainTable) {
+    return (
+      <div style={{ overflowX: "auto", width: "100%" }}>
+        <table
+          style={{
+            borderCollapse: "separate",
+            borderSpacing: 0,
+            minWidth: fullWidth ? undefined : computedMinWidth,
+            tableLayout: fullWidth ? "auto" : "fixed",
+            width: fullWidth ? "100%" : "max-content"
+          }}
+        >
+          <thead>
+            <tr>
+              {columns.map((column) => (
+                <th
+                  key={column.key}
+                  style={{
+                    ...HEAD_CELL_STYLE,
+                    minWidth: column.minWidth || 140,
+                    ...(fullWidth ? {} : { width: column.minWidth || 140 })
+                  }}
+                >
+                  {column.title}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {data.map((row, index) => (
+              <tr key={getRowKey(row, index)}>
+                {columns.map((column) => (
+                  <td
+                    key={column.key}
+                    style={{
+                      ...CELL_STYLE,
+                      minWidth: column.minWidth || 140,
+                      ...(fullWidth ? {} : { width: column.minWidth || 140 })
+                    }}
+                  >
+                    {column.render(row, index)}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    )
+  }
 
   return (
     <div style={{ overflowX: "auto", width: "100%" }}>

@@ -13,7 +13,8 @@ type Params = {
 }
 
 export const useAnalysisFormModel = ({ onSuccess }: Params) => {
-  const [runS3Async, { isLoading: isAnalyzing, error: analyzeError }] = useRunS3AsyncMutation()
+  const [runS3Async, { isLoading: isAnalyzing, error: analyzeError, reset: resetAnalyzeError }] =
+    useRunS3AsyncMutation()
   const [uploadedArchive, setUploadedArchive] = useState<UploadedArchiveInfo | null>(null)
   const [runFormError, setRunFormError] = useState<string | null>(null)
 
@@ -44,7 +45,8 @@ export const useAnalysisFormModel = ({ onSuccess }: Params) => {
         metrics: values.metrics.length > 0 ? values.metrics : undefined,
         r: values.recursive,
         depth: values.recursive ? values.depth : undefined,
-        includeGitMetrics: values.includeGitMetrics
+        includeGitMetrics: values.includeGitMetrics,
+        includePlagiarismHeatmap: false
       }
       const response = await runS3Async(request).unwrap()
       onSuccess({ response, request })
@@ -59,6 +61,7 @@ export const useAnalysisFormModel = ({ onSuccess }: Params) => {
     isAnalyzing,
     onSubmit,
     runFormError,
+    resetAnalyzeError,
     setRunFormError,
     setUploadedArchive,
     uploadedArchive

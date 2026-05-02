@@ -1,15 +1,24 @@
 import { baseApi } from "@shared/api/baseApi"
+import type { FetchBaseQueryError } from "@reduxjs/toolkit/query"
 
 import type {
+  AbortS3MultipartUploadRequest,
+  AbortS3MultipartUploadResponse,
   CompleteS3MultipartUploadRequest,
   CompleteS3MultipartUploadResponse,
+  DeleteS3ObjectRequest,
+  DeleteS3ObjectResponse,
   InitS3MultipartUploadRequest,
   InitS3MultipartUploadResponse,
   PresignS3PartRequest,
   PresignS3PartResponse,
+  PresignS3PartsRequest,
+  PresignS3PartsResponse,
   UploadS3PartRequest,
   UploadS3PartResponse
 } from "./types"
+
+type XhrUploadResult = { ok: true; etag: string } | { ok: false; error: FetchBaseQueryError }
 
 export const s3MultipartApi = baseApi.injectEndpoints({
   endpoints: (build) => ({
@@ -30,48 +39,70 @@ export const s3MultipartApi = baseApi.injectEndpoints({
         body
       })
     }),
+    presignS3MultipartParts: build.mutation<PresignS3PartsResponse, PresignS3PartsRequest>({
+      query: (body) => ({
+        url: "/s3/multipart/presign-parts",
+        method: "POST",
+        body
+      })
+    }),
     uploadS3Part: build.mutation<UploadS3PartResponse, UploadS3PartRequest>({
       async queryFn(arg) {
-        let response: Response
-        try {
-          response = await fetch(arg.url, {
-            method: "PUT",
-            body: arg.body
-          })
-        } catch (error) {
-          return {
-            error: {
-              status: "FETCH_ERROR",
-              error: error instanceof Error ? error.message : "Не удалось загрузить часть файла"
+        const result = await new Promise<XhrUploadResult>((resolve) => {
+          const request = new XMLHttpRequest()
+          request.open("PUT", arg.url)
+          request.upload.onprogress = (event) => {
+            if (event.lengthComputable) {
+              arg.onProgress?.(event.loaded, event.total)
             }
           }
-        }
-
-        if (!response.ok) {
-          const text = await response.text().catch(() => "")
-          return {
-            error: {
-              status: response.status,
-              data: text,
-              error: `Upload part failed with status ${response.status}`
-            }
+          request.onerror = () => {
+            resolve({
+              ok: false,
+              error: {
+                status: "FETCH_ERROR",
+                error: "Не удалось загрузить часть файла"
+              }
+            })
           }
-        }
-
-        const etagRaw = response.headers.get("etag") || response.headers.get("ETag")
-        if (!etagRaw) {
-          return {
-            error: {
-              status: "CUSTOM_ERROR",
-              data: "Хранилище не вернуло ETag для загруженной части",
-              error: "ETag is missing"
+          request.onload = () => {
+            if (request.status < 200 || request.status >= 300) {
+              resolve({
+                ok: false,
+                error: {
+                  status: request.status,
+                  data: request.responseText || ""
+                }
+              })
+              return
             }
+            const etagRaw = request.getResponseHeader("etag") || request.getResponseHeader("ETag")
+            if (!etagRaw) {
+              resolve({
+                ok: false,
+                error: {
+                  status: "CUSTOM_ERROR",
+                  data: "Хранилище не вернуло ETag для загруженной части",
+                  error: "ETag is missing"
+                }
+              })
+              return
+            }
+            arg.onProgress?.(arg.body.size, arg.body.size)
+            resolve({ ok: true, etag: etagRaw.replaceAll('"', "") })
+          }
+          request.send(arg.body)
+        })
+
+        if (!result.ok) {
+          return {
+            error: result.error
           }
         }
 
         return {
           data: {
-            etag: etagRaw.replaceAll('"', "")
+            etag: result.etag
           }
         }
       }
@@ -85,13 +116,33 @@ export const s3MultipartApi = baseApi.injectEndpoints({
         method: "POST",
         body
       })
+    }),
+    abortS3MultipartUpload: build.mutation<
+      AbortS3MultipartUploadResponse,
+      AbortS3MultipartUploadRequest
+    >({
+      query: (body) => ({
+        url: "/s3/multipart/abort",
+        method: "POST",
+        body
+      })
+    }),
+    deleteS3Object: build.mutation<DeleteS3ObjectResponse, DeleteS3ObjectRequest>({
+      query: (body) => ({
+        url: "/s3/object/delete",
+        method: "POST",
+        body
+      })
     })
   })
 })
 
 export const {
+  useAbortS3MultipartUploadMutation,
   useCompleteS3MultipartUploadMutation,
+  useDeleteS3ObjectMutation,
   useInitS3MultipartUploadMutation,
   usePresignS3MultipartPartMutation,
+  usePresignS3MultipartPartsMutation,
   useUploadS3PartMutation
 } = s3MultipartApi

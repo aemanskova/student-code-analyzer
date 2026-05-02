@@ -175,23 +175,23 @@ export class HtmlCssFullAnalyzerService implements OnModuleDestroy {
       workDirs,
       workConcurrency,
       async (workDir): Promise<WorkAggregate | null> => {
+        const relativeWorkPath = this.normalizePath(path.relative(rootDir, workDir) || ".");
+        if (options.onWorkProgress) {
+          await options.onWorkProgress(completedWorks, totalWorks, relativeWorkPath);
+        }
         try {
           const agg = await this.analyzeWork(workDir, undefined, selectedMetrics);
           if (!agg) {
             return null;
           }
           return {
-            path: this.normalizePath(path.relative(rootDir, workDir) || "."),
+            path: relativeWorkPath,
             ...agg
           } as WorkAggregate;
         } finally {
           completedWorks += 1;
           if (options.onWorkProgress) {
-            await options.onWorkProgress(
-              completedWorks,
-              totalWorks,
-              this.normalizePath(path.relative(rootDir, workDir) || ".")
-            );
+            await options.onWorkProgress(completedWorks, totalWorks, relativeWorkPath);
           }
         }
       }

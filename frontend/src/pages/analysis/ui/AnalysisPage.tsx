@@ -3,7 +3,7 @@ import {
   useGetSavedResultsByRunIdQuery
 } from "@entities/analysis/api"
 import { AnalysisForm, type AnalysisRunResult } from "@features/analysisForm"
-import { Alert, Card, Container, Loader, Progress, Stack, Text, Title } from "@mantine/core"
+import { Alert, Card, Container, Group, Loader, Progress, Stack, Text, Title } from "@mantine/core"
 import { routes } from "@shared/config/routes"
 import { AnalysisResultsWidget } from "@widgets/analysisResults"
 import { useEffect } from "react"
@@ -31,6 +31,16 @@ const getUserStageTitle = (
   return "Подготовка к запуску"
 }
 
+const formatDuration = (seconds: number | null | undefined): string | null => {
+  if (seconds === null || seconds === undefined || !Number.isFinite(seconds) || seconds < 0) {
+    return null
+  }
+  const safe = Math.floor(seconds)
+  const minutes = Math.floor(safe / 60)
+  const rest = safe % 60
+  return minutes > 0 ? `${minutes} мин. ${rest.toString().padStart(2, "0")} сек.` : `${rest} сек.`
+}
+
 export function AnalysisPage() {
   const [searchParams] = useSearchParams()
   const navigate = useNavigate()
@@ -40,7 +50,7 @@ export function AnalysisPage() {
   const rawDepth = Number(searchParams.get("depth") || "")
   const analysisDepth = Number.isFinite(rawDepth) && rawDepth > 0 ? rawDepth : undefined
 
-  const { data: jobStatus } = useGetAnalysisJobStatusQuery(jobId, {
+  const { data: jobStatus, isLoading: isJobStatusLoading } = useGetAnalysisJobStatusQuery(jobId, {
     skip: !jobId || Boolean(runId),
     pollingInterval: 5000
   })
@@ -48,7 +58,10 @@ export function AnalysisPage() {
     skip: !runId
   })
 
-  const jobInProgress = jobStatus?.status === "queued" || jobStatus?.status === "running"
+  const jobInProgress =
+    jobStatus?.status === "queued" ||
+    jobStatus?.status === "running" ||
+    Boolean(jobId && isJobStatusLoading)
   const jobFailed = jobStatus?.status === "failed"
 
   useEffect(() => {
@@ -109,7 +122,7 @@ export function AnalysisPage() {
     if (result.request.depth) {
       params.set("depth", String(result.request.depth))
     }
-    navigate(`/analysis?${params.toString()}`)
+    navigate(`${routes.analysis}?${params.toString()}`)
   }
 
   if (runId) {
@@ -141,7 +154,11 @@ export function AnalysisPage() {
         <Card>
           <Stack>
             <Title order={3}>Анализ студенческих работ</Title>
-            <AnalysisForm onSuccess={handleRunSuccess} />
+            <AnalysisForm
+              locked={jobInProgress}
+              restoredArchiveName={jobStatus?.archiveName || undefined}
+              onSuccess={handleRunSuccess}
+            />
           </Stack>
         </Card>
 
@@ -149,10 +166,34 @@ export function AnalysisPage() {
           <Card>
             <Stack gap="md">
               <Title order={4}>Статус анализа</Title>
-              <Text>Этап: {getUserStageTitle(jobStatus?.status, jobStatus?.stage)}</Text>
+              <Group justify="space-between" align="baseline">
+                <Text fw={500}>
+                  {isJobStatusLoading
+                    ? "Получаем статус анализа"
+                    : getUserStageTitle(jobStatus?.status, jobStatus?.stage)}
+                </Text>
+                <Text c="dimmed" size="sm">
+                  {jobStatus?.progressPercent ?? 0}%
+                </Text>
+              </Group>
+              {jobStatus?.archiveName ? (
+                <Text c="dimmed" size="sm">
+                  Архив: {jobStatus.archiveName}
+                </Text>
+              ) : jobId && isJobStatusLoading ? (
+                <Text c="dimmed" size="sm">
+                  Архив: загружаем сведения...
+                </Text>
+              ) : null}
               <Progress value={jobStatus?.progressPercent ?? 0} />
               <Text c="dimmed" size="xs">
-                {jobStatus?.progressPercent ?? 0}%
+                {[
+                  formatDuration(jobStatus?.elapsedSeconds)
+                    ? `прошло ${formatDuration(jobStatus?.elapsedSeconds)}`
+                    : null
+                ]
+                  .filter(Boolean)
+                  .join(" · ") || "Статус обновляется автоматически."}
               </Text>
               {jobFailed ? (
                 <Alert color="red">

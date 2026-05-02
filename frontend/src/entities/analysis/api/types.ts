@@ -42,6 +42,22 @@ export interface RunS3AsyncRequest {
   r?: boolean
   depth?: number
   includeGitMetrics?: boolean
+  includePlagiarismHeatmap?: boolean
+}
+
+export interface HeatmapValidateUploadRequest {
+  key: string
+  r?: boolean
+  depth?: number
+  selectedLevels?: string[][]
+}
+
+export interface HeatmapLimitValidationResponse {
+  folderCount: number | null
+  maxAllowed: number
+  allowed: boolean
+  archiveTooLarge?: boolean
+  message: string | null
 }
 
 export interface RunS3AsyncResponse {
@@ -57,6 +73,7 @@ export interface AnalysisJobResultPayload {
   gitRowsTotal?: number
   runId: string | null
   path?: string | null
+  plagiarismHeatmap?: PlagiarismHeatmapData | null
 }
 
 export interface AnalysisJobStatusResponse {
@@ -106,12 +123,19 @@ export interface DeleteSavedRunResponse {
   deletedGitRows: number
 }
 
+export interface DeleteStandaloneHeatmapResponse {
+  jobId: string
+  deleted: boolean
+}
+
 export interface SavedRunDetailsResponse {
   runId: string
   direction: Direction
   path: string
   data: SavedResultItem[]
   gitData: GitAnalysisRow[]
+  plagiarismHeatmap?: PlagiarismHeatmapData | null
+  requestedFeatures?: RunRequestedFeatures
 }
 
 export type RunViewKind = "metrics" | "git"
@@ -146,6 +170,8 @@ export interface RunMetricsViewResponse {
   metrics: string[]
   rows: SavedResultItem[]
   gitRows: GitAnalysisRow[]
+  plagiarismHeatmap?: PlagiarismHeatmapData | null
+  requestedFeatures?: RunRequestedFeatures
 }
 
 export interface RunGitViewResponse {
@@ -157,3 +183,101 @@ export interface RunGitViewResponse {
 }
 
 export type RunViewResponse = RunMetricsViewResponse | RunGitViewResponse
+
+export interface BuildRunHeatmapRequest {
+  runId: string
+  depth?: number
+  selectedLevels?: string[][]
+}
+
+export interface BuildRunHeatmapResponse {
+  runId: string
+  folderCount: number
+  maxAllowed: number
+  plagiarismHeatmap: PlagiarismHeatmapData | null
+}
+
+export interface BuildRunHeatmapAsyncRequest {
+  runId: string
+  depth?: number
+  selectedLevels?: string[][]
+}
+
+export interface BuildStandaloneHeatmapAsyncRequest {
+  key: string
+  originalName?: string
+  r?: boolean
+  depth?: number
+}
+
+export interface StandaloneHeatmapItem {
+  jobId: string
+  archiveName: string | null
+  folder: string
+  folderCount: number
+  createdAt: string
+  finishedAt: string
+  plagiarismHeatmap: PlagiarismHeatmapData
+}
+
+export interface StandaloneHeatmapListQuery {
+  folder?: string
+  dateFrom?: string
+  dateTo?: string
+}
+
+export interface StandaloneHeatmapListResponse {
+  data: StandaloneHeatmapItem[]
+}
+
+export interface RunHeatmapHistoryItem {
+  jobId: string
+  createdAt: string
+  depth: number | null
+  selectedLevels: string[][]
+  folderCount: number | null
+  plagiarismHeatmap: PlagiarismHeatmapData
+}
+
+export interface RunHeatmapHistoryResponse {
+  runId: string
+  data: RunHeatmapHistoryItem[]
+}
+
+export interface RunRequestedFeatures {
+  includeGitMetrics: boolean
+  includePlagiarismHeatmap: boolean
+}
+
+export interface PlagiarismFileSimilarity {
+  fileName: string
+  similarity: number
+}
+
+export interface PlagiarismCell {
+  avgSimilarity: number
+  maxSimilarity: number
+  minSimilarity: number
+  comparedFiles: number
+  highSimilarityFiles: number
+  fileDetails: PlagiarismFileSimilarity[]
+}
+
+export interface PlagiarismPair extends PlagiarismCell {
+  folder1: string
+  folder2: string
+}
+
+export interface PlagiarismHeatmapData {
+  rootPath: string
+  recursive: boolean
+  generatedAt: string
+  metric: string
+  formula: string
+  comparedExtensions: string[]
+  excludedFiles: string[]
+  folders: Array<{ path: string; fileCount: number; files: string[] }>
+  labels: string[]
+  matrix: PlagiarismCell[][]
+  pairs: PlagiarismPair[]
+}

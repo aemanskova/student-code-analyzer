@@ -1,5 +1,5 @@
 import { NavLink, Stack } from "@mantine/core"
-import { NavLink as RouterNavLink } from "react-router"
+import { NavLink as RouterNavLink, useLocation } from "react-router"
 
 type SidebarLink = {
   label: string
@@ -11,29 +11,29 @@ type Props = {
 }
 
 export function Sidebar({ links }: Props) {
+  const location = useLocation()
+  const pathname = location.pathname || "/"
+
+  const isActivePath = (to: string): boolean => {
+    if (to === "/") {
+      return pathname === "/"
+    }
+    return pathname === to || pathname.startsWith(to)
+  }
+
   return (
     <Stack h="100%">
       <Stack gap="md">
         {links.map((link) => (
           <NavLink
+            active={isActivePath(link.to)}
             key={link.to}
             component={RouterNavLink}
-            end
             label={link.label}
             styles={{
               root: {
                 border: "none",
-                borderRadius: 10,
-                color: "inherit",
-                "&[data-active]": {
-                  color: "inherit"
-                }
-              },
-              label: {
-                color: "inherit"
-              },
-              section: {
-                color: "inherit"
+                borderRadius: 10
               }
             }}
             to={link.to}

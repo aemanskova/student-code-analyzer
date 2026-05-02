@@ -38,6 +38,10 @@ export class RunAnalysisDto {
   @IsBoolean()
   includeGitMetrics?: boolean;
 
+  @IsOptional()
+  @IsBoolean()
+  includePlagiarismHeatmap?: boolean;
+
   // Internal callback for background job progress. Not intended for request body.
   onAnalyzeProgress?: (
     completed: number,
