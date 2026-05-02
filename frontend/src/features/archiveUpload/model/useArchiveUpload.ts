@@ -253,9 +253,7 @@ export const useArchiveUpload = ({ file, disabled, onUploaded }: Params) => {
 
               if (attempt < MAX_PART_UPLOAD_ATTEMPTS) {
                 setStatusText(
-                  `Повтор загрузки части ${partNumber} из ${partsTotal}: попытка ${
-                    attempt + 1
-                  }`
+                  `Повтор загрузки части ${partNumber} из ${partsTotal}: попытка ${attempt + 1}`
                 )
                 await wait(PART_UPLOAD_RETRY_BASE_DELAY_MS * attempt)
               }

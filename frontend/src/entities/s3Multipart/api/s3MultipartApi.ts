@@ -1,5 +1,5 @@
+import type { AppQueryError } from "@shared/api/baseApi"
 import { baseApi } from "@shared/api/baseApi"
-import type { FetchBaseQueryError } from "@reduxjs/toolkit/query"
 
 import type {
   AbortS3MultipartUploadRequest,
@@ -18,7 +18,7 @@ import type {
   UploadS3PartResponse
 } from "./types"
 
-type XhrUploadResult = { ok: true; etag: string } | { ok: false; error: FetchBaseQueryError }
+type XhrUploadResult = { ok: true; etag: string } | { ok: false; error: AppQueryError }
 
 export const s3MultipartApi = baseApi.injectEndpoints({
   endpoints: (build) => ({
@@ -47,6 +47,7 @@ export const s3MultipartApi = baseApi.injectEndpoints({
       })
     }),
     uploadS3Part: build.mutation<UploadS3PartResponse, UploadS3PartRequest>({
+      // XHR is required here because fetchBaseQuery does not expose upload progress events.
       async queryFn(arg) {
         const result = await new Promise<XhrUploadResult>((resolve) => {
           const request = new XMLHttpRequest()
@@ -64,7 +65,7 @@ export const s3MultipartApi = baseApi.injectEndpoints({
               ok: false,
               error: {
                 status: "FETCH_ERROR",
-                error: "Не удалось загрузить часть файла"
+                message: "Не удалось загрузить часть файла"
               }
             })
           }
@@ -73,7 +74,7 @@ export const s3MultipartApi = baseApi.injectEndpoints({
               ok: false,
               error: {
                 status: "CUSTOM_ERROR",
-                error: "Загрузка части файла была прервана"
+                message: "Загрузка части файла была прервана"
               }
             })
           }
@@ -82,7 +83,7 @@ export const s3MultipartApi = baseApi.injectEndpoints({
               ok: false,
               error: {
                 status: "TIMEOUT_ERROR",
-                error: "Истекло время ожидания загрузки части файла"
+                message: "Истекло время ожидания загрузки части файла"
               }
             })
           }
@@ -92,10 +93,11 @@ export const s3MultipartApi = baseApi.injectEndpoints({
                 ok: false,
                 error: {
                   status: request.status,
-                  data:
+                  message:
                     request.responseText ||
                     request.statusText ||
-                    `Не удалось загрузить часть файла: HTTP ${request.status}`
+                    `Не удалось загрузить часть файла: HTTP ${request.status}`,
+                  details: request.responseText || request.statusText || null
                 }
               })
               return
@@ -106,8 +108,8 @@ export const s3MultipartApi = baseApi.injectEndpoints({
                 ok: false,
                 error: {
                   status: "CUSTOM_ERROR",
-                  data: "Хранилище не вернуло ETag для загруженной части",
-                  error: "ETag is missing"
+                  message: "Хранилище не вернуло ETag для загруженной части",
+                  details: "ETag is missing"
                 }
               })
               return

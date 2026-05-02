@@ -1,10 +1,16 @@
-import type { BaseQueryFn, FetchArgs, FetchBaseQueryError } from "@reduxjs/toolkit/query"
+import type { BaseQueryFn, FetchArgs } from "@reduxjs/toolkit/query"
 import { createApi, fetchBaseQuery } from "@reduxjs/toolkit/query/react"
 import { emitLogout } from "@shared/api/auth/hepler"
 import { loadFromLS } from "@shared/lib"
 import { ACCESS_TOKEN_KEY, REFRESH_TOKEN_KEY, storeTokens } from "@shared/lib/auth"
 
-import { isAuthEndpoint, isRefreshResponse, isUnauthorizedError } from "./utils"
+import {
+  type AppQueryError,
+  isAuthEndpoint,
+  isRefreshResponse,
+  isUnauthorizedError,
+  normalizeBaseQueryError
+} from "./utils"
 
 const rawBaseQuery = fetchBaseQuery({
   baseUrl: import.meta.env.VITE_API_URL || "http://localhost:3000/api",
@@ -17,7 +23,10 @@ const rawBaseQuery = fetchBaseQuery({
   }
 })
 
-const baseQueryFn: BaseQueryFn<string | FetchArgs, unknown, FetchBaseQueryError> = async (
+const normalizeResult = (result: Awaited<ReturnType<typeof rawBaseQuery>>) =>
+  result.error ? { error: normalizeBaseQueryError(result.error) } : result
+
+const baseQueryFn: BaseQueryFn<string | FetchArgs, unknown, AppQueryError> = async (
   args,
   api,
   extraOptions
@@ -26,14 +35,14 @@ const baseQueryFn: BaseQueryFn<string | FetchArgs, unknown, FetchBaseQueryError>
   let result = await rawBaseQuery(args, api, extraOptions)
 
   if (!isUnauthorizedError(result.error) || isAuthEndpoint(requestUrl)) {
-    return result
+    return normalizeResult(result)
   }
 
   const refreshToken = loadFromLS<string>({ key: REFRESH_TOKEN_KEY })
 
   if (!refreshToken) {
     emitLogout()
-    return result
+    return normalizeResult(result)
   }
 
   const refreshResult = await rawBaseQuery(
@@ -51,17 +60,28 @@ const baseQueryFn: BaseQueryFn<string | FetchArgs, unknown, FetchBaseQueryError>
     if (tokens.accessToken && tokens.refreshToken) {
       storeTokens(tokens)
       result = await rawBaseQuery(args, api, extraOptions)
-      return result
+      return normalizeResult(result)
     }
   }
 
   emitLogout()
-  return result
+  return normalizeResult(result)
 }
 
 export const baseApi = createApi({
   reducerPath: "api",
   baseQuery: baseQueryFn,
-  tagTypes: ["ArchiveResults", "Profile"],
+  tagTypes: [
+    "AnalysisJob",
+    "AnalysisList",
+    "AnalysisRun",
+    "Profile",
+    "RunFilterOptions",
+    "RunHeatmapHistory",
+    "StandaloneHeatmap",
+    "StandaloneHeatmapList"
+  ],
   endpoints: () => ({})
 })
+
+export type { AppQueryError } from "./utils"

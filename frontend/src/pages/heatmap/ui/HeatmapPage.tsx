@@ -61,7 +61,7 @@ export function HeatmapPage() {
     [dateFrom, dateTo, folder]
   )
 
-  const { data, isFetching, isLoading, refetch } = useGetStandaloneHeatmapListQuery(query)
+  const { data, isFetching, isLoading } = useGetStandaloneHeatmapListQuery(query)
   const items = useMemo(() => data?.data || [], [data?.data])
 
   const totalPages = Math.max(1, Math.ceil(items.length / PAGE_SIZE))
@@ -210,7 +210,6 @@ export function HeatmapPage() {
             return
           }
           await deleteStandaloneHeatmap({ jobId: pendingDelete.jobId }).unwrap()
-          await refetch()
           setPendingDelete(null)
         }}
       />

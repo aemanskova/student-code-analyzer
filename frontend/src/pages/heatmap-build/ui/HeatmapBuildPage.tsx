@@ -17,10 +17,10 @@ import {
   Text,
   Title
 } from "@mantine/core"
-import { InfoNotice } from "@shared/ui"
+import { WarningCircle } from "@phosphor-icons/react"
 import { routes } from "@shared/config/routes"
 import { getApiErrorMessage } from "@shared/lib"
-import { WarningCircle } from "@phosphor-icons/react"
+import { InfoNotice } from "@shared/ui"
 import { useCallback, useEffect, useState } from "react"
 import { useNavigate, useSearchParams } from "react-router"
 

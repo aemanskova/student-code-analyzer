@@ -79,10 +79,7 @@ export const usePlagiarismRunView = ({ runId, analysisDepth, selectedLevels }: P
     setHideCurrentWhileBuilding(false)
     setLocalArchive([])
     setCurrentHeatmap(null)
-    if (runId) {
-      void historyQuery.refetch()
-    }
-  }, [historyQuery.refetch, runId])
+  }, [runId])
 
   const setHeatmapJobId = useCallback(
     (jobId: string) => {
