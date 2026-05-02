@@ -51,6 +51,9 @@ export const s3MultipartApi = baseApi.injectEndpoints({
         const result = await new Promise<XhrUploadResult>((resolve) => {
           const request = new XMLHttpRequest()
           request.open("PUT", arg.url)
+          if (arg.timeoutMs && arg.timeoutMs > 0) {
+            request.timeout = arg.timeoutMs
+          }
           request.upload.onprogress = (event) => {
             if (event.lengthComputable) {
               arg.onProgress?.(event.loaded, event.total)
@@ -65,13 +68,34 @@ export const s3MultipartApi = baseApi.injectEndpoints({
               }
             })
           }
+          request.onabort = () => {
+            resolve({
+              ok: false,
+              error: {
+                status: "CUSTOM_ERROR",
+                error: "Загрузка части файла была прервана"
+              }
+            })
+          }
+          request.ontimeout = () => {
+            resolve({
+              ok: false,
+              error: {
+                status: "TIMEOUT_ERROR",
+                error: "Истекло время ожидания загрузки части файла"
+              }
+            })
+          }
           request.onload = () => {
             if (request.status < 200 || request.status >= 300) {
               resolve({
                 ok: false,
                 error: {
                   status: request.status,
-                  data: request.responseText || ""
+                  data:
+                    request.responseText ||
+                    request.statusText ||
+                    `Не удалось загрузить часть файла: HTTP ${request.status}`
                 }
               })
               return

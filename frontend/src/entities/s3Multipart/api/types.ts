@@ -42,6 +42,7 @@ export interface UploadS3PartRequest {
   url: string
   body: Blob
   onProgress?: (loadedBytes: number, totalBytes: number) => void
+  timeoutMs?: number
 }
 
 export interface UploadS3PartResponse {

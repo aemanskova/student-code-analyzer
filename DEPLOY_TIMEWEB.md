@@ -133,12 +133,16 @@ nano .env   # или vim, editor по вкусу
 | `CORS_ORIGIN` | `https://aemanskova.ru` |
 | `NODE_ENV` | `production` |
 | `VITE_API_URL` | `/api` |
+| `VITE_UPLOAD_PART_SIZE_MB` | `64` |
+| `VITE_UPLOAD_MAX_CONCURRENT` | `6` |
 | `MINIO_CORS_ORIGINS` | `https://aemanskova.ru` (при необходимости через запятую: `https://www.aemanskova.ru`) |
 | `JWT_SECRET` | случайная строка **не короче 32 символов** (в production приложение проверит слабые шаблоны — см. `bootstrap-security.ts`) |
 | `MINIO_ROOT_USER` / `MINIO_ROOT_PASSWORD` | сильные пароли |
 | `S3_ACCESS_KEY_ID` / `S3_SECRET_ACCESS_KEY` | совпадают с учётными данными MinIO (`MINIO_ROOT_*`) |
 | `S3_PUBLIC_ENDPOINT` | публичный HTTPS к MinIO, например `https://s3.aemanskova.ru` (тот хост, который Caddy проксирует на `127.0.0.1:9100`) |
 | `S3_ENDPOINT` | `http://minio:9000` (внутри Docker-сети — не менять без необходимости) |
+| `S3_PRESIGN_CONCURRENCY` | `16` |
+| `S3_MAX_SOCKETS` | `64` |
 | `TRUST_PROXY` | `true` (чтобы лимиты и IP за Caddy были корректны) |
 | `SWAGGER_ENABLED` | `false` в проде; `true` только временно для отладки |
 | `ALLOW_PUBLIC_REGISTRATION` | `false`, если регистрацию нужно отключить после создания учёток |
@@ -157,6 +161,8 @@ docker compose -f docker-compose.prod.yml run --rm minio-init
 
 Дополнительно: SSH только по ключу, по возможности **fail2ban** на SSH, уникальные длинные пароли MinIO/S3.
 
+Скорость загрузки архивов на проде зависит от публичного пути браузер → `S3_PUBLIC_ENDPOINT` → Caddy → MinIO. Локально этот путь почти нулевой (`localhost`), поэтому одинаковой скорости не будет, если потолок в интернет-канале клиента или VPS. Для продового канала через Caddy с HTTP/1.1 используйте `VITE_UPLOAD_PART_SIZE_MB=64` и `VITE_UPLOAD_MAX_CONCURRENT=6`: браузеры обычно ограничивают число HTTP/1.1 соединений к одному host, а более крупные части уменьшают количество presign/PUT операций для архивов на 10+ ГБ. После изменения `VITE_*` переменных нужно пересобрать контейнер `web`.
+
 ---
 
 ## 7. Переменные, специфичные для `docker-compose.prod.yml`
@@ -166,6 +172,8 @@ docker compose -f docker-compose.prod.yml run --rm minio-init
 | Переменная | По умолчанию | Назначение |
 |------------|--------------|------------|
 | `WEB_PORT` | `8080` | Порт на **127.0.0.1** хоста для контейнера `web` (внутри контейнера nginx всегда на 80). **Не ставьте 80**, если на этом же сервере Caddy: иначе `docker-proxy` держит `127.0.0.1:80` и Caddy не сможет занять `:80` (ошибка `address already in use`). В `Caddyfile` укажите тот же порт в `reverse_proxy`. |
+| `VITE_UPLOAD_PART_SIZE_MB` | `64` | Размер одной части multipart-загрузки архива в браузере. Для слабого/нестабильного канала можно снизить до `32`, для стабильного быстрого канала поднять до `128`. |
+| `VITE_UPLOAD_MAX_CONCURRENT` | `6` | Максимум параллельных PUT-загрузок частей. Для S3-поддомена через Caddy HTTP/1.1 не ставьте выше `6`: лишние запросы браузер всё равно будет ставить в очередь, а на нестабильном канале это повышает риск ошибок частей. |
 | `MINIO_API_PORT` | `9100` | Локальный порт S3 API на хосте (только привязка к `127.0.0.1`). |
 | `MINIO_CONSOLE_PORT` | `9101` | Консоль MinIO на localhost (для админов; наружу не пробрасывать). |
 | `HOST_DATA_DIR` | `./data` | Путь к данным SQLite/DuckDB на хосте. |
@@ -293,20 +301,35 @@ sudo apt update && sudo apt install -y caddy
 ---
 
 Минимальный **`/etc/caddy/Caddyfile`**: сайт и API на одном хосте, MinIO отдельным поддоменом.
+Для больших загрузок в MinIO отключите HTTP/2/HTTP/3 на HTTPS listener: браузеры часто мультиплексируют параллельные PUT-загрузки через одно HTTP/2 соединение, и multipart перестаёт реально распараллеливаться. С `protocols h1` браузер открывает несколько HTTP/1.1 соединений к S3-поддомену, что обычно заметно ускоряет upload.
 
 ```text
+{
+	servers :443 {
+		protocols h1
+	}
+}
+
 aemanskova.ru {
 	reverse_proxy 127.0.0.1:8080
 }
 
 s3.aemanskova.ru {
-	reverse_proxy 127.0.0.1:9100
+	reverse_proxy 127.0.0.1:9100 {
+		flush_interval -1
+	}
 }
 ```
 
 (Порт **8080** совпадает с `WEB_PORT` по умолчанию в `docker-compose.prod.yml`. Если поменяли `WEB_PORT` — подставьте его же сюда.)
 
 **Важно:** Caddy проксирует на `127.0.0.1`, а не на публичный IP — так и задумано.
+После изменения Caddyfile проверьте и перезагрузите Caddy:
+
+```bash
+sudo caddy validate --config /etc/caddy/Caddyfile
+sudo systemctl reload caddy
+```
 
 После правок:
 

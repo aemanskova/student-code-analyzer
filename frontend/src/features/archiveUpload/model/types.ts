@@ -9,4 +9,7 @@ export interface UploadedArchiveInfo {
   fileSize: number
   chunkSizeBytes: number
   partsTotal: number
+  uploadSeconds?: number
+  presignSeconds?: number
+  completeSeconds?: number
 }

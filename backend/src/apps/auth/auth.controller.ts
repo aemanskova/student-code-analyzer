@@ -1,6 +1,7 @@
-import { Body, Controller, Post, Req, UseGuards, UnauthorizedException } from "@nestjs/common";
+import { Body, Controller, Post, UseGuards } from "@nestjs/common";
 import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
 import { SkipThrottle, Throttle } from "@nestjs/throttler";
+import { CurrentUserId } from "./current-user-id.decorator";
 import { AuthService } from "./auth.service";
 import { RegisterDto } from "./dto/register.dto";
 import { LoginDto } from "./dto/login.dto";
@@ -38,11 +39,7 @@ export class AuthController {
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth("bearer")
   @ApiOperation({ summary: "Выход пользователя (инвалидация refresh token)" })
-  logout(@Req() req: { user?: { sub?: number | string } }): Promise<object> {
-    const userId = Number(req.user?.sub);
-    if (!Number.isFinite(userId) || userId <= 0) {
-      throw new UnauthorizedException("Invalid token payload");
-    }
+  logout(@CurrentUserId() userId: number): Promise<object> {
     return this.authService.logout(userId);
   }
 }

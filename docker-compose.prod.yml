@@ -25,6 +25,8 @@ services:
       dockerfile: Dockerfile.prod
       args:
         VITE_API_URL: ${VITE_API_URL:-/api}
+        VITE_UPLOAD_PART_SIZE_MB: ${VITE_UPLOAD_PART_SIZE_MB:-64}
+        VITE_UPLOAD_MAX_CONCURRENT: ${VITE_UPLOAD_MAX_CONCURRENT:-6}
     image: student-code-analyzer-web
     container_name: student-code-analyzer-web
     restart: unless-stopped

@@ -6,6 +6,8 @@ import {
   OnModuleInit
 } from "@nestjs/common";
 import { createReadStream, createWriteStream } from "node:fs";
+import { Agent as HttpAgent } from "node:http";
+import { Agent as HttpsAgent } from "node:https";
 import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -25,11 +27,14 @@ import {
   HeadBucketCommand,
   HeadObjectCommand,
   ListMultipartUploadsCommand,
+  ListMultipartUploadsCommandOutput,
   ListObjectsV2Command,
+  ListObjectsV2CommandOutput,
   S3Client,
   UploadPartCommand
 } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
+import { NodeHttpHandler } from "@smithy/node-http-handler";
 import { InjectRepository } from "@nestjs/typeorm";
 import { In, Like, Repository } from "typeorm";
 import { DuckdbService } from "../database/duckdb/duckdb.service";
@@ -163,6 +168,14 @@ export class AnalysisService implements OnModuleInit {
   private readonly s3AccessKeyId = String(process.env.S3_ACCESS_KEY_ID || "").trim();
   private readonly s3SecretAccessKey = String(process.env.S3_SECRET_ACCESS_KEY || "").trim();
   private readonly s3ForcePathStyle = String(process.env.S3_FORCE_PATH_STYLE || "true") === "true";
+  private readonly s3PresignConcurrency = Math.max(
+    1,
+    Math.min(64, Math.trunc(Number(process.env.S3_PRESIGN_CONCURRENCY || 16)))
+  );
+  private readonly s3MaxSockets = Math.max(
+    8,
+    Math.min(256, Math.trunc(Number(process.env.S3_MAX_SOCKETS || 64)))
+  );
   private readonly uploadCleanupTtlHours = Math.max(
     1,
     Number(process.env.ANALYSIS_UPLOAD_CLEANUP_TTL_HOURS || 24)
@@ -749,21 +762,32 @@ export class AnalysisService implements OnModuleInit {
     }
 
     const expiresInSeconds = Math.max(60, Math.min(3600, input.expiresInSeconds || 1800));
-    const urls = await Promise.all(
-      partNumbers.map(async (partNumber) => {
-        const command = new UploadPartCommand({
-          Bucket: this.getS3Bucket(),
-          Key: input.key,
-          UploadId: input.uploadId,
-          PartNumber: partNumber
-        });
-        return {
-          partNumber,
-          url: await getSignedUrl(this.getS3PresignClient(), command, {
-            expiresIn: expiresInSeconds
-          })
-        };
-      })
+
+    const startedAt = Date.now();
+    const urls: Array<{ partNumber: number; url: string }> = [];
+
+    for (let i = 0; i < partNumbers.length; i += this.s3PresignConcurrency) {
+      const batch = partNumbers.slice(i, i + this.s3PresignConcurrency);
+      const batchUrls = await Promise.all(
+        batch.map(async (partNumber) => {
+          const command = new UploadPartCommand({
+            Bucket: this.getS3Bucket(),
+            Key: input.key,
+            UploadId: input.uploadId,
+            PartNumber: partNumber
+          });
+          return {
+            partNumber,
+            url: await getSignedUrl(this.getS3PresignClient(), command, {
+              expiresIn: expiresInSeconds
+            })
+          };
+        })
+      );
+      urls.push(...batchUrls);
+    }
+    this.logger.debug(
+      `Generated ${urls.length} S3 presigned upload URLs in ${Date.now() - startedAt}ms`
     );
 
     return {
@@ -2471,24 +2495,26 @@ export class AnalysisService implements OnModuleInit {
   ): Promise<AnalysisResponse> {
     const csvAbsolutePath = this.resolveCsvPath(dto.csvFile);
     await this.ensureFileExists(csvAbsolutePath);
-    const escapedCsvPath = csvAbsolutePath.replace(/'/g, "''");
 
     const whereClauses: string[] = [];
+    const queryParams: unknown[] = [csvAbsolutePath];
     if (dto.group) {
-      whereClauses.push(`split_part(path, '/', 1) = '${dto.group.replace(/'/g, "''")}'`);
+      whereClauses.push("split_part(path, '/', 1) = ?");
+      queryParams.push(dto.group);
     }
     if (dto.student) {
-      whereClauses.push(`split_part(path, '/', 2) = '${dto.student.replace(/'/g, "''")}'`);
+      whereClauses.push("split_part(path, '/', 2) = ?");
+      queryParams.push(dto.student);
     }
 
     const query = `
       SELECT path
-      FROM read_csv_auto('${escapedCsvPath}', header = true)
+      FROM read_csv_auto(?, header = true)
       ${whereClauses.length > 0 ? `WHERE ${whereClauses.join(" AND ")}` : ""}
       ORDER BY path;
     `;
 
-    const rows = await this.duckdbService.all<{ path: string }>(query);
+    const rows = await this.duckdbService.all<{ path: string }>(query, queryParams);
     const data: AnalysisRow[] = [];
 
     for (const row of rows) {
@@ -2670,24 +2696,26 @@ export class AnalysisService implements OnModuleInit {
   }
 
   private async ensureFileExists(filePath: string) {
+    let stat!: Awaited<ReturnType<typeof fs.stat>>;
     try {
-      const stat = await fs.stat(filePath);
-      if (!stat.isFile()) {
-        throw new BadRequestException(`Not a file: ${filePath}`);
-      }
+      stat = await fs.stat(filePath);
     } catch {
       throw new BadRequestException(`File does not exist: ${filePath}`);
+    }
+    if (!stat.isFile()) {
+      throw new BadRequestException(`Not a file: ${filePath}`);
     }
   }
 
   private async ensureDirectoryExists(directoryPath: string) {
+    let stat!: Awaited<ReturnType<typeof fs.stat>>;
     try {
-      const stat = await fs.stat(directoryPath);
-      if (!stat.isDirectory()) {
-        throw new BadRequestException(`Not a directory: ${directoryPath}`);
-      }
+      stat = await fs.stat(directoryPath);
     } catch {
       throw new BadRequestException(`Directory does not exist: ${directoryPath}`);
+    }
+    if (!stat.isDirectory()) {
+      throw new BadRequestException(`Not a directory: ${directoryPath}`);
     }
   }
 
@@ -3632,7 +3660,7 @@ export class AnalysisService implements OnModuleInit {
     const result: string[][] = [];
     for (let level = 0; level < depth; level += 1) {
       const rawValues = Array.isArray(selectedLevels[level]) ? selectedLevels[level] : [];
-      const normalized = Array.from(
+      result[level] = Array.from(
         new Set(
           rawValues
             .map((value) =>
@@ -3643,7 +3671,6 @@ export class AnalysisService implements OnModuleInit {
             .filter(Boolean)
         )
       );
-      result[level] = normalized;
     }
     return result;
   }
@@ -3863,10 +3890,7 @@ export class AnalysisService implements OnModuleInit {
       }
 
       const fileName = segments[segments.length - 1] || "";
-      if (!fileName || fileName.startsWith("._")) {
-        return false;
-      }
-      return true;
+      return Boolean(fileName && !fileName.startsWith("._"));
     };
   }
 
@@ -4426,11 +4450,11 @@ export class AnalysisService implements OnModuleInit {
 
     const cutoffMs = Date.now() - this.sourceArchiveTtlHours * 60 * 60 * 1000;
     const activeKeys = await this.getActiveS3UploadKeys();
-    let continuationToken: string | undefined;
+    let continuationToken: string | undefined = undefined;
     let deleted = 0;
 
     do {
-      const response = await this.getS3Client().send(
+      const response: ListObjectsV2CommandOutput = await this.getS3Client().send(
         new ListObjectsV2Command({
           Bucket: this.getS3Bucket(),
           Prefix: "uploads/",
@@ -4461,12 +4485,12 @@ export class AnalysisService implements OnModuleInit {
 
   private async cleanupStaleS3MultipartUploads(): Promise<void> {
     const cutoffMs = Date.now() - this.sourceArchiveTtlHours * 60 * 60 * 1000;
-    let keyMarker: string | undefined;
-    let uploadIdMarker: string | undefined;
+    let keyMarker: string | undefined = undefined;
+    let uploadIdMarker: string | undefined = undefined;
     let aborted = 0;
 
     do {
-      const response = await this.getS3Client().send(
+      const response: ListMultipartUploadsCommandOutput = await this.getS3Client().send(
         new ListMultipartUploadsCommand({
           Bucket: this.getS3Bucket(),
           Prefix: "uploads/",
@@ -4808,6 +4832,8 @@ export class AnalysisService implements OnModuleInit {
       region: this.s3Region || "us-east-1",
       endpoint: this.s3Endpoint || undefined,
       forcePathStyle: this.s3ForcePathStyle,
+      requestHandler: this.createS3RequestHandler(10000, 60000),
+      maxAttempts: 3,
       credentials: {
         accessKeyId: this.s3AccessKeyId,
         secretAccessKey: this.s3SecretAccessKey
@@ -4828,12 +4854,29 @@ export class AnalysisService implements OnModuleInit {
       region: this.s3Region || "us-east-1",
       endpoint: this.s3PublicEndpoint || this.s3Endpoint || undefined,
       forcePathStyle: this.s3ForcePathStyle,
+      requestHandler: this.createS3RequestHandler(5000, 30000),
+      maxAttempts: 3,
       credentials: {
         accessKeyId: this.s3AccessKeyId,
         secretAccessKey: this.s3SecretAccessKey
       }
     });
     return this.s3PresignClient;
+  }
+
+  private createS3RequestHandler(connectionTimeout: number, requestTimeout: number) {
+    return new NodeHttpHandler({
+      connectionTimeout,
+      requestTimeout,
+      httpAgent: new HttpAgent({
+        keepAlive: true,
+        maxSockets: this.s3MaxSockets
+      }),
+      httpsAgent: new HttpsAgent({
+        keepAlive: true,
+        maxSockets: this.s3MaxSockets
+      })
+    });
   }
 
   private sanitizeObjectName(value: string): string {

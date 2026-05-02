@@ -9,6 +9,7 @@ import { DuckdbModule } from "./apps/database/duckdb/duckdb.module";
 import { PathParserModule } from "./apps/utils/path-parser/path-parser.module";
 import { MetricsModule } from "./apps/metrics/metrics.module";
 import { UsersModule } from "./apps/users/users.module";
+import { HealthController } from "./common/health.controller";
 
 @Module({
   imports: [
@@ -36,6 +37,7 @@ import { UsersModule } from "./apps/users/users.module";
     AuthModule,
     AnalysisModule
   ],
+  controllers: [HealthController],
   providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }]
 })
 export class AppModule {}

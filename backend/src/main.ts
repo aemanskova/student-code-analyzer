@@ -17,6 +17,17 @@ function shouldEnableSwagger(): boolean {
   return process.env.NODE_ENV !== "production";
 }
 
+function getCorsOrigins(): string[] {
+  const configured = String(process.env.CORS_ORIGIN || "")
+    .split(",")
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+  if (configured.length) {
+    return configured;
+  }
+  return ["http://localhost:5173"];
+}
+
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
   assertProductionSecurity();
@@ -36,13 +47,20 @@ async function bootstrap() {
   );
 
   app.enableCors({
-    origin: process.env.CORS_ORIGIN || "http://localhost:5173",
+    origin: getCorsOrigins(),
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization"],
     credentials: false
   });
   app.setGlobalPrefix("api");
-  app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
+  app.useGlobalPipes(
+    new ValidationPipe({
+      whitelist: true,
+      forbidNonWhitelisted: true,
+      transform: true,
+      transformOptions: { enableImplicitConversion: true }
+    })
+  );
   app.useGlobalFilters(new RequestAbortedFilter(app.get(HttpAdapterHost)));
 
   if (shouldEnableSwagger()) {

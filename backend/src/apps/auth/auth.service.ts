@@ -2,6 +2,7 @@ import { ForbiddenException, Injectable, UnauthorizedException } from "@nestjs/c
 import { InjectRepository } from "@nestjs/typeorm";
 import { Repository } from "typeorm";
 import { HttpService } from "@nestjs/axios";
+import { ConfigService } from "@nestjs/config";
 import * as bcrypt from "bcrypt";
 import { JwtService } from "@nestjs/jwt";
 import { User } from "./entities/user.entity";
@@ -11,10 +12,10 @@ import { LoginDto } from "./dto/login.dto";
 
 @Injectable()
 export class AuthService {
-  private readonly jwtSecret = process.env.JWT_SECRET || "super_secret_jwt_for_development";
-  private readonly accessTtl = process.env.JWT_ACCESS_EXPIRES_IN || "15m";
-  private readonly refreshTtl = process.env.JWT_REFRESH_EXPIRES_IN || "30d";
-  private readonly bcryptRounds = AuthService.parseBcryptRounds(process.env.BCRYPT_ROUNDS);
+  private readonly jwtSecret: string;
+  private readonly accessTtl: string;
+  private readonly refreshTtl: string;
+  private readonly bcryptRounds: number;
 
   constructor(
     @InjectRepository(User)
@@ -22,8 +23,14 @@ export class AuthService {
     @InjectRepository(Role)
     private roleRepo: Repository<Role>,
     private httpService: HttpService,
-    private readonly jwtService: JwtService
-  ) {}
+    private readonly jwtService: JwtService,
+    private readonly configService: ConfigService
+  ) {
+    this.jwtSecret = this.configService.getOrThrow<string>("JWT_SECRET");
+    this.accessTtl = this.configService.get<string>("JWT_ACCESS_EXPIRES_IN", "15m");
+    this.refreshTtl = this.configService.get<string>("JWT_REFRESH_EXPIRES_IN", "30d");
+    this.bcryptRounds = AuthService.parseBcryptRounds(this.configService.get("BCRYPT_ROUNDS"));
+  }
 
   async register(dto: RegisterDto) {
     if (
@@ -92,7 +99,7 @@ export class AuthService {
   async login(dto: LoginDto) {
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     const { identifier, password } = dto;
-    let user: User | null = null;
+    let user: User | null;
 
     if (emailRegex.test(identifier)) {
       user = await this.userRepo.findOne({ where: [{ email: identifier }] });
@@ -120,53 +127,54 @@ export class AuthService {
   }
 
   async verifyAccessToken(token: string) {
+    let payload: { sub?: number; tokenType?: string };
     try {
-      const payload = this.jwtService.verify(token, { secret: this.jwtSecret }) as {
+      payload = this.jwtService.verify(token, { secret: this.jwtSecret }) as {
         sub?: number;
         tokenType?: string;
       };
-      if (!payload?.sub || payload.tokenType !== "access") {
-        throw new UnauthorizedException("Invalid access token");
-      }
-      return payload;
     } catch {
       throw new UnauthorizedException("Invalid access token");
     }
+
+    if (!payload?.sub || payload.tokenType !== "access") {
+      throw new UnauthorizedException("Invalid access token");
+    }
+    return payload;
   }
 
   async refreshTokens(refreshToken: string) {
+    let payload: { sub?: number; tokenType?: string };
     try {
-      const payload = this.jwtService.verify(refreshToken, { secret: this.jwtSecret }) as {
+      payload = this.jwtService.verify(refreshToken, { secret: this.jwtSecret }) as {
         sub?: number;
         tokenType?: string;
       };
-      if (!payload?.sub || payload.tokenType !== "refresh") {
-        throw new UnauthorizedException("Invalid refresh token");
-      }
-
-      const user = await this.userRepo.findOne({ where: { id: payload.sub } });
-      if (!user || !user.isActive) {
-        throw new UnauthorizedException("Invalid refresh token");
-      }
-      if (!user.refreshTokenHash || !user.refreshTokenExpiresAt) {
-        throw new UnauthorizedException("Invalid refresh token");
-      }
-      if (new Date(user.refreshTokenExpiresAt).getTime() <= Date.now()) {
-        throw new UnauthorizedException("Refresh token expired");
-      }
-
-      const valid = await bcrypt.compare(refreshToken, user.refreshTokenHash);
-      if (!valid) {
-        throw new UnauthorizedException("Invalid refresh token");
-      }
-
-      return this.issueTokens(user, user.role?.name);
-    } catch (error) {
-      if (error instanceof UnauthorizedException) {
-        throw error;
-      }
+    } catch {
       throw new UnauthorizedException("Invalid refresh token");
     }
+
+    if (!payload?.sub || payload.tokenType !== "refresh") {
+      throw new UnauthorizedException("Invalid refresh token");
+    }
+
+    const user = await this.userRepo.findOne({ where: { id: payload.sub } });
+    if (!user || !user.isActive) {
+      throw new UnauthorizedException("Invalid refresh token");
+    }
+    if (!user.refreshTokenHash || !user.refreshTokenExpiresAt) {
+      throw new UnauthorizedException("Invalid refresh token");
+    }
+    if (new Date(user.refreshTokenExpiresAt).getTime() <= Date.now()) {
+      throw new UnauthorizedException("Refresh token expired");
+    }
+
+    const valid = await bcrypt.compare(refreshToken, user.refreshTokenHash);
+    if (!valid) {
+      throw new UnauthorizedException("Invalid refresh token");
+    }
+
+    return this.issueTokens(user, user.role?.name);
   }
 
   async logout(userId: number) {

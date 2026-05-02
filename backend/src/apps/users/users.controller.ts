@@ -1,13 +1,6 @@
-import {
-  Body,
-  Controller,
-  Get,
-  Patch,
-  Req,
-  UnauthorizedException,
-  UseGuards
-} from "@nestjs/common";
+import { Body, Controller, Get, Patch, UseGuards } from "@nestjs/common";
 import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
+import { CurrentUserId } from "../auth/current-user-id.decorator";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { UsersService } from "./users.service";
 import { UpdateMeDto } from "./dto/update-me.dto";
@@ -21,11 +14,7 @@ export class UsersController {
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth("bearer")
   @ApiOperation({ summary: "Информация о текущем пользователе" })
-  async getMe(@Req() req: { user?: { sub?: number | string } }) {
-    const userId = Number(req.user?.sub);
-    if (!Number.isFinite(userId) || userId <= 0) {
-      throw new UnauthorizedException("Invalid token payload");
-    }
+  async getMe(@CurrentUserId() userId: number) {
     return this.usersService.getMe(userId);
   }
 
@@ -33,11 +22,7 @@ export class UsersController {
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth("bearer")
   @ApiOperation({ summary: "Обновление профиля текущего пользователя" })
-  async updateMe(@Req() req: { user?: { sub?: number | string } }, @Body() dto: UpdateMeDto) {
-    const userId = Number(req.user?.sub);
-    if (!Number.isFinite(userId) || userId <= 0) {
-      throw new UnauthorizedException("Invalid token payload");
-    }
+  async updateMe(@CurrentUserId() userId: number, @Body() dto: UpdateMeDto) {
     return this.usersService.updateMe(userId, dto);
   }
 }

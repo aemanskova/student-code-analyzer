@@ -1,18 +1,16 @@
-import {
-  Body,
-  Controller,
-  Delete,
-  Get,
-  Param,
-  Post,
-  Query,
-  Req,
-  UnauthorizedException,
-  UseGuards
-} from "@nestjs/common";
+import { Body, Controller, Delete, Get, Param, Post, Query, UseGuards } from "@nestjs/common";
 import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
+import { CurrentUserId } from "../auth/current-user-id.decorator";
 import { AnalysisService } from "./analysis.service";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
+import {
+  AnalysisJobsQueryDto,
+  RunFromS3AsyncDto,
+  SavedAnalysisListQueryDto,
+  SavedResultsQueryDto,
+  StandaloneHeatmapBuildDto,
+  StandaloneHeatmapListQueryDto
+} from "./dto/analysis-requests.dto";
 
 @Controller("analysis")
 @UseGuards(JwtAuthGuard)
@@ -23,25 +21,18 @@ export class AnalysisController {
 
   @Post("run/s3/async")
   @ApiOperation({ summary: "Асинхронный запуск анализа по ключу объекта в S3/MinIO" })
-  async runFromS3Async(
-    @Body() body: Record<string, unknown>,
-    @Req() req: { user?: { sub?: number | string } }
-  ) {
-    const userId = Number(req.user?.sub);
-    if (!Number.isFinite(userId) || userId <= 0) {
-      throw new UnauthorizedException("Invalid token payload");
-    }
+  async runFromS3Async(@Body() body: RunFromS3AsyncDto, @CurrentUserId() userId: number) {
     return this.analysisService.enqueueRunFromS3Object({
       userId,
-      key: String(body.key || ""),
-      direction: String(body.direction || ""),
-      metrics: this.parseMetrics(body.metrics),
-      group: body.group ? String(body.group) : undefined,
-      student: body.student ? String(body.student) : undefined,
-      r: this.parseBoolean(body.r),
-      depth: this.parseNumber(body.depth),
-      includeGitMetrics: this.parseBoolean(body.includeGitMetrics) ?? true,
-      includePlagiarismHeatmap: this.parseBoolean(body.includePlagiarismHeatmap) ?? true
+      key: body.key,
+      direction: body.direction,
+      metrics: body.metrics,
+      group: body.group,
+      student: body.student,
+      r: body.r,
+      depth: body.depth,
+      includeGitMetrics: body.includeGitMetrics ?? true,
+      includePlagiarismHeatmap: body.includePlagiarismHeatmap ?? true
     });
   }
 
@@ -49,13 +40,8 @@ export class AnalysisController {
   @ApiOperation({ summary: "Проверка лимита работ для тепловой карты до запуска анализа" })
   async validateHeatmapUpload(
     @Body() body: Record<string, unknown>,
-    @Req() req: { user?: { sub?: number | string } }
+    @CurrentUserId() userId: number
   ) {
-    const userId = Number(req.user?.sub);
-    if (!Number.isFinite(userId) || userId <= 0) {
-      throw new UnauthorizedException("Invalid token payload");
-    }
-
     return this.analysisService.validateS3HeatmapLimit({
       userId,
       key: String(body.key || ""),
@@ -68,38 +54,28 @@ export class AnalysisController {
   @Post("heatmap/build/async")
   @ApiOperation({ summary: "Асинхронно построить тепловую карту по отдельному архиву" })
   async buildStandaloneHeatmapAsync(
-    @Body() body: Record<string, unknown>,
-    @Req() req: { user?: { sub?: number | string } }
+    @Body() body: StandaloneHeatmapBuildDto,
+    @CurrentUserId() userId: number
   ) {
-    const userId = Number(req.user?.sub);
-    if (!Number.isFinite(userId) || userId <= 0) {
-      throw new UnauthorizedException("Invalid token payload");
-    }
     return this.analysisService.enqueueStandaloneHeatmapBuild({
       userId,
-      key: String(body.key || ""),
-      originalName: body.originalName ? String(body.originalName) : undefined,
-      r: this.parseBoolean(body.r),
-      depth: this.parseNumber(body.depth)
+      key: body.key,
+      originalName: body.originalName,
+      r: body.r,
+      depth: body.depth
     });
   }
 
   @Get("heatmap/list")
   @ApiOperation({ summary: "Список построенных отдельных тепловых карт" })
   async getStandaloneHeatmapList(
-    @Query("folder") folder: string | undefined,
-    @Query("dateFrom") dateFromValue: string | undefined,
-    @Query("dateTo") dateToValue: string | undefined,
-    @Req() req: { user?: { sub?: number | string } }
+    @Query() query: StandaloneHeatmapListQueryDto,
+    @CurrentUserId() userId: number
   ) {
-    const userId = Number(req.user?.sub);
-    if (!Number.isFinite(userId) || userId <= 0) {
-      throw new UnauthorizedException("Invalid token payload");
-    }
     return this.analysisService.getStandaloneHeatmapList(userId, {
-      folder: this.parseText(folder),
-      dateFrom: this.parseDate(dateFromValue, "start"),
-      dateTo: this.parseDate(dateToValue, "end")
+      folder: this.parseText(query.folder),
+      dateFrom: this.parseDate(query.dateFrom, "start"),
+      dateTo: this.parseDate(query.dateTo, "end")
     });
   }
 
@@ -107,82 +83,40 @@ export class AnalysisController {
   @ApiOperation({ summary: "Детали отдельной тепловой карты" })
   async getStandaloneHeatmapDetails(
     @Param("jobId") jobId: string,
-    @Req() req: { user?: { sub?: number | string } }
+    @CurrentUserId() userId: number
   ) {
-    const userId = Number(req.user?.sub);
-    if (!Number.isFinite(userId) || userId <= 0) {
-      throw new UnauthorizedException("Invalid token payload");
-    }
     return this.analysisService.getStandaloneHeatmapDetails(userId, String(jobId || ""));
   }
 
   @Delete("heatmap/:jobId")
   @ApiOperation({ summary: "Удалить построенную тепловую карту" })
-  async deleteStandaloneHeatmap(
-    @Param("jobId") jobId: string,
-    @Req() req: { user?: { sub?: number | string } }
-  ) {
-    const userId = Number(req.user?.sub);
-    if (!Number.isFinite(userId) || userId <= 0) {
-      throw new UnauthorizedException("Invalid token payload");
-    }
+  async deleteStandaloneHeatmap(@Param("jobId") jobId: string, @CurrentUserId() userId: number) {
     return this.analysisService.deleteStandaloneHeatmap(userId, String(jobId || ""));
   }
 
   @Get("jobs/:jobId")
   @ApiOperation({ summary: "Статус фоновой задачи анализа" })
-  async getAnalysisJobStatus(
-    @Param("jobId") jobId: string,
-    @Req() req: { user?: { sub?: number | string } }
-  ) {
-    const userId = Number(req.user?.sub);
-    if (!Number.isFinite(userId) || userId <= 0) {
-      throw new UnauthorizedException("Invalid token payload");
-    }
+  async getAnalysisJobStatus(@Param("jobId") jobId: string, @CurrentUserId() userId: number) {
     return this.analysisService.getAnalysisJobStatus(userId, String(jobId || ""));
   }
 
   @Get("jobs")
   @ApiOperation({ summary: "Список фоновых задач анализа" })
-  async getAnalysisJobs(
-    @Query("status") statusValue: string | undefined,
-    @Query("limit") limitValue: string | undefined,
-    @Req() req: { user?: { sub?: number | string } }
-  ) {
-    const userId = Number(req.user?.sub);
-    if (!Number.isFinite(userId) || userId <= 0) {
-      throw new UnauthorizedException("Invalid token payload");
-    }
-
-    const statuses = this.parseJobStatuses(statusValue);
-    const limit = this.parsePaginationValue(limitValue, 100);
+  async getAnalysisJobs(@Query() query: AnalysisJobsQueryDto, @CurrentUserId() userId: number) {
+    const statuses = this.parseJobStatuses(query.status);
+    const limit = query.limit ?? 100;
     return this.analysisService.getAnalysisJobs(userId, statuses, limit);
   }
 
   @Get("results")
   @ApiOperation({ summary: "Получить сохраненные результаты по path и direction" })
-  async getSavedResults(
-    @Query("path") pathValue: string,
-    @Query("direction") direction: string,
-    @Req() req: { user?: { sub?: number | string } }
-  ) {
-    const userId = Number(req.user?.sub);
-    if (!Number.isFinite(userId) || userId <= 0) {
-      throw new UnauthorizedException("Invalid token payload");
-    }
-    return this.analysisService.getSavedResults(userId, direction, pathValue);
+  async getSavedResults(@Query() query: SavedResultsQueryDto, @CurrentUserId() userId: number) {
+    return this.analysisService.getSavedResults(userId, query.direction, query.path);
   }
 
   @Get("results/run/:runId")
   @ApiOperation({ summary: "Получить результаты по runId" })
-  async getSavedResultsByRunId(
-    @Param("runId") runId: string,
-    @Req() req: { user?: { sub?: number | string } }
-  ) {
-    const userId = Number(req.user?.sub);
-    if (!Number.isFinite(userId) || userId <= 0) {
-      throw new UnauthorizedException("Invalid token payload");
-    }
+  async getSavedResultsByRunId(@Param("runId") runId: string, @CurrentUserId() userId: number) {
     return this.analysisService.getSavedResultsByRunId(userId, runId);
   }
 
@@ -191,12 +125,8 @@ export class AnalysisController {
   async getRunSelectOptions(
     @Param("runId") runId: string,
     @Query() query: Record<string, unknown>,
-    @Req() req: { user?: { sub?: number | string } }
+    @CurrentUserId() userId: number
   ) {
-    const userId = Number(req.user?.sub);
-    if (!Number.isFinite(userId) || userId <= 0) {
-      throw new UnauthorizedException("Invalid token payload");
-    }
     return this.analysisService.getRunFilterOptions(userId, runId, {
       kind: this.parseFilterKind(query.kind),
       depth: this.parseNumber(query.depth),
@@ -209,12 +139,8 @@ export class AnalysisController {
   async getRunView(
     @Param("runId") runId: string,
     @Query() query: Record<string, unknown>,
-    @Req() req: { user?: { sub?: number | string } }
+    @CurrentUserId() userId: number
   ) {
-    const userId = Number(req.user?.sub);
-    if (!Number.isFinite(userId) || userId <= 0) {
-      throw new UnauthorizedException("Invalid token payload");
-    }
     return this.analysisService.getRunView(userId, runId, {
       kind: this.parseFilterKind(query.kind),
       depth: this.parseNumber(query.depth),
@@ -224,14 +150,7 @@ export class AnalysisController {
 
   @Get("results/run/:runId/heatmap/history")
   @ApiOperation({ summary: "Получить историю построенных тепловых карт по runId" })
-  async getRunHeatmapHistory(
-    @Param("runId") runId: string,
-    @Req() req: { user?: { sub?: number | string } }
-  ) {
-    const userId = Number(req.user?.sub);
-    if (!Number.isFinite(userId) || userId <= 0) {
-      throw new UnauthorizedException("Invalid token payload");
-    }
+  async getRunHeatmapHistory(@Param("runId") runId: string, @CurrentUserId() userId: number) {
     return this.analysisService.getRunHeatmapHistory(userId, runId);
   }
 
@@ -240,12 +159,8 @@ export class AnalysisController {
   async buildHeatmapForRunView(
     @Param("runId") runId: string,
     @Body() body: Record<string, unknown>,
-    @Req() req: { user?: { sub?: number | string } }
+    @CurrentUserId() userId: number
   ) {
-    const userId = Number(req.user?.sub);
-    if (!Number.isFinite(userId) || userId <= 0) {
-      throw new UnauthorizedException("Invalid token payload");
-    }
     return this.analysisService.buildPlagiarismHeatmapByRunFilters({
       userId,
       runId: String(runId || ""),
@@ -259,12 +174,8 @@ export class AnalysisController {
   async buildHeatmapForRunViewAsync(
     @Param("runId") runId: string,
     @Body() body: Record<string, unknown>,
-    @Req() req: { user?: { sub?: number | string } }
+    @CurrentUserId() userId: number
   ) {
-    const userId = Number(req.user?.sub);
-    if (!Number.isFinite(userId) || userId <= 0) {
-      throw new UnauthorizedException("Invalid token payload");
-    }
     return this.analysisService.enqueueHeatmapBuildByRunFilters({
       userId,
       runId: String(runId || ""),
@@ -276,66 +187,23 @@ export class AnalysisController {
   @Get("list")
   @ApiOperation({ summary: "Список запусков анализа с пагинацией" })
   async getSavedAnalysisList(
-    @Query("page") pageValue: string | undefined,
-    @Query("size") sizeValue: string | undefined,
-    @Query("path") pathValue: string | undefined,
-    @Query("direction") directionValue: string | undefined,
-    @Query("dateFrom") dateFromValue: string | undefined,
-    @Query("dateTo") dateToValue: string | undefined,
-    @Req() req: { user?: { sub?: number | string } }
+    @Query() query: SavedAnalysisListQueryDto,
+    @CurrentUserId() userId: number
   ) {
-    const userId = Number(req.user?.sub);
-    if (!Number.isFinite(userId) || userId <= 0) {
-      throw new UnauthorizedException("Invalid token payload");
-    }
-    const page = this.parsePaginationValue(pageValue, 1);
-    const size = this.parsePaginationValue(sizeValue, 20);
+    const page = query.page ?? 1;
+    const size = query.size ?? 20;
     return this.analysisService.getSavedAnalysisList(userId, page, size, {
-      path: this.parseText(pathValue),
-      direction: this.parseText(directionValue),
-      dateFrom: this.parseDate(dateFromValue, "start"),
-      dateTo: this.parseDate(dateToValue, "end")
+      path: this.parseText(query.path),
+      direction: this.parseText(query.direction),
+      dateFrom: this.parseDate(query.dateFrom, "start"),
+      dateTo: this.parseDate(query.dateTo, "end")
     });
   }
 
   @Delete("results/run/:runId")
   @ApiOperation({ summary: "Удалить сохраненный отчет анализа по runId" })
-  async deleteSavedRun(
-    @Param("runId") runId: string,
-    @Req() req: { user?: { sub?: number | string } }
-  ) {
-    const userId = Number(req.user?.sub);
-    if (!Number.isFinite(userId) || userId <= 0) {
-      throw new UnauthorizedException("Invalid token payload");
-    }
+  async deleteSavedRun(@Param("runId") runId: string, @CurrentUserId() userId: number) {
     return this.analysisService.deleteSavedRun(userId, runId);
-  }
-
-  private parseMetrics(value: unknown): string[] | undefined {
-    if (!value) {
-      return undefined;
-    }
-    if (Array.isArray(value)) {
-      return value.map((v) => String(v));
-    }
-    const text = String(value).trim();
-    if (!text) {
-      return undefined;
-    }
-    if (text.startsWith("[")) {
-      try {
-        const parsed = JSON.parse(text);
-        if (Array.isArray(parsed)) {
-          return parsed.map((v) => String(v));
-        }
-      } catch {
-        return undefined;
-      }
-    }
-    return text
-      .split(",")
-      .map((part) => part.trim())
-      .filter(Boolean);
   }
 
   private parseBoolean(value: unknown): boolean | undefined {
@@ -355,18 +223,6 @@ export class AnalysisController {
       return undefined;
     }
     return Math.trunc(parsed);
-  }
-
-  private parsePaginationValue(value: unknown, defaultValue: number): number {
-    if (value === undefined || value === null || value === "") {
-      return defaultValue;
-    }
-    const parsed = Number(value);
-    if (!Number.isFinite(parsed)) {
-      return defaultValue;
-    }
-    const intValue = Math.trunc(parsed);
-    return intValue > 0 ? intValue : defaultValue;
   }
 
   private parseText(value: unknown): string | undefined {
@@ -414,7 +270,6 @@ export class AnalysisController {
       .split(",")
       .map((item) => item.trim().toLowerCase())
       .filter((item) => allowed.has(item));
-
     return parsed as Array<"queued" | "running" | "success" | "failed">;
   }
 
@@ -439,13 +294,11 @@ export class AnalysisController {
       }
 
       const rawText = Array.isArray(value) ? value.join(",") : String(value || "");
-      const values = rawText
+      selected[level - 1] = rawText
         .split(",")
         .map((part) => part.trim())
         .filter(Boolean);
-      selected[level - 1] = values;
     }
-
     return selected;
   }
 }
