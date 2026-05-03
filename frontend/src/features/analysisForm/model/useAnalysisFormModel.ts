@@ -9,10 +9,11 @@ import type { AnalysisFormValues, AnalysisRunResult } from "./types"
 import { analysisSchema } from "./validator"
 
 type Params = {
+  initialValues?: Partial<AnalysisFormValues>
   onSuccess: (result: AnalysisRunResult) => void
 }
 
-export const useAnalysisFormModel = ({ onSuccess }: Params) => {
+export const useAnalysisFormModel = ({ initialValues, onSuccess }: Params) => {
   const [runS3Async, { isLoading: isAnalyzing, error: analyzeError, reset: resetAnalyzeError }] =
     useRunS3AsyncMutation()
   const [uploadedArchive, setUploadedArchive] = useState<UploadedArchiveInfo | null>(null)
@@ -23,11 +24,11 @@ export const useAnalysisFormModel = ({ onSuccess }: Params) => {
     mode: "onBlur",
     defaultValues: {
       archive: null,
-      direction: "html_css",
+      direction: initialValues?.direction ?? "html_css",
       metrics: [],
-      recursive: false,
-      depth: undefined,
-      includeGitMetrics: true
+      recursive: initialValues?.recursive ?? true,
+      depth: initialValues?.depth,
+      includeGitMetrics: initialValues?.includeGitMetrics ?? true
     }
   })
 

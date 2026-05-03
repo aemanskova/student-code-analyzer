@@ -17,15 +17,28 @@ import {
   Stack
 } from "@mantine/core"
 import { getApiErrorMessage } from "@shared/lib"
+import { useEffect } from "react"
 import { Controller, useWatch } from "react-hook-form"
 
+import type { AnalysisFormValues } from "../model"
+
 type Props = {
+  initialValues?: Partial<AnalysisFormValues>
   locked?: boolean
   restoredArchiveName?: string
+  onQueryStateChange?: (
+    values: Pick<AnalysisFormValues, "depth" | "direction" | "includeGitMetrics" | "recursive">
+  ) => void
   onSuccess: (result: AnalysisRunResult) => void
 }
 
-export function AnalysisForm({ locked = false, restoredArchiveName, onSuccess }: Props) {
+export function AnalysisForm({
+  initialValues,
+  locked = false,
+  restoredArchiveName,
+  onQueryStateChange,
+  onSuccess
+}: Props) {
   const {
     analyzeError,
     form,
@@ -36,12 +49,18 @@ export function AnalysisForm({ locked = false, restoredArchiveName, onSuccess }:
     setRunFormError,
     setUploadedArchive,
     uploadedArchive
-  } = useAnalysisFormModel({ onSuccess })
+  } = useAnalysisFormModel({ initialValues, onSuccess })
 
   const direction = useWatch({ control: form.control, name: "direction" })
   const recursive = useWatch({ control: form.control, name: "recursive" })
   const archive = useWatch({ control: form.control, name: "archive" })
+  const depth = useWatch({ control: form.control, name: "depth" })
+  const includeGitMetrics = useWatch({ control: form.control, name: "includeGitMetrics" })
   const controlsDisabled = locked || isAnalyzing
+
+  useEffect(() => {
+    onQueryStateChange?.({ depth, direction, includeGitMetrics, recursive })
+  }, [depth, direction, includeGitMetrics, onQueryStateChange, recursive])
 
   return (
     <Stack gap="md">

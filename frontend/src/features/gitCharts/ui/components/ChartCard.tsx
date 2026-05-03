@@ -1,7 +1,7 @@
 import { Card, Stack, Text } from "@mantine/core"
 
 type Props = {
-  title: string
+  title: React.ReactNode
   children: React.ReactNode
 }
 

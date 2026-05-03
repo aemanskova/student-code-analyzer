@@ -26,6 +26,7 @@ export function ClusterizingResultView({ data }: Props) {
           <ClusterDashboardPanel
             chartRows={model.chartRows}
             form={model.form}
+            jobId={data.jobId}
             metricOptions={model.metricOptions}
             visibleMetrics={model.visibleMetrics}
           />
@@ -47,7 +48,8 @@ export function ClusterizingResultView({ data }: Props) {
             columns={model.tableColumns}
             control={model.form.control}
             filteredRows={model.filteredRows}
-            metricsCount={model.orderedMetrics.length}
+            metricsCount={model.visibleTableMetrics.length}
+            tableMetricOptions={model.tableMetricOptions}
             onDownload={model.downloadCsv}
           />
         }

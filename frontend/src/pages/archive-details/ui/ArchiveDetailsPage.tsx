@@ -1,10 +1,12 @@
 import { Container, Text } from "@mantine/core"
 import { AnalysisResultsWidget } from "@widgets/analysisResults"
-import { useSearchParams } from "react-router"
+import { useParams, useSearchParams } from "react-router"
 
 export function ArchiveDetailsPage() {
+  const { encodedPath = "" } = useParams()
   const [searchParams] = useSearchParams()
-  const runId = String(searchParams.get("runId") || "").trim()
+  const queryRunId = String(searchParams.get("runId") || "").trim()
+  const runId = queryRunId || decodeURIComponent(encodedPath).trim()
 
   return (
     <Container py="md" size="xl">

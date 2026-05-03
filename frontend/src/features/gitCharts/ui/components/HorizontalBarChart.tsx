@@ -10,12 +10,19 @@ type Props = {
   data: GitPathMetric[]
   colorByPath: Map<string, string>
   xLabel: string
+  chartWidth?: number
+  chartHeight?: number
 }
 
-export const HorizontalBarChart = ({ data, colorByPath, xLabel }: Props) => {
+export const HorizontalBarChart = ({
+  data,
+  colorByPath,
+  xLabel,
+  chartWidth = CHART_WIDTH,
+  chartHeight = 220
+}: Props) => {
   const margin = { top: 10, right: 12, bottom: 34, left: 8 }
-  const chartHeight = 220
-  const plotWidth = CHART_WIDTH - margin.left - margin.right
+  const plotWidth = chartWidth - margin.left - margin.right
   const plotHeight = chartHeight - margin.top - margin.bottom
   const maxValue = Math.max(0, max(data, (item) => item.value) || 0)
 
@@ -30,7 +37,7 @@ export const HorizontalBarChart = ({ data, colorByPath, xLabel }: Props) => {
 
   return (
     <Box style={{ overflowX: "auto" }}>
-      <svg height={chartHeight} width="100%" viewBox={`0 0 ${CHART_WIDTH} ${chartHeight}`}>
+      <svg height={chartHeight} width="100%" viewBox={`0 0 ${chartWidth} ${chartHeight}`}>
         <g transform={`translate(${margin.left}, ${margin.top})`}>
           {ticks.map((tick) => (
             <line
@@ -51,10 +58,13 @@ export const HorizontalBarChart = ({ data, colorByPath, xLabel }: Props) => {
                 fill={colorByPath.get(item.path) || DEFAULT_BAR_COLOR}
                 height={yScale.bandwidth()}
                 rx={4}
+                style={{ cursor: "default" }}
                 width={Math.max(0, xScale(item.value))}
                 x={0}
                 y={y}
-              />
+              >
+                <title>{`${item.path}: ${item.value}`}</title>
+              </rect>
             )
           })}
           <AxisBottom ticks={ticks} width={plotWidth} x={xScale} y={plotHeight} />

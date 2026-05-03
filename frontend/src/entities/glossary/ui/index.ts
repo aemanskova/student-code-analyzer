@@ -1,0 +1,1 @@
+export { GlossaryTable } from "./GlossaryTable"

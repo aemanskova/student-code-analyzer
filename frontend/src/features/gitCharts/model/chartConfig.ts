@@ -18,55 +18,59 @@ export type GitPathMetricKey =
 export type GitScatterMetricKey = "commitsVsChurn" | "commitsVsChurnPct"
 
 export const BOXPLOT_CHARTS: Array<GitChartConfig & { key: GitPathMetricKey }> = [
-  { key: "totalCommitCount", title: "Total Commit Count: Boxplot by Group" },
-  { key: "meaningfulCommitCount", title: "Meaningful Commit Count: Boxplot by Group" },
-  { key: "activeDays", title: "Active Days: Boxplot by Group" },
-  { key: "nightCommitPct", title: "Night Commit Percentage: Boxplot by Group" },
-  { key: "medianCommitSize", title: "Median Commit Size: Boxplot by Group" },
-  { key: "developmentDurationDays", title: "Development Duration: Boxplot by Group" },
-  { key: "codeChurn", title: "Code Churn: Boxplot by Group" },
-  { key: "churnRatio", title: "Code Churn Ratio: Boxplot by Group" }
+  { key: "totalCommitCount", title: "Общее количество коммитов по группам" },
+  { key: "meaningfulCommitCount", title: "Содержательные коммиты по группам" },
+  { key: "activeDays", title: "Активные дни по группам" },
+  { key: "nightCommitPct", title: "Доля ночных коммитов по группам" },
+  { key: "medianCommitSize", title: "Медианный размер коммита по группам" },
+  { key: "developmentDurationDays", title: "Продолжительность разработки по группам" },
+  { key: "codeChurn", title: "Интенсивность изменения кода по группам" },
+  { key: "churnRatio", title: "Доля переработки кода по группам" }
 ]
 
 export const HISTO_CHARTS: GitChartConfig[] = [
   {
     key: "totalCommitCount",
-    title: "Total Commit Count per Student",
-    xLabel: "Total Commit Count"
+    title: "Общее количество коммитов по студентам",
+    xLabel: "Общее количество коммитов"
   },
   {
     key: "meaningfulCommitCount",
-    title: "Meaningful Commit Count per Student",
-    xLabel: "Meaningful Commit Count (>= 15 lines)"
+    title: "Содержательные коммиты по студентам",
+    xLabel: "Количество содержательных коммитов"
   },
-  { key: "activeDays", title: "Active Days per Student", xLabel: "Active Days" },
+  { key: "activeDays", title: "Активные дни по студентам", xLabel: "Число активных дней" },
   {
     key: "nightCommitPct",
-    title: "Night Commit Percentage per Student",
-    xLabel: "Night Commits (%)"
+    title: "Доля ночных коммитов по студентам",
+    xLabel: "Доля ночных коммитов, %"
   },
   {
     key: "medianCommitSize",
-    title: "Median Commit Size per Student",
-    xLabel: "Median Commit Size"
+    title: "Медианный размер коммита по студентам",
+    xLabel: "Медианный размер коммита"
   },
   {
     key: "developmentDurationDays",
-    title: "Development Duration per Student",
-    xLabel: "Days Between First and Last Commit"
+    title: "Продолжительность разработки по студентам",
+    xLabel: "Дней между первым и последним коммитом"
   },
-  { key: "codeChurn", title: "Code Churn per Student", xLabel: "Deleted Lines" },
-  { key: "churnRatio", title: "Code Churn Ratio per Student", xLabel: "Deleted / Added" },
+  {
+    key: "codeChurn",
+    title: "Интенсивность изменения кода по студентам",
+    xLabel: "Удалённые строки"
+  },
+  { key: "churnRatio", title: "Доля переработки кода по студентам", xLabel: "Удалено / добавлено" },
   {
     key: "commitsVsChurn",
-    title: "Total Commits vs Code Churn",
-    xLabel: "Total Commit Count",
-    yLabel: "Code Churn (Deleted Lines)"
+    title: "Коммиты и интенсивность изменения кода",
+    xLabel: "Общее количество коммитов",
+    yLabel: "Интенсивность изменения кода"
   },
   {
     key: "commitsVsChurnPct",
-    title: "Total Commits vs Code Churn Percentage",
-    xLabel: "Total Commit Count",
-    yLabel: "Code Churn (%)"
+    title: "Коммиты и доля переработки кода",
+    xLabel: "Общее количество коммитов",
+    yLabel: "Доля переработки кода, %"
   }
 ]

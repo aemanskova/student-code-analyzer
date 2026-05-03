@@ -1,2 +1,2 @@
 export { MetricHistogram } from "./MetricHistogram"
-export { MetricYearViolinChart } from "./MetricYearViolinChart"
+export { MetricYearViolinChart, YearChartLegend } from "./MetricYearViolinChart"

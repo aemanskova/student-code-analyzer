@@ -1,7 +1,9 @@
 import type { GitAnalysisRow } from "@entities/analysis/api"
-import { Grid, MultiSelect, Select, Stack, useMantineColorScheme } from "@mantine/core"
+import { Anchor, Grid, MultiSelect, Select, Stack, useMantineColorScheme } from "@mantine/core"
+import { routes } from "@shared/config/routes"
 import { useEffect, useMemo } from "react"
 import { Controller, useForm, useWatch } from "react-hook-form"
+import { NavLink } from "react-router"
 
 import {
   BOXPLOT_CHARTS,
@@ -21,8 +23,10 @@ import { buildGitChartsDataset, getPathColorMap } from "../model/gitCharts"
 import { ChartCard, HorizontalBarChart, MetricGroupsBoxPlot, ScatterChart } from "./components"
 
 type Props = {
+  runId?: string
   rows: GitAnalysisRow[]
   analysisDepth?: number
+  selectedLevels?: string[][]
 }
 
 type GitChartsForm = {
@@ -33,7 +37,43 @@ type GitChartsForm = {
 const areArraysEqual = (left: string[], right: string[]): boolean =>
   left.length === right.length && left.every((value, index) => value === right[index])
 
-export function GitChartsSection({ rows, analysisDepth }: Props) {
+const DEFAULT_SELECTED_GIT_METRICS = [ALL_GIT_METRICS_OPTION]
+
+const buildGitChartSearch = (analysisDepth?: number, selectedLevels?: string[][]) => {
+  const params = new URLSearchParams()
+  params.set("kind", "git")
+  if (typeof analysisDepth === "number") {
+    params.set("depth", String(analysisDepth))
+  }
+  ;(selectedLevels || []).forEach((values, index) => {
+    if (values.length) {
+      params.set(`level${index + 1}`, values.join(","))
+    }
+  })
+  return params.toString()
+}
+
+const getGitChartTitle = (
+  runId: string | undefined,
+  metric: string,
+  title: string,
+  search: string
+) =>
+  runId ? (
+    <Anchor
+      c="myColor.6"
+      component={NavLink}
+      fw={600}
+      size="sm"
+      to={`${routes.analysisMetricChart(runId, metric)}?${search}`}
+    >
+      {title}
+    </Anchor>
+  ) : (
+    title
+  )
+
+export function GitChartsSection({ runId, rows, analysisDepth, selectedLevels }: Props) {
   const form = useForm<GitChartsForm>({
     defaultValues: {
       chartMode: "histo",
@@ -41,9 +81,8 @@ export function GitChartsSection({ rows, analysisDepth }: Props) {
     }
   })
   const chartMode = useWatch({ control: form.control, name: "chartMode" }) || "histo"
-  const selectedMetrics = useWatch({ control: form.control, name: "selectedMetrics" }) || [
-    ALL_GIT_METRICS_OPTION
-  ]
+  const selectedMetrics =
+    useWatch({ control: form.control, name: "selectedMetrics" }) || DEFAULT_SELECTED_GIT_METRICS
   const { colorScheme } = useMantineColorScheme()
   const chartData = useMemo(() => buildGitChartsDataset(rows), [rows])
   const availableMetrics = useMemo(
@@ -119,6 +158,10 @@ export function GitChartsSection({ rows, analysisDepth }: Props) {
     const palette = colorScheme === "dark" ? GIT_PATH_COLORS_DARK : GIT_PATH_COLORS_LIGHT
     return getPathColorMap(chartRows, analysisDepth, palette)
   }, [analysisDepth, chartData, colorScheme])
+  const chartSearch = useMemo(
+    () => buildGitChartSearch(analysisDepth, selectedLevels),
+    [analysisDepth, selectedLevels]
+  )
 
   if (!rows.length) {
     return null
@@ -170,7 +213,14 @@ export function GitChartsSection({ rows, analysisDepth }: Props) {
         <Grid>
           {BOXPLOT_CHARTS.filter((chart) => show(chart.key)).map((chart) => (
             <Grid.Col key={chart.key} span={{ base: 12, sm: 6, lg: 4 }}>
-              <ChartCard title={chart.title}>
+              <ChartCard
+                title={getGitChartTitle(
+                  runId,
+                  chart.key,
+                  chart.title,
+                  `${chartSearch}&mode=boxplot`
+                )}
+              >
                 <MetricGroupsBoxPlot
                   analysisDepth={analysisDepth}
                   data={getPathMetricData(chart.key)}
@@ -186,7 +236,7 @@ export function GitChartsSection({ rows, analysisDepth }: Props) {
             if (chart.key === "commitsVsChurn" || chart.key === "commitsVsChurnPct") {
               return (
                 <Grid.Col key={chart.key} span={{ base: 12, sm: 6, lg: 4 }}>
-                  <ChartCard title={chart.title}>
+                  <ChartCard title={getGitChartTitle(runId, chart.key, chart.title, chartSearch)}>
                     <ScatterChart
                       colorByPath={colorByPath}
                       data={getScatterData(chart.key)}
@@ -200,7 +250,7 @@ export function GitChartsSection({ rows, analysisDepth }: Props) {
 
             return (
               <Grid.Col key={chart.key} span={{ base: 12, sm: 6, lg: 4 }}>
-                <ChartCard title={chart.title}>
+                <ChartCard title={getGitChartTitle(runId, chart.key, chart.title, chartSearch)}>
                   <HorizontalBarChart
                     colorByPath={colorByPath}
                     data={getPathMetricData(chart.key as GitPathMetricKey)}

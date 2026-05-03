@@ -77,6 +77,7 @@ export const baseApi = createApi({
     "AnalysisRun",
     "Clusterization",
     "ClusterizationList",
+    "Glossary",
     "Profile",
     "RunFilterOptions",
     "RunHeatmapHistory",

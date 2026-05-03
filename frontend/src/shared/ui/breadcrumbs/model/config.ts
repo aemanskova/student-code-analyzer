@@ -36,6 +36,10 @@ export const BREADCRUMB_RULES: BreadcrumbRule[] = [
     }
   },
   {
+    path: routes.analysisMetricChartPath,
+    label: "График метрики"
+  },
+  {
     path: routes.archiveLegacy,
     label: "Анализ"
   },
@@ -91,6 +95,14 @@ export const BREADCRUMB_RULES: BreadcrumbRule[] = [
   {
     path: routes.clusterizingDetailsPath,
     label: "Результат"
+  },
+  {
+    path: routes.clusterizingMetricChartPath,
+    label: "График метрики"
+  },
+  {
+    path: routes.glossary,
+    label: "Глоссарий"
   },
   {
     path: routes.profile,

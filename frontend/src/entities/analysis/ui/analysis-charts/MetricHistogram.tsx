@@ -23,12 +23,16 @@ import {
 type Props = {
   rows: AnalysisRow[]
   metric: string
+  chartWidth?: number
+  chartHeight?: number
 }
 
-export const MetricHistogram = ({ rows, metric }: Props) => {
-  const margin = { top: 10, right: 12, bottom: 36, left: 40 }
-  const plotWidth = CHART_WIDTH - margin.left - margin.right
-  const plotHeight = CHART_HEIGHT - margin.top - margin.bottom
+export const MetricHistogram = ({
+  rows,
+  metric,
+  chartWidth = CHART_WIDTH,
+  chartHeight = CHART_HEIGHT
+}: Props) => {
   const values = rows
     .map((row) => row[metric])
     .filter((value): value is number => typeof value === "number" && Number.isFinite(value))
@@ -42,7 +46,7 @@ export const MetricHistogram = ({ rows, metric }: Props) => {
   const safeMaxRaw = Number.isFinite(maxValue) ? maxValue : 1
   const safeMax = safeMaxRaw > safeMin ? safeMaxRaw : safeMin + 1
 
-  const xScale = scaleLinear().domain([safeMin, safeMax]).range([0, plotWidth]).nice()
+  const xScale = scaleLinear().domain([safeMin, safeMax]).nice()
   const histogram = bin<number, number>()
     .domain(xScale.domain() as [number, number])
     .thresholds(HIST_BINS)
@@ -58,13 +62,18 @@ export const MetricHistogram = ({ rows, metric }: Props) => {
   const density = kernelDensityEstimator(values, Math.max(bandwidth, 1e-6), sampleX)
   const maxDensity = Math.max(0, max(density, (item) => item.y) || 0)
 
-  const yScale = scaleLinear()
-    .domain([0, maxCount > 0 ? maxCount * 1.1 : 1])
-    .range([plotHeight, 0])
+  const yScale = scaleLinear().domain([0, maxCount > 0 ? maxCount * 1.1 : 1])
   const densityToCountScale = (densityValue: number) =>
     maxDensity > 0 ? (densityValue / maxDensity) * maxCount : 0
   const yTicks = yScale.ticks(5)
   const xTicks = xScale.ticks(5)
+  const maxTickLength = Math.max(...yTicks.map((tick) => formatNumber(tick).length))
+  const margin = { top: 10, right: 12, bottom: 36, left: Math.max(48, maxTickLength * 7 + 18) }
+  const plotWidth = chartWidth - margin.left - margin.right
+  const plotHeight = chartHeight - margin.top - margin.bottom
+
+  xScale.range([0, plotWidth])
+  yScale.range([plotHeight, 0])
 
   const kdeLine = line<{ x: number; y: number }>()
     .x((point) => xScale(point.x))
@@ -73,7 +82,7 @@ export const MetricHistogram = ({ rows, metric }: Props) => {
 
   return (
     <Box style={{ overflowX: "auto" }}>
-      <svg height={CHART_HEIGHT} width="100%" viewBox={`0 0 ${CHART_WIDTH} ${CHART_HEIGHT}`}>
+      <svg height={chartHeight} width="100%" viewBox={`0 0 ${chartWidth} ${chartHeight}`}>
         <g transform={`translate(${margin.left}, ${margin.top})`}>
           {yTicks.map((tick) => (
             <line
@@ -98,10 +107,15 @@ export const MetricHistogram = ({ rows, metric }: Props) => {
                 height={Math.max(0, plotHeight - y)}
                 stroke={BAR_FILL}
                 strokeWidth={1}
+                style={{ cursor: "default" }}
                 width={width}
                 x={x}
                 y={y}
-              />
+              >
+                <title>
+                  {`${formatNumber(item.x0)} - ${formatNumber(item.x1)}: ${item.count}`}
+                </title>
+              </rect>
             )
           })}
           <path d={kdeLine(density) || ""} fill="none" stroke={KDE_STROKE} strokeWidth={2} />
