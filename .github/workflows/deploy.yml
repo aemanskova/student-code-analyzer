@@ -60,6 +60,10 @@ jobs:
 
             echo "[deploy] current: $(git rev-parse --short HEAD)"
             git fetch --all --prune
+            if [ -d scripts/minio-init.sh ]; then
+              echo "[deploy] removing stale directory at scripts/minio-init.sh"
+              rm -rf scripts/minio-init.sh 2>/dev/null || sudo rm -rf scripts/minio-init.sh
+            fi
             git reset --hard origin/main
             echo "[deploy] new:     $(git rev-parse --short HEAD) ($SHA)"
 
