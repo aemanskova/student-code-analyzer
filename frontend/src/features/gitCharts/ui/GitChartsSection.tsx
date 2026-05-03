@@ -33,6 +33,8 @@ type GitChartsForm = {
 const areArraysEqual = (left: string[], right: string[]): boolean =>
   left.length === right.length && left.every((value, index) => value === right[index])
 
+const DEFAULT_SELECTED_GIT_METRICS = [ALL_GIT_METRICS_OPTION]
+
 export function GitChartsSection({ rows, analysisDepth }: Props) {
   const form = useForm<GitChartsForm>({
     defaultValues: {
@@ -41,9 +43,8 @@ export function GitChartsSection({ rows, analysisDepth }: Props) {
     }
   })
   const chartMode = useWatch({ control: form.control, name: "chartMode" }) || "histo"
-  const selectedMetrics = useWatch({ control: form.control, name: "selectedMetrics" }) || [
-    ALL_GIT_METRICS_OPTION
-  ]
+  const selectedMetrics =
+    useWatch({ control: form.control, name: "selectedMetrics" }) || DEFAULT_SELECTED_GIT_METRICS
   const { colorScheme } = useMantineColorScheme()
   const chartData = useMemo(() => buildGitChartsDataset(rows), [rows])
   const availableMetrics = useMemo(

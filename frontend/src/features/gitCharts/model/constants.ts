@@ -5,16 +5,16 @@ export const ALL_GIT_METRICS_OPTION = "__all__"
 
 export const GIT_METRIC_OPTIONS = [
   { value: ALL_GIT_METRICS_OPTION, label: "Все метрики" },
-  { value: "totalCommitCount", label: "Total Commit Count" },
-  { value: "meaningfulCommitCount", label: "Meaningful Commit Count" },
-  { value: "activeDays", label: "Active Days" },
-  { value: "nightCommitPct", label: "Night Commit Percentage" },
-  { value: "medianCommitSize", label: "Median Commit Size" },
-  { value: "developmentDurationDays", label: "Development Duration" },
-  { value: "codeChurn", label: "Code Churn" },
-  { value: "churnRatio", label: "Code Churn Ratio" },
-  { value: "commitsVsChurn", label: "Total Commits vs Code Churn" },
-  { value: "commitsVsChurnPct", label: "Total Commits vs Code Churn %" }
+  { value: "totalCommitCount", label: "Общее количество коммитов" },
+  { value: "meaningfulCommitCount", label: "Количество содержательных коммитов" },
+  { value: "activeDays", label: "Число активных дней" },
+  { value: "nightCommitPct", label: "Доля ночных коммитов" },
+  { value: "medianCommitSize", label: "Медианный размер коммита" },
+  { value: "developmentDurationDays", label: "Продолжительность разработки" },
+  { value: "codeChurn", label: "Интенсивность изменения кода" },
+  { value: "churnRatio", label: "Доля переработки кода" },
+  { value: "commitsVsChurn", label: "Коммиты и интенсивность изменения кода" },
+  { value: "commitsVsChurnPct", label: "Коммиты и доля переработки кода" }
 ]
 
 export const BOXPLOT_METRICS = [

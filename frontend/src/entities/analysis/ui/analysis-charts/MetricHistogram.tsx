@@ -26,9 +26,6 @@ type Props = {
 }
 
 export const MetricHistogram = ({ rows, metric }: Props) => {
-  const margin = { top: 10, right: 12, bottom: 36, left: 40 }
-  const plotWidth = CHART_WIDTH - margin.left - margin.right
-  const plotHeight = CHART_HEIGHT - margin.top - margin.bottom
   const values = rows
     .map((row) => row[metric])
     .filter((value): value is number => typeof value === "number" && Number.isFinite(value))
@@ -42,7 +39,7 @@ export const MetricHistogram = ({ rows, metric }: Props) => {
   const safeMaxRaw = Number.isFinite(maxValue) ? maxValue : 1
   const safeMax = safeMaxRaw > safeMin ? safeMaxRaw : safeMin + 1
 
-  const xScale = scaleLinear().domain([safeMin, safeMax]).range([0, plotWidth]).nice()
+  const xScale = scaleLinear().domain([safeMin, safeMax]).nice()
   const histogram = bin<number, number>()
     .domain(xScale.domain() as [number, number])
     .thresholds(HIST_BINS)
@@ -58,13 +55,18 @@ export const MetricHistogram = ({ rows, metric }: Props) => {
   const density = kernelDensityEstimator(values, Math.max(bandwidth, 1e-6), sampleX)
   const maxDensity = Math.max(0, max(density, (item) => item.y) || 0)
 
-  const yScale = scaleLinear()
-    .domain([0, maxCount > 0 ? maxCount * 1.1 : 1])
-    .range([plotHeight, 0])
+  const yScale = scaleLinear().domain([0, maxCount > 0 ? maxCount * 1.1 : 1])
   const densityToCountScale = (densityValue: number) =>
     maxDensity > 0 ? (densityValue / maxDensity) * maxCount : 0
   const yTicks = yScale.ticks(5)
   const xTicks = xScale.ticks(5)
+  const maxTickLength = Math.max(...yTicks.map((tick) => formatNumber(tick).length))
+  const margin = { top: 10, right: 12, bottom: 36, left: Math.max(48, maxTickLength * 7 + 18) }
+  const plotWidth = CHART_WIDTH - margin.left - margin.right
+  const plotHeight = CHART_HEIGHT - margin.top - margin.bottom
+
+  xScale.range([0, plotWidth])
+  yScale.range([plotHeight, 0])
 
   const kdeLine = line<{ x: number; y: number }>()
     .x((point) => xScale(point.x))

@@ -30,10 +30,6 @@ type BoxPlotValue = {
 }
 
 export const MetricGroupsBoxPlot = ({ metric, data, analysisDepth }: Props) => {
-  const margin = { top: 10, right: 12, bottom: 56, left: 40 }
-  const plotWidth = CHART_WIDTH - margin.left - margin.right
-  const plotHeight = CHART_HEIGHT - margin.top - margin.bottom
-
   const valuesByGroup = new Map<string, number[]>()
   for (const row of data) {
     const group = getScopePathValue(row.path, analysisDepth) || "Без группы"
@@ -61,6 +57,13 @@ export const MetricGroupsBoxPlot = ({ metric, data, analysisDepth }: Props) => {
   }
 
   const maxValue = Math.max(0, max(boxData, (item) => item.max) || 0)
+  const yTicks = scaleLinear()
+    .domain([0, maxValue > 0 ? maxValue * 1.05 : 1])
+    .ticks(5)
+  const maxTickLength = Math.max(...yTicks.map((tick) => formatNumber(tick).length))
+  const margin = { top: 10, right: 12, bottom: 56, left: Math.max(48, maxTickLength * 7 + 18) }
+  const plotWidth = CHART_WIDTH - margin.left - margin.right
+  const plotHeight = CHART_HEIGHT - margin.top - margin.bottom
   const yScale = scaleLinear()
     .domain([0, maxValue > 0 ? maxValue * 1.05 : 1])
     .range([plotHeight, 0])
@@ -68,7 +71,6 @@ export const MetricGroupsBoxPlot = ({ metric, data, analysisDepth }: Props) => {
     .domain(boxData.map((item) => item.group))
     .range([0, plotWidth])
     .padding(0.35)
-  const yTicks = yScale.ticks(5)
 
   return (
     <Box style={{ overflowX: "auto" }}>

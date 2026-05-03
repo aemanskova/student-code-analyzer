@@ -1,4 +1,5 @@
 import { type ClusteredMetricRow, ClusterMetricBoxPlot } from "@entities/clusterizing"
+import { getMetricLabel } from "@entities/glossary"
 import { Card, Grid, Stack, Text } from "@mantine/core"
 import { AllOptionsMultiSelect } from "@shared/ui"
 import { Controller, type UseFormReturn } from "react-hook-form"
@@ -40,7 +41,7 @@ export function ClusterDashboardPanel({ chartRows, form, metricOptions, visibleM
             <Card withBorder>
               <Stack gap="md">
                 <Text fw={600} size="sm">
-                  {metric}
+                  {getMetricLabel(metric)}
                 </Text>
                 <ClusterMetricBoxPlot metric={metric} rows={chartRows} />
               </Stack>

@@ -6,6 +6,7 @@ import {
   getNumericMetrics,
   toMetricDisplayValue
 } from "@entities/clusterizing"
+import { getMetricLabel } from "@entities/glossary"
 import { buildCsv, downloadCsvFile } from "@shared/lib/csv"
 import type { VirtualizedColumn } from "@shared/ui"
 import { useMemo } from "react"
@@ -61,7 +62,10 @@ export const useClusterizingResult = (data: ClusterizationDetailsResponse) => {
   const visibleMetrics = selectedMetrics.includes(ALL_CLUSTER_METRICS)
     ? numericMetrics
     : selectedMetrics.filter((metric) => numericMetrics.includes(metric))
-  const metricOptions = numericMetrics.map((metric) => ({ value: metric, label: metric }))
+  const metricOptions = numericMetrics.map((metric) => ({
+    value: metric,
+    label: getMetricLabel(metric)
+  }))
   const tableMetricOptions = orderedMetrics.map((metric) => ({ value: metric, label: metric }))
   const visibleTableMetrics = selectedTableMetrics.includes(ALL_CLUSTER_TABLE_METRICS)
     ? orderedMetrics

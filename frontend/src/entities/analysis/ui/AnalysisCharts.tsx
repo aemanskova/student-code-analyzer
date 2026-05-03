@@ -1,13 +1,18 @@
 import type { AnalysisRow, GitAnalysisRow } from "@entities/analysis/api"
+import { getMetricLabel } from "@entities/glossary"
 import { Card, Grid, Stack, Tabs, Text } from "@mantine/core"
 import { CalendarDots, ChartBar } from "@phosphor-icons/react"
 import { AllOptionsMultiSelect } from "@shared/ui"
 import { useEffect, useMemo, useState } from "react"
 import { Controller, useForm, useWatch } from "react-hook-form"
 
-import { ALL_METRICS_OPTION, buildGitYearResolver } from "../model/analysis-charts"
+import {
+  ALL_METRICS_OPTION,
+  buildGitYearResolver,
+  getYearChartSpecialties
+} from "../model/analysis-charts"
 import { getNumericMetrics } from "../model/helpers"
-import { MetricHistogram, MetricYearViolinChart } from "./analysis-charts"
+import { MetricHistogram, MetricYearViolinChart, YearChartLegend } from "./analysis-charts"
 
 type Props = {
   rows: AnalysisRow[]
@@ -48,7 +53,7 @@ export function AnalysisCharts({ rows, gitRows = [], selectedMetrics, analysisDe
   }, [rows, selectedMetrics])
 
   const metricOptions = useMemo(
-    () => availableMetrics.map((metric) => ({ value: metric, label: metric })),
+    () => availableMetrics.map((metric) => ({ value: metric, label: getMetricLabel(metric) })),
     [availableMetrics]
   )
   const metrics = useMemo(() => {
@@ -57,6 +62,10 @@ export function AnalysisCharts({ rows, gitRows = [], selectedMetrics, analysisDe
     }
     return selectedChartMetrics.filter((metric) => availableMetrics.includes(metric))
   }, [availableMetrics, selectedChartMetrics])
+  const yearSpecialties = useMemo(
+    () => getYearChartSpecialties(rows, metrics, analysisDepth, gitYearResolver),
+    [analysisDepth, gitYearResolver, metrics, rows]
+  )
 
   useEffect(() => {
     if (selectedChartMetrics.includes(ALL_METRICS_OPTION)) {
@@ -147,7 +156,7 @@ export function AnalysisCharts({ rows, gitRows = [], selectedMetrics, analysisDe
                 <Card withBorder>
                   <Stack gap="md">
                     <Text fw={600} size="sm">
-                      {metric}
+                      {getMetricLabel(metric)}
                     </Text>
                     <MetricHistogram metric={metric} rows={rows} />
                   </Stack>
@@ -158,25 +167,29 @@ export function AnalysisCharts({ rows, gitRows = [], selectedMetrics, analysisDe
         </Tabs.Panel>
 
         <Tabs.Panel pt="md" value="years">
-          <Grid>
-            {metrics.map((metric) => (
-              <Grid.Col key={`year:${metric}`} span={{ base: 12, sm: 6, lg: 4 }}>
-                <Card withBorder>
-                  <Stack gap="md">
-                    <Text fw={600} size="sm">
-                      {metric}
-                    </Text>
-                    <MetricYearViolinChart
-                      analysisDepth={analysisDepth}
-                      gitYearResolver={gitYearResolver}
-                      metric={metric}
-                      rows={rows}
-                    />
-                  </Stack>
-                </Card>
-              </Grid.Col>
-            ))}
-          </Grid>
+          <Stack gap="md">
+            <YearChartLegend specialties={yearSpecialties} />
+            <Grid>
+              {metrics.map((metric) => (
+                <Grid.Col key={`year:${metric}`} span={{ base: 12, sm: 6, lg: 4 }}>
+                  <Card withBorder>
+                    <Stack gap="md">
+                      <Text fw={600} size="sm">
+                        {getMetricLabel(metric)}
+                      </Text>
+                      <MetricYearViolinChart
+                        analysisDepth={analysisDepth}
+                        gitYearResolver={gitYearResolver}
+                        metric={metric}
+                        rows={rows}
+                        specialties={yearSpecialties}
+                      />
+                    </Stack>
+                  </Card>
+                </Grid.Col>
+              ))}
+            </Grid>
+          </Stack>
         </Tabs.Panel>
       </Tabs>
     </Stack>
