@@ -5,6 +5,9 @@ export const routes = {
   archive: "/analysis",
   archiveLegacy: "/archive",
   archiveDetails: "/analysis/:encodedPath",
+  analysisMetricChartPath: "/analysis/:runId/charts/:encodedMetric",
+  analysisMetricChart: (runId: string, metric: string) =>
+    `/analysis/${encodeURIComponent(runId)}/charts/${encodeURIComponent(metric)}`,
   archiveDetailsLegacy: "/archive/:encodedPath",
   heatmap: "/heatmap",
   heatmapBuild: "/heatmap/build",
@@ -18,6 +21,9 @@ export const routes = {
   clusterizingCreate: "/clusterizing/create",
   clusterizingDetailsPath: "/clusterizing/:jobId",
   clusterizingDetails: (jobId: string) => `/clusterizing/${encodeURIComponent(jobId)}`,
+  clusterizingMetricChartPath: "/clusterizing/:jobId/charts/:encodedMetric",
+  clusterizingMetricChart: (jobId: string, metric: string) =>
+    `/clusterizing/${encodeURIComponent(jobId)}/charts/${encodeURIComponent(metric)}`,
   glossary: "/glossary",
   login: "/login",
   profile: "/profile"

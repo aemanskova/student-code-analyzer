@@ -19,9 +19,18 @@ type Props = {
   colorByPath: Map<string, string>
   xLabel: string
   yLabel: string
+  chartWidth?: number
+  chartHeight?: number
 }
 
-export const ScatterChart = ({ data, colorByPath, xLabel, yLabel }: Props) => {
+export const ScatterChart = ({
+  data,
+  colorByPath,
+  xLabel,
+  yLabel,
+  chartWidth = CHART_WIDTH,
+  chartHeight = CHART_HEIGHT
+}: Props) => {
   const maxX = Math.max(0, max(data, (item) => item.x) || 0)
   const maxY = Math.max(0, max(data, (item) => item.y) || 0)
   const yTicks = scaleLinear()
@@ -29,8 +38,8 @@ export const ScatterChart = ({ data, colorByPath, xLabel, yLabel }: Props) => {
     .ticks(5)
   const maxTickLength = Math.max(...yTicks.map((tick) => formatNumber(tick).length))
   const margin = { top: 10, right: 12, bottom: 34, left: Math.max(64, maxTickLength * 7 + 34) }
-  const plotWidth = CHART_WIDTH - margin.left - margin.right
-  const plotHeight = CHART_HEIGHT - margin.top - margin.bottom
+  const plotWidth = chartWidth - margin.left - margin.right
+  const plotHeight = chartHeight - margin.top - margin.bottom
 
   const xScale = scaleLinear()
     .domain([0, maxX > 0 ? maxX * 1.05 : 1])
@@ -42,7 +51,7 @@ export const ScatterChart = ({ data, colorByPath, xLabel, yLabel }: Props) => {
 
   return (
     <Box style={{ overflowX: "auto" }}>
-      <svg height={CHART_HEIGHT} width="100%" viewBox={`0 0 ${CHART_WIDTH} ${CHART_HEIGHT}`}>
+      <svg height={chartHeight} width="100%" viewBox={`0 0 ${chartWidth} ${chartHeight}`}>
         <g transform={`translate(${margin.left}, ${margin.top})`}>
           {xTicks.map((tick) => (
             <line
@@ -74,7 +83,10 @@ export const ScatterChart = ({ data, colorByPath, xLabel, yLabel }: Props) => {
               fill={colorByPath.get(item.path) || DEFAULT_BAR_COLOR}
               opacity={0.85}
               r={4}
-            />
+              style={{ cursor: "default" }}
+            >
+              <title>{`${item.path}: ${xLabel} ${item.x}, ${yLabel} ${item.y}`}</title>
+            </circle>
           ))}
           <AxisBottom ticks={xTicks} width={plotWidth} x={xScale} y={plotHeight} />
           <line x1={0} x2={0} y1={0} y2={plotHeight} stroke={AXIS_COLOR} strokeWidth={1} />

@@ -65,7 +65,12 @@ export function GitResultsSection({ runId, analysisDepth, selectedLevels }: Prop
           </Tabs.List>
 
           <Tabs.Panel pt="md" value="charts">
-            <GitChartsSection analysisDepth={analysisDepth} rows={filteredRows} />
+            <GitChartsSection
+              analysisDepth={analysisDepth}
+              rows={filteredRows}
+              runId={runId}
+              selectedLevels={selectedLevels}
+            />
           </Tabs.Panel>
 
           <Tabs.Panel pt="md" value="table">

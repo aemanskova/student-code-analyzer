@@ -14,17 +14,24 @@ import {
 type Props = {
   boxData: BoxPlotValue[]
   metric: string
+  chartWidth?: number
+  chartHeight?: number
 }
 
-export function ClusterMetricBoxPlotSvg({ boxData, metric }: Props) {
+export function ClusterMetricBoxPlotSvg({
+  boxData,
+  metric,
+  chartWidth = CLUSTER_CHART_WIDTH,
+  chartHeight = CLUSTER_CHART_HEIGHT
+}: Props) {
   const maxValue = Math.max(0, max(boxData, (item) => item.max) || 0)
   const ticks = scaleLinear()
     .domain([0, maxValue > 0 ? maxValue * 1.08 : 1])
     .ticks(5)
   const maxTickLength = Math.max(...ticks.map((tick) => formatChartNumber(tick).length))
   const margin = { top: 10, right: 12, bottom: 44, left: Math.max(52, maxTickLength * 7 + 18) }
-  const plotWidth = CLUSTER_CHART_WIDTH - margin.left - margin.right
-  const plotHeight = CLUSTER_CHART_HEIGHT - margin.top - margin.bottom
+  const plotWidth = chartWidth - margin.left - margin.right
+  const plotHeight = chartHeight - margin.top - margin.bottom
   const yScale = scaleLinear()
     .domain([0, maxValue > 0 ? maxValue * 1.08 : 1])
     .range([plotHeight, 0])
@@ -37,11 +44,7 @@ export function ClusterMetricBoxPlotSvg({ boxData, metric }: Props) {
     .range(CLUSTER_SERIES_COLORS)
 
   return (
-    <svg
-      height={CLUSTER_CHART_HEIGHT}
-      width="100%"
-      viewBox={`0 0 ${CLUSTER_CHART_WIDTH} ${CLUSTER_CHART_HEIGHT}`}
-    >
+    <svg height={chartHeight} width="100%" viewBox={`0 0 ${chartWidth} ${chartHeight}`}>
       <g transform={`translate(${margin.left}, ${margin.top})`}>
         {ticks.map((tick) => (
           <line
@@ -61,7 +64,10 @@ export function ClusterMetricBoxPlotSvg({ boxData, metric }: Props) {
           const color = colorScale(item.cluster)
 
           return (
-            <g key={`${metric}:${item.cluster}`}>
+            <g key={`${metric}:${item.cluster}`} style={{ cursor: "default" }}>
+              <title>
+                {`Кластер ${item.cluster}: min ${formatChartNumber(item.min)}, Q1 ${formatChartNumber(item.q1)}, median ${formatChartNumber(item.median)}, Q3 ${formatChartNumber(item.q3)}, max ${formatChartNumber(item.max)}`}
+              </title>
               <line
                 stroke={color}
                 strokeWidth={1.5}

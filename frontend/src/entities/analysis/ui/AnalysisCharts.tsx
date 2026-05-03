@@ -1,10 +1,12 @@
 import type { AnalysisRow, GitAnalysisRow } from "@entities/analysis/api"
 import { getMetricLabel } from "@entities/glossary"
-import { Card, Grid, Stack, Tabs, Text } from "@mantine/core"
+import { Anchor, Card, Grid, Stack, Tabs, Text } from "@mantine/core"
 import { CalendarDots, ChartBar } from "@phosphor-icons/react"
+import { routes } from "@shared/config/routes"
 import { AllOptionsMultiSelect } from "@shared/ui"
 import { useEffect, useMemo, useState } from "react"
 import { Controller, useForm, useWatch } from "react-hook-form"
+import { NavLink } from "react-router"
 
 import {
   ALL_METRICS_OPTION,
@@ -15,10 +17,12 @@ import { getNumericMetrics } from "../model/helpers"
 import { MetricHistogram, MetricYearViolinChart, YearChartLegend } from "./analysis-charts"
 
 type Props = {
+  runId?: string
   rows: AnalysisRow[]
   gitRows?: GitAnalysisRow[]
   selectedMetrics: string[]
   analysisDepth?: number
+  selectedLevels?: string[][]
 }
 
 type AnalysisChartsForm = {
@@ -30,7 +34,52 @@ const areArraysEqual = (left: string[], right: string[]): boolean =>
 
 const DEFAULT_SELECTED_CHART_METRICS = [ALL_METRICS_OPTION]
 
-export function AnalysisCharts({ rows, gitRows = [], selectedMetrics, analysisDepth }: Props) {
+const buildLevelsSearch = (analysisDepth?: number, selectedLevels?: string[][]) => {
+  const params = new URLSearchParams()
+  params.set("kind", "metrics")
+  if (typeof analysisDepth === "number") {
+    params.set("depth", String(analysisDepth))
+  }
+  ;(selectedLevels || []).forEach((values, index) => {
+    if (values.length) {
+      params.set(`level${index + 1}`, values.join(","))
+    }
+  })
+  return params.toString()
+}
+
+type MetricTitleProps = {
+  label: string
+  metric: string
+  runId?: string
+  search: string
+}
+
+const MetricTitle = ({ label, metric, runId, search }: MetricTitleProps) =>
+  runId ? (
+    <Anchor
+      c="myColor.6"
+      component={NavLink}
+      fw={600}
+      size="sm"
+      to={`${routes.analysisMetricChart(runId, metric)}?${search}`}
+    >
+      {label}
+    </Anchor>
+  ) : (
+    <Text fw={600} size="sm">
+      {label}
+    </Text>
+  )
+
+export function AnalysisCharts({
+  runId,
+  rows,
+  gitRows = [],
+  selectedMetrics,
+  analysisDepth,
+  selectedLevels
+}: Props) {
   const [chartTab, setChartTab] = useState<string | null>("distribution")
   const form = useForm<AnalysisChartsForm>({
     defaultValues: {
@@ -65,6 +114,10 @@ export function AnalysisCharts({ rows, gitRows = [], selectedMetrics, analysisDe
   const yearSpecialties = useMemo(
     () => getYearChartSpecialties(rows, metrics, analysisDepth, gitYearResolver),
     [analysisDepth, gitYearResolver, metrics, rows]
+  )
+  const chartSearch = useMemo(
+    () => buildLevelsSearch(analysisDepth, selectedLevels),
+    [analysisDepth, selectedLevels]
   )
 
   useEffect(() => {
@@ -155,9 +208,12 @@ export function AnalysisCharts({ rows, gitRows = [], selectedMetrics, analysisDe
               <Grid.Col key={`hist:${metric}`} span={{ base: 12, sm: 6, lg: 4 }}>
                 <Card withBorder>
                   <Stack gap="md">
-                    <Text fw={600} size="sm">
-                      {getMetricLabel(metric)}
-                    </Text>
+                    <MetricTitle
+                      label={getMetricLabel(metric)}
+                      metric={metric}
+                      runId={runId}
+                      search={chartSearch}
+                    />
                     <MetricHistogram metric={metric} rows={rows} />
                   </Stack>
                 </Card>
@@ -174,9 +230,12 @@ export function AnalysisCharts({ rows, gitRows = [], selectedMetrics, analysisDe
                 <Grid.Col key={`year:${metric}`} span={{ base: 12, sm: 6, lg: 4 }}>
                   <Card withBorder>
                     <Stack gap="md">
-                      <Text fw={600} size="sm">
-                        {getMetricLabel(metric)}
-                      </Text>
+                      <MetricTitle
+                        label={getMetricLabel(metric)}
+                        metric={metric}
+                        runId={runId}
+                        search={`${chartSearch}&mode=years`}
+                      />
                       <MetricYearViolinChart
                         analysisDepth={analysisDepth}
                         gitYearResolver={gitYearResolver}

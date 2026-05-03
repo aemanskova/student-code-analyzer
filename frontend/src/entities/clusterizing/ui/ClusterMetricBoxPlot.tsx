@@ -7,9 +7,11 @@ import { ClusterMetricBoxPlotSvg } from "./components/ClusterMetricBoxPlotSvg"
 type Props = {
   metric: string
   rows: ClusteredMetricRow[]
+  chartWidth?: number
+  chartHeight?: number
 }
 
-export function ClusterMetricBoxPlot({ metric, rows }: Props) {
+export function ClusterMetricBoxPlot({ metric, rows, chartWidth, chartHeight }: Props) {
   const boxData = buildBoxPlotData(metric, rows)
 
   if (!boxData.length) {
@@ -18,7 +20,12 @@ export function ClusterMetricBoxPlot({ metric, rows }: Props) {
 
   return (
     <Box style={{ overflowX: "auto" }}>
-      <ClusterMetricBoxPlotSvg boxData={boxData} metric={metric} />
+      <ClusterMetricBoxPlotSvg
+        boxData={boxData}
+        chartHeight={chartHeight}
+        chartWidth={chartWidth}
+        metric={metric}
+      />
     </Box>
   )
 }

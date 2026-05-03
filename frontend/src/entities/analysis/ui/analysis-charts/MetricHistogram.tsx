@@ -23,9 +23,16 @@ import {
 type Props = {
   rows: AnalysisRow[]
   metric: string
+  chartWidth?: number
+  chartHeight?: number
 }
 
-export const MetricHistogram = ({ rows, metric }: Props) => {
+export const MetricHistogram = ({
+  rows,
+  metric,
+  chartWidth = CHART_WIDTH,
+  chartHeight = CHART_HEIGHT
+}: Props) => {
   const values = rows
     .map((row) => row[metric])
     .filter((value): value is number => typeof value === "number" && Number.isFinite(value))
@@ -62,8 +69,8 @@ export const MetricHistogram = ({ rows, metric }: Props) => {
   const xTicks = xScale.ticks(5)
   const maxTickLength = Math.max(...yTicks.map((tick) => formatNumber(tick).length))
   const margin = { top: 10, right: 12, bottom: 36, left: Math.max(48, maxTickLength * 7 + 18) }
-  const plotWidth = CHART_WIDTH - margin.left - margin.right
-  const plotHeight = CHART_HEIGHT - margin.top - margin.bottom
+  const plotWidth = chartWidth - margin.left - margin.right
+  const plotHeight = chartHeight - margin.top - margin.bottom
 
   xScale.range([0, plotWidth])
   yScale.range([plotHeight, 0])
@@ -75,7 +82,7 @@ export const MetricHistogram = ({ rows, metric }: Props) => {
 
   return (
     <Box style={{ overflowX: "auto" }}>
-      <svg height={CHART_HEIGHT} width="100%" viewBox={`0 0 ${CHART_WIDTH} ${CHART_HEIGHT}`}>
+      <svg height={chartHeight} width="100%" viewBox={`0 0 ${chartWidth} ${chartHeight}`}>
         <g transform={`translate(${margin.left}, ${margin.top})`}>
           {yTicks.map((tick) => (
             <line
@@ -100,10 +107,15 @@ export const MetricHistogram = ({ rows, metric }: Props) => {
                 height={Math.max(0, plotHeight - y)}
                 stroke={BAR_FILL}
                 strokeWidth={1}
+                style={{ cursor: "default" }}
                 width={width}
                 x={x}
                 y={y}
-              />
+              >
+                <title>
+                  {`${formatNumber(item.x0)} - ${formatNumber(item.x1)}: ${item.count}`}
+                </title>
+              </rect>
             )
           })}
           <path d={kdeLine(density) || ""} fill="none" stroke={KDE_STROKE} strokeWidth={2} />

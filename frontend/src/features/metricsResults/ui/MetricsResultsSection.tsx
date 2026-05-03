@@ -47,11 +47,13 @@ export function MetricsResultsSection({ runId, analysisDepth, selectedLevels }: 
       <AnalysisCharts
         analysisDepth={analysisDepth}
         gitRows={gitRows}
+        runId={runId}
         rows={rows}
         selectedMetrics={metrics}
+        selectedLevels={selectedLevels}
       />
     ),
-    [analysisDepth, gitRows, metrics, rows]
+    [analysisDepth, gitRows, metrics, rows, runId, selectedLevels]
   )
 
   const showEmptyMetrics = !isViewLoading && !hasRows

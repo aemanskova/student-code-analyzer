@@ -1,8 +1,10 @@
 import { type ClusteredMetricRow, ClusterMetricBoxPlot } from "@entities/clusterizing"
 import { getMetricLabel } from "@entities/glossary"
-import { Card, Grid, Stack, Text } from "@mantine/core"
+import { Anchor, Card, Grid, Stack, Text } from "@mantine/core"
+import { routes } from "@shared/config/routes"
 import { AllOptionsMultiSelect } from "@shared/ui"
 import { Controller, type UseFormReturn } from "react-hook-form"
+import { NavLink } from "react-router"
 
 import {
   ALL_CLUSTER_METRICS,
@@ -14,9 +16,16 @@ type Props = {
   form: UseFormReturn<ClusterizingResultForm>
   metricOptions: Array<{ value: string; label: string }>
   visibleMetrics: string[]
+  jobId?: string
 }
 
-export function ClusterDashboardPanel({ chartRows, form, metricOptions, visibleMetrics }: Props) {
+export function ClusterDashboardPanel({
+  chartRows,
+  form,
+  metricOptions,
+  visibleMetrics,
+  jobId
+}: Props) {
   return (
     <Stack gap="md">
       <Controller
@@ -41,7 +50,18 @@ export function ClusterDashboardPanel({ chartRows, form, metricOptions, visibleM
             <Card withBorder>
               <Stack gap="md">
                 <Text fw={600} size="sm">
-                  {getMetricLabel(metric)}
+                  {jobId ? (
+                    <Anchor
+                      c="myColor.6"
+                      component={NavLink}
+                      inherit
+                      to={routes.clusterizingMetricChart(jobId, metric)}
+                    >
+                      {getMetricLabel(metric)}
+                    </Anchor>
+                  ) : (
+                    getMetricLabel(metric)
+                  )}
                 </Text>
                 <ClusterMetricBoxPlot metric={metric} rows={chartRows} />
               </Stack>

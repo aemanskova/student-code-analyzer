@@ -25,6 +25,8 @@ type Props = {
   analysisDepth?: number
   gitYearResolver?: (pathValue: string) => string | null
   specialties?: string[]
+  chartWidth?: number
+  chartHeight?: number
 }
 
 type BoxPlotValue = {
@@ -89,7 +91,9 @@ export const MetricYearViolinChart = ({
   metric,
   analysisDepth,
   gitYearResolver,
-  specialties: sharedSpecialties
+  specialties: sharedSpecialties,
+  chartWidth = CHART_WIDTH,
+  chartHeight = CHART_HEIGHT
 }: Props) => {
   const points = extractMetricYearPoints(rows, metric, analysisDepth, gitYearResolver)
 
@@ -112,8 +116,8 @@ export const MetricYearViolinChart = ({
   const yTicks = scaleLinear().domain([minValue, safeMax]).nice().ticks(5)
   const maxTickLength = Math.max(...yTicks.map((tick) => formatNumber(tick).length))
   const margin = { top: 12, right: 12, bottom: 46, left: Math.max(48, maxTickLength * 7 + 18) }
-  const plotWidth = CHART_WIDTH - margin.left - margin.right
-  const plotHeight = CHART_HEIGHT - margin.top - margin.bottom
+  const plotWidth = chartWidth - margin.left - margin.right
+  const plotHeight = chartHeight - margin.top - margin.bottom
 
   const xYear = scaleBand<string>().domain(years).range([0, plotWidth]).padding(0.2)
   const xSpecialty = scaleBand<string>()
@@ -131,7 +135,7 @@ export const MetricYearViolinChart = ({
 
   return (
     <Box style={{ overflowX: "auto" }}>
-      <svg height={CHART_HEIGHT} width="100%" viewBox={`0 0 ${CHART_WIDTH} ${CHART_HEIGHT}`}>
+      <svg height={chartHeight} width="100%" viewBox={`0 0 ${chartWidth} ${chartHeight}`}>
         <g transform={`translate(${margin.left}, ${margin.top})`}>
           {yTicks.map((tick) => (
             <line
@@ -173,7 +177,10 @@ export const MetricYearViolinChart = ({
               .curve(curveBasis)
 
             return (
-              <g key={`${item.year}:${item.specialty}`}>
+              <g key={`${item.year}:${item.specialty}`} style={{ cursor: "default" }}>
+                <title>
+                  {`${item.year}, ${item.specialty}: median ${formatNumber(item.median)}, n ${item.values.length}`}
+                </title>
                 <path
                   d={violinArea(areaPoints) || ""}
                   fill={color}
