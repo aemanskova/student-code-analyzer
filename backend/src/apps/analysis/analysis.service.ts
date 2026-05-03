@@ -4113,10 +4113,7 @@ export class AnalysisService implements OnModuleInit {
     });
   }
 
-  private openYauzlEntryReadStream(
-    zipFile: yauzl.ZipFile,
-    entry: yauzl.Entry
-  ): Promise<Readable> {
+  private openYauzlEntryReadStream(zipFile: yauzl.ZipFile, entry: yauzl.Entry): Promise<Readable> {
     return new Promise((resolve, reject) => {
       zipFile.openReadStream(entry, (error, stream) => {
         if (error) {
@@ -4192,10 +4189,7 @@ export class AnalysisService implements OnModuleInit {
 
             const isDirectory = /[/\\]$/.test(entryPath);
             const relativePath = this.sanitizeRelativePath(entryPath, extractedFiles);
-            if (
-              isDirectory ||
-              (options.entryFilter && !options.entryFilter(relativePath))
-            ) {
+            if (isDirectory || (options.entryFilter && !options.entryFilter(relativePath))) {
               await reportProgress();
               zipFile.readEntry();
               return;

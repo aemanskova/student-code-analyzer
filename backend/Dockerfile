@@ -4,8 +4,12 @@ FROM public.ecr.aws/docker/library/node:20-bookworm
 WORKDIR /app
 
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends chromium default-jre-headless \
+  && apt-get install -y --no-install-recommends chromium default-jre-headless python3 python3-venv \
   && rm -rf /var/lib/apt/lists/*
+
+RUN python3 -m venv /opt/sklearn-venv \
+  && /opt/sklearn-venv/bin/python -m pip install --no-cache-dir --upgrade pip \
+  && /opt/sklearn-venv/bin/python -m pip install --no-cache-dir "scikit-learn>=1.5.2"
 
 COPY package*.json ./
 RUN npm ci
@@ -29,6 +33,7 @@ ENV WORKS_ROOT=/app/works
 ENV CHROME_PATH=/usr/bin/chromium
 ENV PLAYWRIGHT_CHROMIUM_PATH=/usr/bin/chromium
 ENV VNU_JAR=/app/node_modules/vnu-jar/build/dist/vnu.jar
+ENV SKLEARN_PYTHON_PATH=/opt/sklearn-venv/bin/python
 
 EXPOSE 3000
 
