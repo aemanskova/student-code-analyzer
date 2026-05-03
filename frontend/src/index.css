@@ -1,11 +1,15 @@
 :root {
   --app-chart-accent-blue: #4e79a7;
   --app-chart-label-color: #4b5563;
+  --app-chart-legend-bg: #ffffff;
+  --app-chart-legend-border: #d1d5db;
 }
 
 [data-mantine-color-scheme="dark"] {
   --app-chart-accent-blue: #7cc8ff;
   --app-chart-label-color: #e5e7eb;
+  --app-chart-legend-bg: #2f2f2f;
+  --app-chart-legend-border: #5f6368;
 }
 
 html,

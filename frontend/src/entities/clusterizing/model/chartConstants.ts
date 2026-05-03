@@ -6,6 +6,8 @@ export const CLUSTER_GROUP_CHART_HEIGHT = 420
 export const CLUSTER_AXIS_COLOR = "#9ca3af"
 export const CLUSTER_GRID_COLOR = "#e5e7eb"
 export const CLUSTER_LABEL_COLOR = "var(--app-chart-label-color)"
+export const CLUSTER_LEGEND_BG = "var(--app-chart-legend-bg)"
+export const CLUSTER_LEGEND_BORDER = "var(--app-chart-legend-border)"
 
 export const CLUSTER_SERIES_COLORS = [
   "var(--app-chart-accent-blue)",

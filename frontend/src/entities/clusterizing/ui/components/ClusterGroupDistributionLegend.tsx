@@ -1,5 +1,9 @@
 import { type ClusterGroupDistributionMeta } from "../../lib"
-import { CLUSTER_LABEL_COLOR } from "../../model/chartConstants"
+import {
+  CLUSTER_LABEL_COLOR,
+  CLUSTER_LEGEND_BG,
+  CLUSTER_LEGEND_BORDER
+} from "../../model/chartConstants"
 import type { ClusterGroupChartScales } from "./useClusterGroupChartScales"
 import { clusterGroupLegend } from "./useClusterGroupChartScales"
 
@@ -12,10 +16,10 @@ export function ClusterGroupDistributionLegend({ chart, meta }: Props) {
   return (
     <g transform={`translate(${chart.plotWidth + clusterGroupLegend.gap}, 10)`}>
       <rect
-        fill="#ffffff"
+        fill={CLUSTER_LEGEND_BG}
         height={chart.legendHeight}
         rx={3}
-        stroke="#d1d5db"
+        stroke={CLUSTER_LEGEND_BORDER}
         width={chart.legendWidth}
       />
       <text
