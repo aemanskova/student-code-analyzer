@@ -18,7 +18,7 @@ export function Profile() {
   }
 
   return (
-    <Stack>
+    <Stack gap="md">
       <Grid>
         <Grid.Col span={{ base: 12, md: 4 }} style={{ display: "flex" }}>
           <CommonInfo />

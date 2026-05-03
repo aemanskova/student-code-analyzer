@@ -16,14 +16,16 @@ export const authApi = baseApi.injectEndpoints({
         url: "/auth/login",
         method: "POST",
         body
-      })
+      }),
+      invalidatesTags: ["Profile"]
     }),
     register: build.mutation<RegisterResponse, RegisterRequest>({
       query: (body) => ({
         url: "/auth/register",
         method: "POST",
         body
-      })
+      }),
+      invalidatesTags: ["Profile"]
     }),
     getMe: build.query<MeResponse, void>({
       query: () => ({
