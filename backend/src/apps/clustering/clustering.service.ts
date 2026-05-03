@@ -76,6 +76,7 @@ interface GitAggregateMetrics {
 export class ClusteringService {
   private readonly minSamples = 5;
   private readonly targetClustersCount = 3;
+  private readonly maxEpsCandidates = 41;
   private sklearnPromise: Promise<SklearnModule> | null = null;
 
   constructor(
@@ -708,12 +709,29 @@ export class ClusteringService {
       .sort((a, b) => a - b);
     const candidates = new Set<number>([Math.max(fallbackEps, Number.EPSILON)]);
 
-    for (const value of positive) {
-      candidates.add(Math.max(value, Number.EPSILON));
+    if (positive.length <= this.maxEpsCandidates) {
+      for (const value of positive) {
+        candidates.add(Math.max(value, Number.EPSILON));
+      }
+      for (let index = 1; index < positive.length; index += 1) {
+        candidates.add(Math.max((positive[index - 1] + positive[index]) / 2, Number.EPSILON));
+      }
+    } else {
+      const lastIndex = positive.length - 1;
+      for (let step = 0; step < this.maxEpsCandidates; step += 1) {
+        const index = Math.round((step * lastIndex) / (this.maxEpsCandidates - 1));
+        candidates.add(Math.max(positive[index] || fallbackEps, Number.EPSILON));
+      }
+
+      const fallbackIndex = this.findClosestIndex(positive, fallbackEps);
+      for (let offset = -4; offset <= 4; offset += 1) {
+        const index = fallbackIndex + offset;
+        if (index >= 0 && index < positive.length) {
+          candidates.add(Math.max(positive[index] || fallbackEps, Number.EPSILON));
+        }
+      }
     }
-    for (let index = 1; index < positive.length; index += 1) {
-      candidates.add(Math.max((positive[index - 1] + positive[index]) / 2, Number.EPSILON));
-    }
+
     if (positive.length) {
       candidates.add(Math.max((positive[0] || fallbackEps) / 2, Number.EPSILON));
       candidates.add(
@@ -722,6 +740,19 @@ export class ClusteringService {
     }
 
     return Array.from(candidates).sort((a, b) => a - b);
+  }
+
+  private findClosestIndex(values: number[], target: number): number {
+    let bestIndex = 0;
+    let bestDistance = Number.POSITIVE_INFINITY;
+    for (let index = 0; index < values.length; index += 1) {
+      const distance = Math.abs((values[index] || 0) - target);
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        bestIndex = index;
+      }
+    }
+    return bestIndex;
   }
 
   private async fitDbscan(
@@ -788,24 +819,24 @@ export class ClusteringService {
     rows: ClusteredMetricRow[],
     clusters: number[]
   ): ClusterGroupShare[] {
-    const grouped = new Map<string, ClusteredMetricRow[]>();
+    const grouped = new Map<string, Map<number, number>>();
     for (const row of rows.filter((item) => item.cluster !== -1)) {
-      const bucket = grouped.get(row.groupPath) || [];
-      bucket.push(row);
-      grouped.set(row.groupPath, bucket);
+      const counts = grouped.get(row.groupPath) || new Map<number, number>();
+      counts.set(row.cluster, (counts.get(row.cluster) || 0) + 1);
+      grouped.set(row.groupPath, counts);
     }
 
     return Array.from(grouped.entries())
       .sort(([a], [b]) => a.localeCompare(b))
-      .map(([groupPath, groupRows]) => {
+      .map(([groupPath, counts]) => {
         const shares: Record<string, number> = {};
+        const total = Array.from(counts.values()).reduce((sum, count) => sum + count, 0);
         for (const cluster of clusters) {
-          const count = groupRows.filter((row) => row.cluster === cluster).length;
-          shares[String(cluster)] = groupRows.length ? count / groupRows.length : 0;
+          shares[String(cluster)] = total ? (counts.get(cluster) || 0) / total : 0;
         }
         return {
           groupPath,
-          total: groupRows.length,
+          total,
           shares
         };
       });
@@ -818,13 +849,18 @@ export class ClusteringService {
     const groupPaths = Array.from(
       new Set(rows.filter((row) => row.cluster !== -1).map((row) => row.groupPath))
     ).sort((a, b) => a.localeCompare(b));
+    const countsByClusterAndGroup = new Map<number, Map<string, number>>();
+    for (const row of rows.filter((item) => item.cluster !== -1)) {
+      const groupCounts = countsByClusterAndGroup.get(row.cluster) || new Map<string, number>();
+      groupCounts.set(row.groupPath, (groupCounts.get(row.groupPath) || 0) + 1);
+      countsByClusterAndGroup.set(row.cluster, groupCounts);
+    }
 
     return clusters.map((cluster) => {
       const counts: Record<string, number> = {};
+      const groupCounts = countsByClusterAndGroup.get(cluster);
       for (const groupPath of groupPaths) {
-        counts[groupPath] = rows.filter(
-          (row) => row.cluster === cluster && row.groupPath === groupPath
-        ).length;
+        counts[groupPath] = groupCounts?.get(groupPath) || 0;
       }
       return { cluster, counts };
     });
