@@ -1,9 +1,12 @@
 import type { ClusteredMetricRow } from "@entities/clusterizing"
 import { Button, Group, Stack, Text, TextInput } from "@mantine/core"
-import { type VirtualizedColumn, VirtualizedTable } from "@shared/ui"
+import { AllOptionsMultiSelect, type VirtualizedColumn, VirtualizedTable } from "@shared/ui"
 import { type Control, Controller } from "react-hook-form"
 
-import type { ClusterizingResultForm } from "../../lib/hooks/useClusterizingResult"
+import {
+  ALL_CLUSTER_TABLE_METRICS,
+  type ClusterizingResultForm
+} from "../../lib/hooks/useClusterizingResult"
 
 type Props = {
   columns: Array<VirtualizedColumn<ClusteredMetricRow>>
@@ -11,6 +14,7 @@ type Props = {
   filteredRows: ClusteredMetricRow[]
   metricsCount: number
   onDownload: () => void
+  tableMetricOptions: Array<{ value: string; label: string }>
 }
 
 export function ClusterTablePanel({
@@ -18,28 +22,44 @@ export function ClusterTablePanel({
   control,
   filteredRows,
   metricsCount,
-  onDownload
+  onDownload,
+  tableMetricOptions
 }: Props) {
   return (
     <Stack gap="md">
-      <Group align="flex-end" grow justify="space-between">
-        <Controller
-          control={control}
-          name="pathFilter"
-          render={({ field }) => (
-            <TextInput
-              label="Поиск по пути"
-              placeholder="Введите часть пути"
-              value={field.value}
-              onChange={(event) => field.onChange(event.currentTarget.value)}
-            />
-          )}
-        />
-        <Button
-          disabled={!filteredRows.length}
-          style={{ alignSelf: "flex-end", flexGrow: 0 }}
-          onClick={onDownload}
-        >
+      <Group align="flex-start" justify="space-between">
+        <Stack gap="sm">
+          <Controller
+            control={control}
+            name="pathFilter"
+            render={({ field }) => (
+              <TextInput
+                label="Поиск по пути"
+                placeholder="Введите часть пути"
+                value={field.value}
+                w={520}
+                onChange={(event) => field.onChange(event.currentTarget.value)}
+              />
+            )}
+          />
+          <Controller
+            control={control}
+            name="selectedTableMetrics"
+            render={({ field }) => (
+              <AllOptionsMultiSelect
+                allLabel="Все метрики"
+                allValue={ALL_CLUSTER_TABLE_METRICS}
+                label="Метрики для таблицы"
+                options={tableMetricOptions}
+                searchable
+                value={field.value}
+                w={520}
+                onChange={field.onChange}
+              />
+            )}
+          />
+        </Stack>
+        <Button disabled={!filteredRows.length} onClick={onDownload}>
           Скачать CSV
         </Button>
       </Group>

@@ -47,7 +47,8 @@ export function ClusterizingResultView({ data }: Props) {
             columns={model.tableColumns}
             control={model.form.control}
             filteredRows={model.filteredRows}
-            metricsCount={model.orderedMetrics.length}
+            metricsCount={model.visibleTableMetrics.length}
+            tableMetricOptions={model.tableMetricOptions}
             onDownload={model.downloadCsv}
           />
         }

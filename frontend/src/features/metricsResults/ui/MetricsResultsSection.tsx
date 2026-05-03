@@ -1,6 +1,7 @@
 import { AnalysisCharts, AnalysisTable } from "@entities/analysis"
 import { Button, Group, Skeleton, Stack, Tabs, Text, TextInput } from "@mantine/core"
 import { ChartLineUp, Table as TableIcon } from "@phosphor-icons/react"
+import { AllOptionsMultiSelect } from "@shared/ui"
 import { useMemo, useState } from "react"
 import { Controller } from "react-hook-form"
 
@@ -13,18 +14,31 @@ type Props = {
   selectedLevels: string[][]
 }
 
+const ALL_TABLE_METRICS = "__all__"
+
 export function MetricsResultsSection({ runId, analysisDepth, selectedLevels }: Props) {
   const [contentTab, setContentTab] = useState<string | null>("charts")
+  const [selectedTableMetrics, setSelectedTableMetrics] = useState<string[]>([ALL_TABLE_METRICS])
   const { isViewLoading, rows, gitRows, metrics } = useMetricsRunView({
     analysisDepth,
     runId,
     selectedLevels
   })
 
-  const { control, filteredRows, hasRows, hasFilteredRows, downloadMetricsCsv } = useMetricsResults(
-    rows,
-    metrics
+  const visibleTableMetrics = useMemo(
+    () =>
+      selectedTableMetrics.includes(ALL_TABLE_METRICS)
+        ? metrics
+        : selectedTableMetrics.filter((metric) => metrics.includes(metric)),
+    [metrics, selectedTableMetrics]
   )
+  const metricOptions = useMemo(
+    () => metrics.map((metric) => ({ value: metric, label: metric })),
+    [metrics]
+  )
+
+  const { control, filteredRows, hasRows, hasFilteredRows, downloadMetricsCsv } =
+    useMetricsResults(rows, visibleTableMetrics)
 
   const chart = useMemo(
     () => (
@@ -83,31 +97,41 @@ export function MetricsResultsSection({ runId, analysisDepth, selectedLevels }: 
 
           <Tabs.Panel pt="md" value="table">
             <Stack gap="md">
-              <Group align="flex-end" justify="space-between" grow>
-                <Controller
-                  control={control}
-                  name="pathFilter"
-                  render={({ field }) => (
-                    <TextInput
-                      disabled={!hasRows}
-                      label="Поиск по пути"
-                      placeholder="Введите часть пути (например, group1/student2)"
-                      value={field.value}
-                      onChange={(event) => field.onChange(event.currentTarget.value)}
-                    />
-                  )}
-                />
-                <Button
-                  disabled={!hasFilteredRows}
-                  onClick={downloadMetricsCsv}
-                  style={{ alignSelf: "flex-end", flexGrow: 0 }}
-                >
+              <Group align="flex-start" justify="space-between">
+                <Stack gap="sm">
+                  <Controller
+                    control={control}
+                    name="pathFilter"
+                    render={({ field }) => (
+                      <TextInput
+                        disabled={!hasRows}
+                        label="Поиск по пути"
+                        placeholder="Введите часть пути (например, group1/student2)"
+                        value={field.value}
+                        w={520}
+                        onChange={(event) => field.onChange(event.currentTarget.value)}
+                      />
+                    )}
+                  />
+                  <AllOptionsMultiSelect
+                    allLabel="Все метрики"
+                    allValue={ALL_TABLE_METRICS}
+                    disabled={!hasRows}
+                    label="Метрики для таблицы"
+                    options={metricOptions}
+                    searchable
+                    value={selectedTableMetrics}
+                    w={520}
+                    onChange={setSelectedTableMetrics}
+                  />
+                </Stack>
+                <Button disabled={!hasFilteredRows} onClick={downloadMetricsCsv}>
                   Скачать CSV
                 </Button>
               </Group>
 
               {hasFilteredRows ? (
-                <AnalysisTable metrics={metrics} rows={filteredRows} />
+                <AnalysisTable metrics={visibleTableMetrics} rows={filteredRows} />
               ) : showEmptyMetrics ? (
                 <Text c="dimmed">
                   Результаты пока не готовы или запуск не содержит строк для выбранных метрик.

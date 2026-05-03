@@ -1,6 +1,6 @@
-import { GitAnalysisTable } from "@entities/analysis"
+import { GIT_COLUMN_OPTIONS,GitAnalysisTable } from "@entities/analysis"
 import { GitChartsSection } from "@features/gitCharts"
-import { Button, Group, Skeleton, Stack, Tabs, Text, TextInput } from "@mantine/core"
+import { Button, Group, MultiSelect, Skeleton, Stack, Tabs, Text, TextInput } from "@mantine/core"
 import { ChartLineUp, Table as TableIcon } from "@phosphor-icons/react"
 import { useState } from "react"
 import { Controller } from "react-hook-form"
@@ -16,6 +16,9 @@ type Props = {
 
 export function GitResultsSection({ runId, analysisDepth, selectedLevels }: Props) {
   const [contentTab, setContentTab] = useState<string | null>("charts")
+  const [selectedColumns, setSelectedColumns] = useState<string[]>(
+    GIT_COLUMN_OPTIONS.map((option) => option.value)
+  )
   const { isViewLoading, rows } = useGitRunView({ analysisDepth, runId, selectedLevels })
 
   const { control, filteredRows, hasRows, hasFilteredRows, downloadGitCsv } = useGitResults(rows)
@@ -67,31 +70,39 @@ export function GitResultsSection({ runId, analysisDepth, selectedLevels }: Prop
 
           <Tabs.Panel pt="md" value="table">
             <Stack gap="md">
-              <Group align="flex-end" justify="space-between" grow>
-                <Controller
-                  control={control}
-                  name="pathFilter"
-                  render={({ field }) => (
-                    <TextInput
-                      disabled={!hasRows}
-                      label="Поиск по пути"
-                      placeholder="Введите часть пути репозитория"
-                      value={field.value}
-                      onChange={(event) => field.onChange(event.currentTarget.value)}
-                    />
-                  )}
-                />
-                <Button
-                  disabled={!hasFilteredRows}
-                  onClick={downloadGitCsv}
-                  style={{ alignSelf: "flex-end", flexGrow: 0 }}
-                >
+              <Group align="flex-start" justify="space-between">
+                <Stack gap="sm">
+                  <Controller
+                    control={control}
+                    name="pathFilter"
+                    render={({ field }) => (
+                      <TextInput
+                        disabled={!hasRows}
+                        label="Поиск по пути"
+                        placeholder="Введите часть пути репозитория"
+                        value={field.value}
+                        w={520}
+                        onChange={(event) => field.onChange(event.currentTarget.value)}
+                      />
+                    )}
+                  />
+                  <MultiSelect
+                    data={GIT_COLUMN_OPTIONS}
+                    disabled={!hasRows}
+                    label="Столбцы таблицы"
+                    searchable
+                    value={selectedColumns}
+                    w={520}
+                    onChange={setSelectedColumns}
+                  />
+                </Stack>
+                <Button disabled={!hasFilteredRows} onClick={downloadGitCsv}>
                   Скачать CSV
                 </Button>
               </Group>
 
               {hasFilteredRows ? (
-                <GitAnalysisTable rows={filteredRows} />
+                <GitAnalysisTable columns={selectedColumns} rows={filteredRows} />
               ) : (
                 <Text c="dimmed">По заданному фильтру git-строки не найдены.</Text>
               )}

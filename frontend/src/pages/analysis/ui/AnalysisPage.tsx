@@ -1,4 +1,5 @@
 import {
+  type Direction,
   useGetAnalysisJobStatusQuery,
   useGetSavedResultsByRunIdQuery
 } from "@entities/analysis/api"
@@ -6,7 +7,7 @@ import { AnalysisForm, type AnalysisRunResult } from "@features/analysisForm"
 import { Alert, Card, Container, Group, Loader, Progress, Stack, Text, Title } from "@mantine/core"
 import { routes } from "@shared/config/routes"
 import { AnalysisResultsWidget } from "@widgets/analysisResults"
-import { useEffect } from "react"
+import { useCallback, useEffect } from "react"
 import { useNavigate, useSearchParams } from "react-router"
 
 const getUserStageTitle = (
@@ -41,14 +42,30 @@ const formatDuration = (seconds: number | null | undefined): string | null => {
   return minutes > 0 ? `${minutes} мин. ${rest.toString().padStart(2, "0")} сек.` : `${rest} сек.`
 }
 
+const parseDirection = (value: string | null): Direction =>
+  value === "js" || value === "html_css" ? value : "html_css"
+
+const parseBooleanParam = (value: string | null, fallback: boolean): boolean => {
+  if (value === "true") {
+    return true
+  }
+  if (value === "false") {
+    return false
+  }
+  return fallback
+}
+
 export function AnalysisPage() {
   const [searchParams] = useSearchParams()
   const navigate = useNavigate()
 
   const runId = String(searchParams.get("runId") || "").trim()
   const jobId = String(searchParams.get("jobId") || "").trim()
+  const direction = parseDirection(searchParams.get("direction"))
   const rawDepth = Number(searchParams.get("depth") || "")
   const analysisDepth = Number.isFinite(rawDepth) && rawDepth > 0 ? rawDepth : undefined
+  const includeGitMetrics = parseBooleanParam(searchParams.get("includeGitMetrics"), true)
+  const recursive = parseBooleanParam(searchParams.get("recursive"), true)
 
   const { data: jobStatus, isLoading: isJobStatusLoading } = useGetAnalysisJobStatusQuery(jobId, {
     skip: !jobId || Boolean(runId),
@@ -63,6 +80,30 @@ export function AnalysisPage() {
     jobStatus?.status === "running" ||
     Boolean(jobId && isJobStatusLoading)
   const jobFailed = jobStatus?.status === "failed"
+  const handleFormQueryStateChange = useCallback(
+    (values: {
+      depth?: number
+      direction: Direction
+      includeGitMetrics: boolean
+      recursive: boolean
+    }) => {
+      const params = new URLSearchParams(searchParams)
+      params.set("direction", values.direction)
+      params.set("recursive", String(values.recursive))
+      params.set("includeGitMetrics", String(values.includeGitMetrics))
+      if (values.recursive && values.depth) {
+        params.set("depth", String(values.depth))
+      } else {
+        params.delete("depth")
+      }
+
+      const nextSearch = params.toString()
+      if (nextSearch !== searchParams.toString()) {
+        navigate(`${routes.analysis}?${nextSearch}`, { replace: true })
+      }
+    },
+    [navigate, searchParams]
+  )
 
   useEffect(() => {
     if (jobStatus?.status !== "success") {
@@ -78,6 +119,11 @@ export function AnalysisPage() {
       const params = new URLSearchParams()
       params.set("runId", nextRunId)
       params.set("direction", nextDirection)
+      if (analysisDepth) {
+        params.set("depth", String(analysisDepth))
+      }
+      params.set("recursive", String(recursive))
+      params.set("includeGitMetrics", String(includeGitMetrics))
       navigate(`${routes.archive}/${encodeURIComponent(nextPath)}?${params.toString()}`, {
         replace: true
       })
@@ -86,12 +132,18 @@ export function AnalysisPage() {
 
     const params = new URLSearchParams()
     params.set("runId", nextRunId)
+    params.set("direction", direction)
     if (analysisDepth) {
       params.set("depth", String(analysisDepth))
     }
+    params.set("recursive", String(recursive))
+    params.set("includeGitMetrics", String(includeGitMetrics))
     navigate(`${routes.analysis}?${params.toString()}`, { replace: true })
   }, [
     analysisDepth,
+    direction,
+    includeGitMetrics,
+    recursive,
     jobStatus?.result?.direction,
     jobStatus?.result?.path,
     jobStatus?.result?.runId,
@@ -111,17 +163,33 @@ export function AnalysisPage() {
     const params = new URLSearchParams()
     params.set("runId", runId)
     params.set("direction", nextDirection)
+    if (analysisDepth) {
+      params.set("depth", String(analysisDepth))
+    }
+    params.set("recursive", String(recursive))
+    params.set("includeGitMetrics", String(includeGitMetrics))
     navigate(`${routes.archive}/${encodeURIComponent(nextPath)}?${params.toString()}`, {
       replace: true
     })
-  }, [navigate, runDetailsQuery.data?.direction, runDetailsQuery.data?.path, runId])
+  }, [
+    analysisDepth,
+    includeGitMetrics,
+    recursive,
+    navigate,
+    runDetailsQuery.data?.direction,
+    runDetailsQuery.data?.path,
+    runId
+  ])
 
   const handleRunSuccess = (result: AnalysisRunResult) => {
     const params = new URLSearchParams()
     params.set("jobId", result.response.jobId)
+    params.set("direction", result.request.direction)
     if (result.request.depth) {
       params.set("depth", String(result.request.depth))
     }
+    params.set("recursive", String(Boolean(result.request.r)))
+    params.set("includeGitMetrics", String(Boolean(result.request.includeGitMetrics)))
     navigate(`${routes.analysis}?${params.toString()}`)
   }
 
@@ -155,8 +223,15 @@ export function AnalysisPage() {
           <Stack>
             <Title order={3}>Анализ студенческих работ</Title>
             <AnalysisForm
+              initialValues={{
+                depth: analysisDepth,
+                direction,
+                includeGitMetrics,
+                recursive
+              }}
               locked={jobInProgress}
               restoredArchiveName={jobStatus?.archiveName || undefined}
+              onQueryStateChange={handleFormQueryStateChange}
               onSuccess={handleRunSuccess}
             />
           </Stack>

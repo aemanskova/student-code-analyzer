@@ -1,6 +1,7 @@
 import type { AnalysisRow, GitAnalysisRow } from "@entities/analysis/api"
-import { Card, Grid, MultiSelect, Stack, Tabs, Text } from "@mantine/core"
+import { Card, Grid, Stack, Tabs, Text } from "@mantine/core"
 import { CalendarDots, ChartBar } from "@phosphor-icons/react"
+import { AllOptionsMultiSelect } from "@shared/ui"
 import { useEffect, useMemo, useState } from "react"
 import { Controller, useForm, useWatch } from "react-hook-form"
 
@@ -22,6 +23,8 @@ type AnalysisChartsForm = {
 const areArraysEqual = (left: string[], right: string[]): boolean =>
   left.length === right.length && left.every((value, index) => value === right[index])
 
+const DEFAULT_SELECTED_CHART_METRICS = [ALL_METRICS_OPTION]
+
 export function AnalysisCharts({ rows, gitRows = [], selectedMetrics, analysisDepth }: Props) {
   const [chartTab, setChartTab] = useState<string | null>("distribution")
   const form = useForm<AnalysisChartsForm>({
@@ -29,9 +32,9 @@ export function AnalysisCharts({ rows, gitRows = [], selectedMetrics, analysisDe
       selectedMetrics: [ALL_METRICS_OPTION]
     }
   })
-  const selectedChartMetrics = useWatch({ control: form.control, name: "selectedMetrics" }) || [
-    ALL_METRICS_OPTION
-  ]
+  const selectedChartMetrics =
+    useWatch({ control: form.control, name: "selectedMetrics" }) ||
+    DEFAULT_SELECTED_CHART_METRICS
   const gitYearResolver = useMemo(
     () => buildGitYearResolver(gitRows, analysisDepth, null),
     [analysisDepth, gitRows]
@@ -46,10 +49,7 @@ export function AnalysisCharts({ rows, gitRows = [], selectedMetrics, analysisDe
   }, [rows, selectedMetrics])
 
   const metricOptions = useMemo(
-    () => [
-      { value: ALL_METRICS_OPTION, label: "Все метрики" },
-      ...availableMetrics.map((metric) => ({ value: metric, label: metric }))
-    ],
+    () => availableMetrics.map((metric) => ({ value: metric, label: metric })),
     [availableMetrics]
   )
   const metrics = useMemo(() => {
@@ -117,15 +117,16 @@ export function AnalysisCharts({ rows, gitRows = [], selectedMetrics, analysisDe
         control={form.control}
         name="selectedMetrics"
         render={({ field }) => (
-          <MultiSelect
-            clearable={!field.value.includes(ALL_METRICS_OPTION)}
-            data={metricOptions}
+          <AllOptionsMultiSelect
+            allLabel="Все метрики"
+            allValue={ALL_METRICS_OPTION}
             label="Метрики для графиков"
+            options={metricOptions}
             placeholder="Выберите метрики"
             searchable
             value={field.value}
             w={520}
-            onChange={handleMetricChange}
+            onChange={(value) => handleMetricChange(value)}
           />
         )}
       />

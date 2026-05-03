@@ -1,3 +1,4 @@
+export { AllOptionsMultiSelect } from "./all-options-multi-select"
 export { AppBreadcrumbs } from "./breadcrumbs"
 export { ConfirmModal } from "./confirm"
 export { EmptyState } from "./empty"

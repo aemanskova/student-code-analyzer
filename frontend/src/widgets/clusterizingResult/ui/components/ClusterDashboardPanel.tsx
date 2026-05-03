@@ -1,5 +1,6 @@
 import { type ClusteredMetricRow, ClusterMetricBoxPlot } from "@entities/clusterizing"
-import { Card, Grid, MultiSelect, Stack, Text } from "@mantine/core"
+import { Card, Grid, Stack, Text } from "@mantine/core"
+import { AllOptionsMultiSelect } from "@shared/ui"
 import { Controller, type UseFormReturn } from "react-hook-form"
 
 import {
@@ -21,23 +22,15 @@ export function ClusterDashboardPanel({ chartRows, form, metricOptions, visibleM
         control={form.control}
         name="selectedMetrics"
         render={({ field }) => (
-          <MultiSelect
-            clearable={!field.value.includes(ALL_CLUSTER_METRICS)}
-            data={metricOptions}
+          <AllOptionsMultiSelect
+            allLabel="Все метрики"
+            allValue={ALL_CLUSTER_METRICS}
             label="Метрики для графиков"
+            options={metricOptions}
             searchable
             value={field.value}
             w={520}
-            onChange={(value) => {
-              if (
-                value.includes(ALL_CLUSTER_METRICS) &&
-                !field.value.includes(ALL_CLUSTER_METRICS)
-              ) {
-                field.onChange([ALL_CLUSTER_METRICS])
-                return
-              }
-              field.onChange(value.filter((metric) => metric !== ALL_CLUSTER_METRICS))
-            }}
+            onChange={field.onChange}
           />
         )}
       />

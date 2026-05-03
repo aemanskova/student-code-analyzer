@@ -12,6 +12,7 @@ import { useMemo } from "react"
 import { useForm, useWatch } from "react-hook-form"
 
 export const ALL_CLUSTER_METRICS = "__all__"
+export const ALL_CLUSTER_TABLE_METRICS = "__all_table__"
 
 const GIT_METRICS = [
   "active_days",
@@ -25,18 +26,23 @@ const GIT_METRICS = [
 export type ClusterizingResultForm = {
   pathFilter: string
   selectedMetrics: string[]
+  selectedTableMetrics: string[]
 }
 
 export const useClusterizingResult = (data: ClusterizationDetailsResponse) => {
   const form = useForm<ClusterizingResultForm>({
     defaultValues: {
       pathFilter: "",
-      selectedMetrics: [ALL_CLUSTER_METRICS]
+      selectedMetrics: [ALL_CLUSTER_METRICS],
+      selectedTableMetrics: [ALL_CLUSTER_TABLE_METRICS]
     }
   })
   const pathFilter = useWatch({ control: form.control, name: "pathFilter" }) || ""
   const selectedMetrics = useWatch({ control: form.control, name: "selectedMetrics" }) || [
     ALL_CLUSTER_METRICS
+  ]
+  const selectedTableMetrics = useWatch({ control: form.control, name: "selectedTableMetrics" }) || [
+    ALL_CLUSTER_TABLE_METRICS
   ]
   const excludedRows = useMemo(() => data.excludedRows || [], [data.excludedRows])
   const outlierRows = useMemo(() => data.outlierRows || [], [data.outlierRows])
@@ -54,10 +60,11 @@ export const useClusterizingResult = (data: ClusterizationDetailsResponse) => {
   const visibleMetrics = selectedMetrics.includes(ALL_CLUSTER_METRICS)
     ? numericMetrics
     : selectedMetrics.filter((metric) => numericMetrics.includes(metric))
-  const metricOptions = [
-    { value: ALL_CLUSTER_METRICS, label: "Все метрики" },
-    ...numericMetrics.map((metric) => ({ value: metric, label: metric }))
-  ]
+  const metricOptions = numericMetrics.map((metric) => ({ value: metric, label: metric }))
+  const tableMetricOptions = orderedMetrics.map((metric) => ({ value: metric, label: metric }))
+  const visibleTableMetrics = selectedTableMetrics.includes(ALL_CLUSTER_TABLE_METRICS)
+    ? orderedMetrics
+    : selectedTableMetrics.filter((metric) => orderedMetrics.includes(metric))
   const filteredRows = useMemo(() => {
     const query = pathFilter.trim().toLowerCase()
     return query ? data.rows.filter((row) => row.path.toLowerCase().includes(query)) : data.rows
@@ -66,14 +73,14 @@ export const useClusterizingResult = (data: ClusterizationDetailsResponse) => {
     () => [
       { key: "cluster", title: "Кластер", minWidth: 110, render: (row) => row.cluster },
       { key: "path", title: "Папка", minWidth: 320, render: (row) => row.path },
-      ...orderedMetrics.map((metric) => ({
+      ...visibleTableMetrics.map((metric) => ({
         key: metric,
         title: metric,
         minWidth: 160,
         render: (row: ClusteredMetricRow) => toMetricDisplayValue(row.metrics[metric])
       }))
     ],
-    [orderedMetrics]
+    [visibleTableMetrics]
   )
   const plainMetricColumns = useMemo(
     () =>
@@ -91,16 +98,16 @@ export const useClusterizingResult = (data: ClusterizationDetailsResponse) => {
     fileName: string,
     rows: Array<ClusteredMetricRow | ExcludedMetricRow>
   ) => {
-    const headers =
-      rows === filteredRows ? ["cluster", "path", ...orderedMetrics] : ["path", ...orderedMetrics]
+    const csvMetrics = rows === filteredRows ? visibleTableMetrics : orderedMetrics
+    const headers = rows === filteredRows ? ["cluster", "path", ...csvMetrics] : ["path", ...csvMetrics]
     const csvRows = rows.map((row) =>
       "cluster" in row
         ? [
             String(row.cluster),
             row.path,
-            ...orderedMetrics.map((metric) => getMetricCsvValue(row.metrics, metric))
+            ...csvMetrics.map((metric) => getMetricCsvValue(row.metrics, metric))
           ]
-        : [row.path, ...orderedMetrics.map((metric) => getMetricCsvValue(row.metrics, metric))]
+        : [row.path, ...csvMetrics.map((metric) => getMetricCsvValue(row.metrics, metric))]
     )
 
     downloadCsvFile(fileName, buildCsv(headers, csvRows))
@@ -128,7 +135,9 @@ export const useClusterizingResult = (data: ClusterizationDetailsResponse) => {
     ] as Array<VirtualizedColumn<ClusteredMetricRow>>,
     outlierRows,
     selectedMetrics,
+    tableMetricOptions,
     tableColumns,
+    visibleTableMetrics,
     visibleMetrics
   }
 }

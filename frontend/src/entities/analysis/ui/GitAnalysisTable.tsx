@@ -3,6 +3,7 @@ import { Text } from "@mantine/core"
 import { type VirtualizedColumn, VirtualizedTable } from "@shared/ui/table"
 
 type Props = {
+  columns?: string[]
   rows: GitAnalysisRow[]
 }
 
@@ -21,18 +22,22 @@ const GIT_COLUMNS: Array<VirtualizedColumn<GitAnalysisRow>> = [
   { key: "message", title: "Сообщение", minWidth: 320, render: (row) => row.message }
 ]
 
-export function GitAnalysisTable({ rows }: Props) {
+export function GitAnalysisTable({ columns, rows }: Props) {
   if (!rows.length) {
     return <Text c="dimmed">Git-метрики отсутствуют.</Text>
   }
 
+  const visibleColumns = columns?.length
+    ? GIT_COLUMNS.filter((column) => columns.includes(column.key))
+    : GIT_COLUMNS
+
   return (
     <VirtualizedTable
-      columns={GIT_COLUMNS}
+      columns={visibleColumns}
       data={rows}
       getRowKey={(row) => `${row.path}:${row.branch}:${row.hash}:${row.filename}`}
       maxHeight={520}
-      minTableWidth={1800}
+      minTableWidth={Math.max(760, visibleColumns.length * 150)}
       overscan={160}
       rowHeight={42}
     />
