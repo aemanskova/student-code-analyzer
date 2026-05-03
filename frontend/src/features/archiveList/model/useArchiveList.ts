@@ -109,7 +109,6 @@ export const useArchiveList = () => {
         return
       }
       await deleteSavedRun({ runId: pendingDeleteRun.runId }).unwrap()
-      await query.refetch()
       setPendingDeleteRun(null)
     },
     setDateFrom: (value: Date | null) => form.setValue("dateFrom", value),

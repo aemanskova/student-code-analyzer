@@ -17,6 +17,7 @@ import { promisify } from "node:util";
 import { Readable, Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import * as unzipper from "unzipper";
+import * as yauzl from "yauzl";
 import {
   CompleteMultipartUploadCommand,
   AbortMultipartUploadCommand,
@@ -3388,6 +3389,14 @@ export class AnalysisService implements OnModuleInit {
     );
   }
 
+  private describeError(error: unknown): string {
+    if (error instanceof Error) {
+      const details = [error.name, error.message].filter(Boolean).join(": ");
+      return error.stack ? `${details}\n${error.stack}` : details;
+    }
+    return String(error);
+  }
+
   private getInvalidZipMessage(): string {
     return "Не удалось прочитать ZIP-архив. Файл поврежден, недоступен или загружен не полностью.";
   }
@@ -3905,7 +3914,8 @@ export class AnalysisService implements OnModuleInit {
     return this.extractZipReadableToDir(sourceStream, outputRoot, {
       expectedBytes: zipStat.size,
       onProgress,
-      entryFilter
+      entryFilter,
+      debugSource: zipPath
     });
   }
 
@@ -3917,6 +3927,7 @@ export class AnalysisService implements OnModuleInit {
       onProgress?: (progressPercent: number) => Promise<void> | void;
       entryFilter?: ZipEntryFilter;
       preserveMultiRootShape?: boolean;
+      debugSource?: string;
     } = {}
   ): Promise<number> {
     try {
@@ -4027,11 +4038,210 @@ export class AnalysisService implements OnModuleInit {
       return extractedFiles;
     } catch (error) {
       if (this.isZipReadFailure(error)) {
-        const sourceStream = await this.getS3ObjectBody(key);
-        return this.extractZipReadableToDir(sourceStream, outputRoot, options);
+        this.logger.warn(
+          `Не удалось прочитать центральную директорию ZIP через unzipper из S3 (${key}), пробуем yauzl range-reader: ${this.describeError(
+            error
+          )}`
+        );
+        return this.extractS3ZipObjectToDirWithYauzl(key, outputRoot, options);
       }
       throw error;
     }
+  }
+
+  private createS3YauzlReader(key: string): yauzl.RandomAccessReader {
+    const service = this;
+
+    return new (class extends yauzl.RandomAccessReader {
+      _readStreamForRange(start: number, end: number) {
+        const output = new Readable({
+          read() {
+            // Data is pushed asynchronously from S3 below.
+          }
+        });
+
+        service
+          .getS3Client()
+          .send(
+            new GetObjectCommand({
+              Bucket: service.getS3Bucket(),
+              Key: key,
+              Range: `bytes=${start}-${end - 1}`
+            })
+          )
+          .then(async (response) => {
+            const body = response.Body as AsyncIterable<Uint8Array> | undefined;
+            if (!body) {
+              throw new Error("S3 object body is empty");
+            }
+            for await (const chunk of body) {
+              output.push(Buffer.from(chunk));
+            }
+            output.push(null);
+          })
+          .catch((error) => output.destroy(error));
+
+        return output;
+      }
+
+      _destroy(callback: (error?: Error | null) => void) {
+        callback();
+      }
+    })();
+  }
+
+  private async openS3ZipFileWithYauzl(key: string, totalSize: number): Promise<yauzl.ZipFile> {
+    const reader = this.createS3YauzlReader(key);
+
+    return new Promise((resolve, reject) => {
+      yauzl.fromRandomAccessReader(
+        reader,
+        totalSize,
+        {
+          lazyEntries: true,
+          strictFileNames: false,
+          validateEntrySizes: true
+        },
+        (error, zipFile) => {
+          if (error) {
+            reject(error);
+            return;
+          }
+          resolve(zipFile);
+        }
+      );
+    });
+  }
+
+  private openYauzlEntryReadStream(zipFile: yauzl.ZipFile, entry: yauzl.Entry): Promise<Readable> {
+    return new Promise((resolve, reject) => {
+      zipFile.openReadStream(entry, (error, stream) => {
+        if (error) {
+          reject(error);
+          return;
+        }
+        resolve(stream);
+      });
+    });
+  }
+
+  private async extractS3ZipObjectToDirWithYauzl(
+    key: string,
+    outputRoot: string,
+    options: {
+      expectedBytes?: number;
+      onProgress?: (progressPercent: number) => Promise<void> | void;
+      entryFilter?: ZipEntryFilter;
+      preserveMultiRootShape?: boolean;
+      debugSource?: string;
+    } = {}
+  ): Promise<number> {
+    const head = options.expectedBytes ? null : await this.headS3SourceArchive(key);
+    const objectSize = Math.max(1, Number(options.expectedBytes || head?.ContentLength || 0));
+    const zipFile = await this.openS3ZipFileWithYauzl(key, objectSize);
+    const topLevelDirs = new Set<string>();
+    const normalizedRoot = `${path.resolve(outputRoot)}${path.sep}`;
+    let extractedFiles = 0;
+    let processedEntries = 0;
+    let lastReported = 0;
+
+    const reportProgress = async () => {
+      if (!options.onProgress || !zipFile.entryCount) {
+        return;
+      }
+      const percent = Math.floor((processedEntries / zipFile.entryCount) * 100);
+      if (percent >= lastReported + 2 || percent === 100) {
+        lastReported = percent;
+        await options.onProgress(percent);
+      }
+    };
+
+    return new Promise((resolve, reject) => {
+      let settled = false;
+
+      const fail = (error: unknown) => {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        zipFile.close();
+        reject(error);
+      };
+
+      zipFile.on("error", fail);
+      zipFile.on("entry", (entry: yauzl.Entry) => {
+        void (async () => {
+          try {
+            processedEntries += 1;
+            const entryPath = String(entry.fileName || "");
+            const entrySegments = this.normalizePath(entryPath)
+              .replace(/^\/+|\/+$/g, "")
+              .split("/")
+              .filter(Boolean);
+            const firstSegment = entrySegments[0] || "";
+            if (
+              firstSegment &&
+              firstSegment.toLowerCase() !== "__macosx" &&
+              !firstSegment.startsWith(".")
+            ) {
+              topLevelDirs.add(firstSegment);
+            }
+
+            const isDirectory = /[/\\]$/.test(entryPath);
+            const relativePath = this.sanitizeRelativePath(entryPath, extractedFiles);
+            if (isDirectory || (options.entryFilter && !options.entryFilter(relativePath))) {
+              await reportProgress();
+              zipFile.readEntry();
+              return;
+            }
+
+            const absolutePath = path.resolve(outputRoot, relativePath);
+            if (!absolutePath.startsWith(normalizedRoot)) {
+              await reportProgress();
+              zipFile.readEntry();
+              return;
+            }
+
+            await fs.mkdir(path.dirname(absolutePath), { recursive: true });
+            const readStream = await this.openYauzlEntryReadStream(zipFile, entry);
+            await pipeline(readStream, createWriteStream(absolutePath));
+            extractedFiles += 1;
+            await reportProgress();
+            zipFile.readEntry();
+          } catch (error) {
+            this.logger.error(
+              `Yauzl S3 ZIP extraction failed (${options.debugSource || key}) at entry ${
+                entry.fileName
+              }: ${this.describeError(error)}`
+            );
+            fail(error);
+          }
+        })();
+      });
+
+      zipFile.on("end", () => {
+        void (async () => {
+          try {
+            if (options.preserveMultiRootShape && topLevelDirs.size > 1) {
+              await fs.mkdir(path.join(outputRoot, "__analysis_root_marker__"), {
+                recursive: true
+              });
+            }
+            if (options.onProgress) {
+              await options.onProgress(100);
+            }
+            if (!settled) {
+              settled = true;
+              resolve(extractedFiles);
+            }
+          } catch (error) {
+            fail(error);
+          }
+        })();
+      });
+
+      zipFile.readEntry();
+    });
   }
 
   private async extractZipReadableToDir(
@@ -4042,6 +4252,7 @@ export class AnalysisService implements OnModuleInit {
       onProgress?: (progressPercent: number) => Promise<void> | void;
       entryFilter?: ZipEntryFilter;
       preserveMultiRootShape?: boolean;
+      debugSource?: string;
     } = {}
   ): Promise<number> {
     try {
@@ -4119,6 +4330,11 @@ export class AnalysisService implements OnModuleInit {
       return extractedFiles;
     } catch (error) {
       if (this.isZipReadFailure(error)) {
+        this.logger.error(
+          `ZIP stream read failed (${options.debugSource || "unknown source"}): ${this.describeError(
+            error
+          )}`
+        );
         throw new BadRequestException(this.getInvalidZipMessage());
       }
       throw error;
@@ -4740,7 +4956,13 @@ export class AnalysisService implements OnModuleInit {
         }
       }
       if ("key" in job.input) {
-        await this.deleteS3ObjectIfOwned(job.input.userId, job.input.key);
+        if (message === this.getInvalidZipMessage()) {
+          this.logger.warn(
+            `Debug: сохраняем S3-архив после ошибки чтения ZIP для проверки: ${job.input.key}`
+          );
+        } else {
+          await this.deleteS3ObjectIfOwned(job.input.userId, job.input.key);
+        }
       }
     } finally {
       clearInterval(heartbeatTimer);

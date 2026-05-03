@@ -1,6 +1,8 @@
 import type { Direction } from "@entities/analysis/api"
 import { Group, Select, TextInput } from "@mantine/core"
 import { DatePickerInput } from "@mantine/dates"
+import { useEffect } from "react"
+import { Controller, useForm } from "react-hook-form"
 
 import { DIRECTION_OPTIONS } from "../model/constants"
 
@@ -15,6 +17,13 @@ type Props = {
   onDateToChange: (value: Date | null) => void
 }
 
+type ArchiveListFiltersForm = {
+  dateFrom: Date | null
+  dateTo: Date | null
+  directionFilter: Direction | null
+  pathFilter: string
+}
+
 export const ArchiveListFilters = ({
   pathFilter,
   directionFilter,
@@ -24,35 +33,90 @@ export const ArchiveListFilters = ({
   onDirectionChange,
   onDateFromChange,
   onDateToChange
-}: Props) => (
-  <Group align="end" grow>
-    <TextInput
-      label="Путь"
-      placeholder="Введите часть пути"
-      value={pathFilter}
-      onChange={(event) => onPathChange(event.currentTarget.value)}
-    />
-    <Select
-      clearable
-      data={DIRECTION_OPTIONS}
-      label="Направление"
-      placeholder="Любое"
-      value={directionFilter}
-      onChange={(value) => onDirectionChange((value as Direction | null) || null)}
-    />
-    <DatePickerInput
-      clearable
-      label="Дата с"
-      placeholder="Выберите дату"
-      value={dateFrom}
-      onChange={(value) => onDateFromChange(value ? new Date(value) : null)}
-    />
-    <DatePickerInput
-      clearable
-      label="Дата по"
-      placeholder="Выберите дату"
-      value={dateTo}
-      onChange={(value) => onDateToChange(value ? new Date(value) : null)}
-    />
-  </Group>
-)
+}: Props) => {
+  const form = useForm<ArchiveListFiltersForm>({
+    defaultValues: {
+      dateFrom,
+      dateTo,
+      directionFilter,
+      pathFilter
+    }
+  })
+
+  useEffect(() => {
+    form.reset({ dateFrom, dateTo, directionFilter, pathFilter })
+  }, [dateFrom, dateTo, directionFilter, form, pathFilter])
+
+  return (
+    <Group align="end" grow>
+      <Controller
+        control={form.control}
+        name="pathFilter"
+        render={({ field }) => (
+          <TextInput
+            label="Путь"
+            placeholder="Введите часть пути"
+            value={field.value}
+            onChange={(event) => {
+              const value = event.currentTarget.value
+              field.onChange(value)
+              onPathChange(value)
+            }}
+          />
+        )}
+      />
+      <Controller
+        control={form.control}
+        name="directionFilter"
+        render={({ field }) => (
+          <Select
+            clearable
+            data={DIRECTION_OPTIONS}
+            label="Направление"
+            placeholder="Любое"
+            value={field.value}
+            onChange={(value) => {
+              const nextValue = (value as Direction | null) || null
+              field.onChange(nextValue)
+              onDirectionChange(nextValue)
+            }}
+          />
+        )}
+      />
+      <Controller
+        control={form.control}
+        name="dateFrom"
+        render={({ field }) => (
+          <DatePickerInput
+            clearable
+            label="Дата с"
+            placeholder="Выберите дату"
+            value={field.value}
+            onChange={(value) => {
+              const nextValue = value ? new Date(value) : null
+              field.onChange(nextValue)
+              onDateFromChange(nextValue)
+            }}
+          />
+        )}
+      />
+      <Controller
+        control={form.control}
+        name="dateTo"
+        render={({ field }) => (
+          <DatePickerInput
+            clearable
+            label="Дата по"
+            placeholder="Выберите дату"
+            value={field.value}
+            onChange={(value) => {
+              const nextValue = value ? new Date(value) : null
+              field.onChange(nextValue)
+              onDateToChange(nextValue)
+            }}
+          />
+        )}
+      />
+    </Group>
+  )
+}

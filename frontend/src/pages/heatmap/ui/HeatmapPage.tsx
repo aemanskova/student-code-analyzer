@@ -22,6 +22,7 @@ import { routes } from "@shared/config/routes"
 import { ConfirmModal, EmptyState } from "@shared/ui"
 import { type VirtualizedColumn, VirtualizedTable } from "@shared/ui/table"
 import { useMemo, useState } from "react"
+import { Controller, useForm, useWatch } from "react-hook-form"
 import { Link, NavLink } from "react-router"
 
 const PAGE_SIZE = 8
@@ -44,10 +45,23 @@ const formatDateParam = (value: Date | null): string | undefined => {
   return `${year}-${month}-${day}`
 }
 
+type HeatmapFiltersForm = {
+  dateFrom: Date | null
+  dateTo: Date | null
+  folder: string
+}
+
 export function HeatmapPage() {
-  const [folder, setFolder] = useState("")
-  const [dateFrom, setDateFrom] = useState<Date | null>(null)
-  const [dateTo, setDateTo] = useState<Date | null>(null)
+  const filtersForm = useForm<HeatmapFiltersForm>({
+    defaultValues: {
+      dateFrom: null,
+      dateTo: null,
+      folder: ""
+    }
+  })
+  const folder = useWatch({ control: filtersForm.control, name: "folder" }) || ""
+  const dateFrom = useWatch({ control: filtersForm.control, name: "dateFrom" })
+  const dateTo = useWatch({ control: filtersForm.control, name: "dateTo" })
   const [page, setPage] = useState(1)
   const [pendingDelete, setPendingDelete] = useState<{ jobId: string; folder: string } | null>(null)
   const [deleteStandaloneHeatmap, { isLoading: isDeleting }] = useDeleteStandaloneHeatmapMutation()
@@ -61,7 +75,7 @@ export function HeatmapPage() {
     [dateFrom, dateTo, folder]
   )
 
-  const { data, isFetching, isLoading, refetch } = useGetStandaloneHeatmapListQuery(query)
+  const { data, isFetching, isLoading } = useGetStandaloneHeatmapListQuery(query)
   const items = useMemo(() => data?.data || [], [data?.data])
 
   const totalPages = Math.max(1, Math.ceil(items.length / PAGE_SIZE))
@@ -137,34 +151,52 @@ export function HeatmapPage() {
         <Card p="md">
           <Stack gap="md">
             <Group align="end" grow>
-              <TextInput
-                label="Путь"
-                placeholder="Введите часть пути"
-                value={folder}
-                onChange={(event) => {
-                  setFolder(event.currentTarget.value)
-                  setPage(1)
-                }}
+              <Controller
+                control={filtersForm.control}
+                name="folder"
+                render={({ field }) => (
+                  <TextInput
+                    label="Путь"
+                    placeholder="Введите часть пути"
+                    value={field.value}
+                    onChange={(event) => {
+                      field.onChange(event.currentTarget.value)
+                      setPage(1)
+                    }}
+                  />
+                )}
               />
-              <DatePickerInput
-                clearable
-                label="Дата с"
-                placeholder="Выберите дату"
-                value={dateFrom}
-                onChange={(value) => {
-                  setDateFrom(value ? new Date(value) : null)
-                  setPage(1)
-                }}
+              <Controller
+                control={filtersForm.control}
+                name="dateFrom"
+                render={({ field }) => (
+                  <DatePickerInput
+                    clearable
+                    label="Дата с"
+                    placeholder="Выберите дату"
+                    value={field.value}
+                    onChange={(value) => {
+                      field.onChange(value ? new Date(value) : null)
+                      setPage(1)
+                    }}
+                  />
+                )}
               />
-              <DatePickerInput
-                clearable
-                label="Дата по"
-                placeholder="Выберите дату"
-                value={dateTo}
-                onChange={(value) => {
-                  setDateTo(value ? new Date(value) : null)
-                  setPage(1)
-                }}
+              <Controller
+                control={filtersForm.control}
+                name="dateTo"
+                render={({ field }) => (
+                  <DatePickerInput
+                    clearable
+                    label="Дата по"
+                    placeholder="Выберите дату"
+                    value={field.value}
+                    onChange={(value) => {
+                      field.onChange(value ? new Date(value) : null)
+                      setPage(1)
+                    }}
+                  />
+                )}
               />
             </Group>
 
@@ -210,7 +242,6 @@ export function HeatmapPage() {
             return
           }
           await deleteStandaloneHeatmap({ jobId: pendingDelete.jobId }).unwrap()
-          await refetch()
           setPendingDelete(null)
         }}
       />

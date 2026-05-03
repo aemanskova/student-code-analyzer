@@ -14,15 +14,15 @@ import {
   Text,
   Title
 } from "@mantine/core"
+import { formatCountWithRussianNoun } from "@shared/lib"
 import { scaleLinear } from "d3-scale"
 import { interpolateYlOrRd } from "d3-scale-chromatic"
-import { formatCountWithRussianNoun } from "@shared/lib"
 import { useState } from "react"
 
 import {
   HEATMAP_MAX_WORKS,
-  usePlagiarismRunView,
-  type HeatmapArchiveItem
+  type HeatmapArchiveItem,
+  usePlagiarismRunView
 } from "../model/usePlagiarismRunView"
 
 type Props = {

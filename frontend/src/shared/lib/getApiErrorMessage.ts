@@ -3,7 +3,9 @@ import { isPlainObject } from "./common"
 type ErrorWithData = {
   status?: number | string
   error?: string
+  message?: string
   data?: unknown
+  details?: unknown
 }
 
 const extractText = (value: unknown): string | null => {
@@ -29,7 +31,12 @@ export const getApiErrorMessage = (error: unknown, fallback: string): string => 
 
   if (isPlainObject(error)) {
     const typed = error as ErrorWithData
-    const rawText = extractText(typed.data) || extractText(typed.error) || extractText(error)
+    const rawText =
+      extractText(typed.message) ||
+      extractText(typed.details) ||
+      extractText(typed.data) ||
+      extractText(typed.error) ||
+      extractText(error)
     const text = (rawText || "").toLowerCase()
 
     if (text.includes("aborted")) {

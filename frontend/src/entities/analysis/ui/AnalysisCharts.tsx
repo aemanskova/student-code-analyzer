@@ -1,13 +1,10 @@
 import type { AnalysisRow, GitAnalysisRow } from "@entities/analysis/api"
 import { Card, Grid, MultiSelect, Stack, Tabs, Text } from "@mantine/core"
 import { CalendarDots, ChartBar } from "@phosphor-icons/react"
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
+import { Controller, useForm, useWatch } from "react-hook-form"
 
-import {
-  ALL_METRICS_OPTION,
-  buildGitYearResolver,
-  useMetricSelection
-} from "../model/analysis-charts"
+import { ALL_METRICS_OPTION, buildGitYearResolver } from "../model/analysis-charts"
 import { getNumericMetrics } from "../model/helpers"
 import { MetricHistogram, MetricYearViolinChart } from "./analysis-charts"
 
@@ -18,8 +15,23 @@ type Props = {
   analysisDepth?: number
 }
 
+type AnalysisChartsForm = {
+  selectedMetrics: string[]
+}
+
+const areArraysEqual = (left: string[], right: string[]): boolean =>
+  left.length === right.length && left.every((value, index) => value === right[index])
+
 export function AnalysisCharts({ rows, gitRows = [], selectedMetrics, analysisDepth }: Props) {
   const [chartTab, setChartTab] = useState<string | null>("distribution")
+  const form = useForm<AnalysisChartsForm>({
+    defaultValues: {
+      selectedMetrics: [ALL_METRICS_OPTION]
+    }
+  })
+  const selectedChartMetrics = useWatch({ control: form.control, name: "selectedMetrics" }) || [
+    ALL_METRICS_OPTION
+  ]
   const gitYearResolver = useMemo(
     () => buildGitYearResolver(gitRows, analysisDepth, null),
     [analysisDepth, gitRows]
@@ -33,12 +45,59 @@ export function AnalysisCharts({ rows, gitRows = [], selectedMetrics, analysisDe
     return selectedMetrics.filter((metric) => numericMetrics.includes(metric))
   }, [rows, selectedMetrics])
 
-  const {
-    handleChange,
-    metrics,
-    metricOptions,
-    selectedMetrics: selectedChartMetrics
-  } = useMetricSelection({ availableMetrics })
+  const metricOptions = useMemo(
+    () => [
+      { value: ALL_METRICS_OPTION, label: "Все метрики" },
+      ...availableMetrics.map((metric) => ({ value: metric, label: metric }))
+    ],
+    [availableMetrics]
+  )
+  const metrics = useMemo(() => {
+    if (selectedChartMetrics.includes(ALL_METRICS_OPTION)) {
+      return availableMetrics
+    }
+    return selectedChartMetrics.filter((metric) => availableMetrics.includes(metric))
+  }, [availableMetrics, selectedChartMetrics])
+
+  useEffect(() => {
+    if (selectedChartMetrics.includes(ALL_METRICS_OPTION)) {
+      return
+    }
+    const filteredMetrics = selectedChartMetrics.filter((metric) =>
+      availableMetrics.includes(metric)
+    )
+    const nextMetrics = filteredMetrics.length ? filteredMetrics : [ALL_METRICS_OPTION]
+    if (!areArraysEqual(selectedChartMetrics, nextMetrics)) {
+      form.setValue("selectedMetrics", nextMetrics)
+    }
+  }, [availableMetrics, form, selectedChartMetrics])
+
+  const handleMetricChange = (values: string[]) => {
+    const normalizedValues = values.filter(
+      (value) => value === ALL_METRICS_OPTION || availableMetrics.includes(value)
+    )
+    if (!normalizedValues.length) {
+      form.setValue("selectedMetrics", [ALL_METRICS_OPTION])
+      return
+    }
+
+    const hadAllBefore = selectedChartMetrics.includes(ALL_METRICS_OPTION)
+    const hasAllNow = normalizedValues.includes(ALL_METRICS_OPTION)
+    if (hasAllNow && normalizedValues.length === 1) {
+      form.setValue("selectedMetrics", [ALL_METRICS_OPTION])
+      return
+    }
+    if (hasAllNow && normalizedValues.length > 1) {
+      form.setValue(
+        "selectedMetrics",
+        hadAllBefore
+          ? normalizedValues.filter((value) => value !== ALL_METRICS_OPTION)
+          : [ALL_METRICS_OPTION]
+      )
+      return
+    }
+    form.setValue("selectedMetrics", normalizedValues)
+  }
 
   if (!rows.length) {
     return <Text c="dimmed">Нет данных для построения графиков</Text>
@@ -54,15 +113,21 @@ export function AnalysisCharts({ rows, gitRows = [], selectedMetrics, analysisDe
 
   return (
     <Stack gap="md">
-      <MultiSelect
-        clearable={!selectedChartMetrics.includes(ALL_METRICS_OPTION)}
-        data={metricOptions}
-        label="Метрики для графиков"
-        placeholder="Выберите метрики"
-        searchable
-        value={selectedChartMetrics}
-        w={520}
-        onChange={handleChange}
+      <Controller
+        control={form.control}
+        name="selectedMetrics"
+        render={({ field }) => (
+          <MultiSelect
+            clearable={!field.value.includes(ALL_METRICS_OPTION)}
+            data={metricOptions}
+            label="Метрики для графиков"
+            placeholder="Выберите метрики"
+            searchable
+            value={field.value}
+            w={520}
+            onChange={handleMetricChange}
+          />
+        )}
       />
 
       <Tabs keepMounted={false} value={chartTab} onChange={setChartTab}>

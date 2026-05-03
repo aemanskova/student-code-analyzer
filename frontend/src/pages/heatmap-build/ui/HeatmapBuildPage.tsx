@@ -17,21 +17,31 @@ import {
   Text,
   Title
 } from "@mantine/core"
-import { InfoNotice } from "@shared/ui"
+import { WarningCircle } from "@phosphor-icons/react"
 import { routes } from "@shared/config/routes"
 import { getApiErrorMessage } from "@shared/lib"
-import { WarningCircle } from "@phosphor-icons/react"
+import { InfoNotice } from "@shared/ui"
 import { useCallback, useEffect, useState } from "react"
+import { Controller, useForm, useWatch } from "react-hook-form"
 import { useNavigate, useSearchParams } from "react-router"
 
 const HEATMAP_FIXED_DEPTH = 2
 const HEATMAP_MAX_WORKS = 100
 const HEATMAP_MAX_ARCHIVE_MB = 5000
 
+type HeatmapBuildForm = {
+  file: File | null
+}
+
 export function HeatmapBuildPage() {
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
-  const [file, setFile] = useState<File | null>(null)
+  const form = useForm<HeatmapBuildForm>({
+    defaultValues: {
+      file: null
+    }
+  })
+  const file = useWatch({ control: form.control, name: "file" })
   const [archive, setArchive] = useState<UploadedArchiveInfo | null>(null)
   const buildJobId = String(searchParams.get("jobId") || "").trim()
   const [error, setError] = useState<string | null>(null)
@@ -183,22 +193,28 @@ export function HeatmapBuildPage() {
             <Text c="dimmed" size="sm">
               Максимальный размер архива для построения тепловой карты: {HEATMAP_MAX_ARCHIVE_MB} MB.
             </Text>
-            <FileInput
-              accept=".zip,application/zip"
-              disabled={archiveLocked}
-              label="Архив"
-              placeholder={activeArchiveName || "Выберите ZIP"}
-              value={file}
-              onChange={(nextFile) => {
-                if (archiveLocked) {
-                  return
-                }
-                setFile(nextFile)
-                setArchive(null)
-                setError(null)
-                setValidationInfo(null)
-                clearBuildJobParam()
-              }}
+            <Controller
+              control={form.control}
+              name="file"
+              render={({ field }) => (
+                <FileInput
+                  accept=".zip,application/zip"
+                  disabled={archiveLocked}
+                  label="Архив"
+                  placeholder={activeArchiveName || "Выберите ZIP"}
+                  value={field.value}
+                  onChange={(nextFile) => {
+                    if (archiveLocked) {
+                      return
+                    }
+                    field.onChange(nextFile)
+                    setArchive(null)
+                    setError(null)
+                    setValidationInfo(null)
+                    clearBuildJobParam()
+                  }}
+                />
+              )}
             />
             <ArchiveUploadStep
               disabled={archiveLocked}

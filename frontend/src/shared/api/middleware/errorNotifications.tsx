@@ -1,55 +1,29 @@
 import { notifications } from "@mantine/notifications"
 import { XIcon } from "@phosphor-icons/react"
 import { createListenerMiddleware, isRejectedWithValue, type Middleware } from "@reduxjs/toolkit"
+import type { AppQueryError } from "@shared/api/baseApi"
 import { isPlainObject } from "@shared/lib"
 
-type ErrorPayload = {
-  status?: number | string
-  originalStatus?: number
-}
-
-const getStatus = (payload: unknown): number | string | null => {
+const getError = (payload: unknown): AppQueryError | null => {
   if (!payload || !isPlainObject(payload)) {
     return null
   }
-
-  const error = payload as ErrorPayload
-
-  if (typeof error.status === "number" || typeof error.status === "string") {
-    return error.status
-  }
-
-  if (typeof error.originalStatus === "number") {
-    return error.originalStatus
-  }
-
-  return null
+  return payload as AppQueryError
 }
 
-const getMessage = (payload: unknown): string => {
-  const error = payload as ErrorPayload
+const getStatus = (error: AppQueryError | null): number | string | null =>
+  error?.status || error?.originalStatus || null
 
-  if (
-    isPlainObject(error) &&
-    "data" in error &&
-    isPlainObject(error.data) &&
-    "message" in error.data &&
-    error.data.message &&
-    typeof error.data.message === "string"
-  ) {
-    return error.data.message
-  }
-
-  return "Попробуйте еще раз"
-}
+const getMessage = (error: AppQueryError | null): string => error?.message || "Попробуйте еще раз"
 
 const errorNotificationsListener = createListenerMiddleware()
 
 errorNotificationsListener.startListening({
   matcher: isRejectedWithValue,
   effect: (action) => {
-    const status = getStatus(action.payload)
-    const message = getMessage(action.payload)
+    const error = getError(action.payload)
+    const status = getStatus(error)
+    const message = getMessage(error)
 
     notifications.show({
       title: status ? `Запрос завершился с ошибкой: ${status}` : "Запрос завершился с ошибкой",
