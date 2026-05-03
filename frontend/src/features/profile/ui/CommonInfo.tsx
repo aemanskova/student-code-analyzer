@@ -24,30 +24,33 @@ export function CommonInfo() {
   const { data } = useGetMeQuery()
 
   return (
-    <Card h="100%" w="100%">
-      <Stack>
-        <Group align="center" justify="space-between" wrap="wrap">
-          <Group>
-            <Avatar color="indigo" radius="xl" size={48} variant="filled">
+    <Card h="100%" p="lg" w="100%" withBorder>
+      <Stack gap="lg">
+        <Group align="flex-start" justify="space-between" wrap="wrap">
+          <Group align="center">
+            <Avatar color="myColor.6" radius="xl" size={52} variant="filled">
               {getInitials(data?.name, data?.surname)}
             </Avatar>
-            <Stack gap="md">
-              <Title order={4}>Профиль</Title>
+            <Stack gap={2}>
+              <Title order={4}>
+                {data?.name || data?.surname
+                  ? `${data?.name ?? ""} ${data?.surname ?? ""}`
+                  : "Профиль"}
+              </Title>
               <Text c="dimmed" size="sm">
-                Основная информация
+                {data?.email ?? "Основная информация"}
               </Text>
             </Stack>
           </Group>
-          <Badge color={data?.isActive ? "teal" : "gray"} variant="light">
+          <Badge color={data?.isActive ? "teal" : "gray"} radius="sm" variant="light">
             {data?.isActive ? "Активен" : "Неактивен"}
           </Badge>
         </Group>
 
         <Divider />
-        <Title order={4}>Информация</Title>
+        <Title order={5}>Информация</Title>
 
-        <SimpleGrid cols={1} spacing="xs">
-          <Divider />
+        <SimpleGrid cols={1} spacing="md">
           <Box>
             <Text c="dimmed" fz="xs" tt="uppercase" fw={600}>
               Роль

@@ -1,3 +1,3 @@
-export { DEFAULT_VALUES } from "./constants"
-export type { LoginFormValues } from "./types"
-export { validationSchema } from "./validator"
+export { LOGIN_DEFAULT_VALUES, REGISTER_DEFAULT_VALUES } from "./constants"
+export type { LoginFormValues, RegisterFormValues } from "./types"
+export { loginValidationSchema, registerValidationSchema } from "./validator"

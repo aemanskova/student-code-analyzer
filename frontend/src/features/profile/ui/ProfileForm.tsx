@@ -1,6 +1,6 @@
 import type { ProfileFormValues } from "@features/profile/model"
 import { zodResolver } from "@hookform/resolvers/zod"
-import { Button, Card, Grid, Group, Stack, TextInput, Title } from "@mantine/core"
+import { Button, Card, Grid, Group, Stack, Text, TextInput, Title } from "@mantine/core"
 import { useGetMeQuery, useUpdateMeMutation } from "@shared/api/auth"
 import { useEffect } from "react"
 import { Controller, useForm } from "react-hook-form"
@@ -46,9 +46,14 @@ export function ProfileForm() {
   }
 
   return (
-    <Card h="100%" w="100%">
-      <Stack>
-        <Title order={4}>Редактирование данных</Title>
+    <Card h="100%" p="lg" w="100%" withBorder>
+      <Stack gap="lg">
+        <Stack gap={4}>
+          <Title order={4}>Редактирование данных</Title>
+          <Text c="dimmed" size="sm">
+            Обновите имя, email и GitHub username
+          </Text>
+        </Stack>
         <Grid>
           <Grid.Col span={{ base: 12, sm: 6 }}>
             <Controller
@@ -118,7 +123,6 @@ export function ProfileForm() {
           <Button
             loading={isUpdating || isFetching}
             onClick={form.handleSubmit(submitHandler)}
-            radius="md"
             type="button"
           >
             Сохранить изменения
