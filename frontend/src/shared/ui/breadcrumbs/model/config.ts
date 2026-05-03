@@ -81,6 +81,18 @@ export const BREADCRUMB_RULES: BreadcrumbRule[] = [
     label: "Карта"
   },
   {
+    path: routes.clusterizing,
+    label: "Кластеризация"
+  },
+  {
+    path: routes.clusterizingCreate,
+    label: "Новая кластеризация"
+  },
+  {
+    path: routes.clusterizingDetailsPath,
+    label: "Результат"
+  },
+  {
     path: routes.profile,
     label: "Профиль"
   }

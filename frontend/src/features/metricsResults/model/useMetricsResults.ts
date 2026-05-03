@@ -6,10 +6,8 @@ import { useCallback } from "react"
 import { toMetricsCsv } from "./utils"
 
 export const useMetricsResults = (rows: AnalysisRow[], metrics: string[]) => {
-  const { pathFilter, setPathFilter, filteredRows, hasRows, hasFilteredRows } = usePathFilter(
-    rows,
-    (row) => row.path
-  )
+  const { control, pathFilter, setPathFilter, filteredRows, hasRows, hasFilteredRows } =
+    usePathFilter(rows, (row) => row.path)
 
   const downloadMetricsCsv = useCallback(() => {
     if (!filteredRows.length || !metrics.length) {
@@ -21,6 +19,7 @@ export const useMetricsResults = (rows: AnalysisRow[], metrics: string[]) => {
   }, [filteredRows, metrics])
 
   return {
+    control,
     pathFilter,
     setPathFilter,
     filteredRows,

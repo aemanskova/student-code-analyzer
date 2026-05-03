@@ -14,6 +14,10 @@ export const routes = {
     folder
       ? `/heatmap/${encodeURIComponent(jobId)}/${encodeURIComponent(folder)}`
       : `/heatmap/${encodeURIComponent(jobId)}`,
+  clusterizing: "/clusterizing",
+  clusterizingCreate: "/clusterizing/create",
+  clusterizingDetailsPath: "/clusterizing/:jobId",
+  clusterizingDetails: (jobId: string) => `/clusterizing/${encodeURIComponent(jobId)}`,
   login: "/login",
   profile: "/profile"
 } as const

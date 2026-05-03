@@ -3,6 +3,7 @@ import { GitChartsSection } from "@features/gitCharts"
 import { Button, Group, Skeleton, Stack, Tabs, Text, TextInput } from "@mantine/core"
 import { ChartLineUp, Table as TableIcon } from "@phosphor-icons/react"
 import { useState } from "react"
+import { Controller } from "react-hook-form"
 
 import { useGitResults } from "../model/useGitResults"
 import { useGitRunView } from "../model/useGitRunView"
@@ -17,8 +18,7 @@ export function GitResultsSection({ runId, analysisDepth, selectedLevels }: Prop
   const [contentTab, setContentTab] = useState<string | null>("charts")
   const { isViewLoading, rows } = useGitRunView({ analysisDepth, runId, selectedLevels })
 
-  const { pathFilter, setPathFilter, filteredRows, hasRows, hasFilteredRows, downloadGitCsv } =
-    useGitResults(rows)
+  const { control, filteredRows, hasRows, hasFilteredRows, downloadGitCsv } = useGitResults(rows)
 
   if (!isViewLoading && !hasRows) {
     return null
@@ -68,12 +68,18 @@ export function GitResultsSection({ runId, analysisDepth, selectedLevels }: Prop
           <Tabs.Panel pt="md" value="table">
             <Stack gap="md">
               <Group align="flex-end" justify="space-between" grow>
-                <TextInput
-                  disabled={!hasRows}
-                  label="Поиск по пути"
-                  placeholder="Введите часть пути репозитория"
-                  value={pathFilter}
-                  onChange={(event) => setPathFilter(event.currentTarget.value)}
+                <Controller
+                  control={control}
+                  name="pathFilter"
+                  render={({ field }) => (
+                    <TextInput
+                      disabled={!hasRows}
+                      label="Поиск по пути"
+                      placeholder="Введите часть пути репозитория"
+                      value={field.value}
+                      onChange={(event) => field.onChange(event.currentTarget.value)}
+                    />
+                  )}
                 />
                 <Button
                   disabled={!hasFilteredRows}

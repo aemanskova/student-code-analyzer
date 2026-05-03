@@ -1,6 +1,7 @@
 import type { GitAnalysisRow } from "@entities/analysis/api"
 import { Grid, MultiSelect, Select, Stack, useMantineColorScheme } from "@mantine/core"
-import { useMemo, useState } from "react"
+import { useEffect, useMemo } from "react"
+import { Controller, useForm, useWatch } from "react-hook-form"
 
 import {
   BOXPLOT_CHARTS,
@@ -11,12 +12,12 @@ import {
 import {
   ALL_GIT_METRICS_OPTION,
   BOXPLOT_METRICS,
+  GIT_METRIC_OPTIONS,
   GIT_PATH_COLORS_DARK,
   GIT_PATH_COLORS_LIGHT,
   HISTO_METRICS
 } from "../model/constants"
 import { buildGitChartsDataset, getPathColorMap } from "../model/gitCharts"
-import { useGitMetricSelection } from "../model/useGitMetricSelection"
 import { ChartCard, HorizontalBarChart, MetricGroupsBoxPlot, ScatterChart } from "./components"
 
 type Props = {
@@ -24,8 +25,25 @@ type Props = {
   analysisDepth?: number
 }
 
+type GitChartsForm = {
+  chartMode: "boxplot" | "histo"
+  selectedMetrics: string[]
+}
+
+const areArraysEqual = (left: string[], right: string[]): boolean =>
+  left.length === right.length && left.every((value, index) => value === right[index])
+
 export function GitChartsSection({ rows, analysisDepth }: Props) {
-  const [chartMode, setChartMode] = useState<"boxplot" | "histo">("histo")
+  const form = useForm<GitChartsForm>({
+    defaultValues: {
+      chartMode: "histo",
+      selectedMetrics: [ALL_GIT_METRICS_OPTION]
+    }
+  })
+  const chartMode = useWatch({ control: form.control, name: "chartMode" }) || "histo"
+  const selectedMetrics = useWatch({ control: form.control, name: "selectedMetrics" }) || [
+    ALL_GIT_METRICS_OPTION
+  ]
   const { colorScheme } = useMantineColorScheme()
   const chartData = useMemo(() => buildGitChartsDataset(rows), [rows])
   const availableMetrics = useMemo(
@@ -33,12 +51,58 @@ export function GitChartsSection({ rows, analysisDepth }: Props) {
     [chartMode]
   )
 
-  const { handleChange, metricOptions, selectedMetricSet, selectedMetrics } = useGitMetricSelection(
-    {
-      availableMetrics
-    }
+  const metricOptions = useMemo(
+    () =>
+      GIT_METRIC_OPTIONS.filter(
+        (option) =>
+          option.value === ALL_GIT_METRICS_OPTION || availableMetrics.includes(option.value)
+      ),
+    [availableMetrics]
   )
+  const selectedMetricSet = useMemo(() => {
+    const metrics = selectedMetrics.includes(ALL_GIT_METRICS_OPTION)
+      ? availableMetrics
+      : selectedMetrics.filter((metric) => availableMetrics.includes(metric))
+    return new Set(metrics)
+  }, [availableMetrics, selectedMetrics])
 
+  useEffect(() => {
+    if (selectedMetrics.includes(ALL_GIT_METRICS_OPTION)) {
+      return
+    }
+    const filteredMetrics = selectedMetrics.filter((metric) => availableMetrics.includes(metric))
+    const nextMetrics = filteredMetrics.length ? filteredMetrics : [ALL_GIT_METRICS_OPTION]
+    if (!areArraysEqual(selectedMetrics, nextMetrics)) {
+      form.setValue("selectedMetrics", nextMetrics)
+    }
+  }, [availableMetrics, form, selectedMetrics])
+
+  const handleMetricChange = (values: string[]) => {
+    const normalizedValues = values.filter(
+      (value) => value === ALL_GIT_METRICS_OPTION || availableMetrics.includes(value)
+    )
+    if (!normalizedValues.length) {
+      form.setValue("selectedMetrics", [ALL_GIT_METRICS_OPTION])
+      return
+    }
+
+    const hadAllBefore = selectedMetrics.includes(ALL_GIT_METRICS_OPTION)
+    const hasAllNow = normalizedValues.includes(ALL_GIT_METRICS_OPTION)
+    if (hasAllNow && normalizedValues.length === 1) {
+      form.setValue("selectedMetrics", [ALL_GIT_METRICS_OPTION])
+      return
+    }
+    if (hasAllNow && normalizedValues.length > 1) {
+      form.setValue(
+        "selectedMetrics",
+        hadAllBefore
+          ? normalizedValues.filter((value) => value !== ALL_GIT_METRICS_OPTION)
+          : [ALL_GIT_METRICS_OPTION]
+      )
+      return
+    }
+    form.setValue("selectedMetrics", normalizedValues)
+  }
   const colorByPath = useMemo(() => {
     const chartRows: Array<{ path: string }> = [
       ...chartData.totalCommitCount,
@@ -68,25 +132,37 @@ export function GitChartsSection({ rows, analysisDepth }: Props) {
   return (
     <Stack gap="md">
       <Stack gap="md">
-        <Select
-          data={[
-            { value: "histo", label: "Гисто/точечные" },
-            { value: "boxplot", label: "Боксплоты" }
-          ]}
-          label="Формат графиков"
-          value={chartMode}
-          w={280}
-          onChange={(value) => setChartMode((value as "boxplot" | "histo") || "histo")}
+        <Controller
+          control={form.control}
+          name="chartMode"
+          render={({ field }) => (
+            <Select
+              data={[
+                { value: "histo", label: "Гисто/точечные" },
+                { value: "boxplot", label: "Боксплоты" }
+              ]}
+              label="Формат графиков"
+              value={field.value}
+              w={280}
+              onChange={(value) => field.onChange((value as "boxplot" | "histo") || "histo")}
+            />
+          )}
         />
-        <MultiSelect
-          clearable={!selectedMetrics.includes(ALL_GIT_METRICS_OPTION)}
-          data={metricOptions}
-          label="Метрики для графиков (Git)"
-          placeholder="Выберите метрики"
-          searchable
-          value={selectedMetrics}
-          w={520}
-          onChange={handleChange}
+        <Controller
+          control={form.control}
+          name="selectedMetrics"
+          render={({ field }) => (
+            <MultiSelect
+              clearable={!field.value.includes(ALL_GIT_METRICS_OPTION)}
+              data={metricOptions}
+              label="Метрики для графиков (Git)"
+              placeholder="Выберите метрики"
+              searchable
+              value={field.value}
+              w={520}
+              onChange={handleMetricChange}
+            />
+          )}
         />
       </Stack>
 

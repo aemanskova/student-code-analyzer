@@ -6,10 +6,8 @@ import { useCallback } from "react"
 import { toGitCsv } from "./utils"
 
 export const useGitResults = (rows: GitAnalysisRow[]) => {
-  const { pathFilter, setPathFilter, filteredRows, hasRows, hasFilteredRows } = usePathFilter(
-    rows,
-    (row) => row.path
-  )
+  const { control, pathFilter, setPathFilter, filteredRows, hasRows, hasFilteredRows } =
+    usePathFilter(rows, (row) => row.path)
 
   const downloadGitCsv = useCallback(() => {
     if (!filteredRows.length) {
@@ -21,6 +19,7 @@ export const useGitResults = (rows: GitAnalysisRow[]) => {
   }, [filteredRows])
 
   return {
+    control,
     pathFilter,
     setPathFilter,
     filteredRows,

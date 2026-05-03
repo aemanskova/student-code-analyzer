@@ -59,6 +59,16 @@ export interface ClusteredMetricRow {
   metrics: Record<string, ClusteringMetricValue>;
 }
 
+export interface ExcludedMetricRow {
+  runId: string;
+  path: string;
+  groupPath: string;
+  group: string | null;
+  student: string | null;
+  reason: string;
+  metrics: Record<string, ClusteringMetricValue>;
+}
+
 export interface ClusterGroupShare {
   groupPath: string;
   total: number;

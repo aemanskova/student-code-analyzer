@@ -2,6 +2,7 @@ import { AnalysisCharts, AnalysisTable } from "@entities/analysis"
 import { Button, Group, Skeleton, Stack, Tabs, Text, TextInput } from "@mantine/core"
 import { ChartLineUp, Table as TableIcon } from "@phosphor-icons/react"
 import { useMemo, useState } from "react"
+import { Controller } from "react-hook-form"
 
 import { useMetricsResults } from "../model/useMetricsResults"
 import { useMetricsRunView } from "../model/useMetricsRunView"
@@ -20,8 +21,10 @@ export function MetricsResultsSection({ runId, analysisDepth, selectedLevels }: 
     selectedLevels
   })
 
-  const { pathFilter, setPathFilter, filteredRows, hasRows, hasFilteredRows, downloadMetricsCsv } =
-    useMetricsResults(rows, metrics)
+  const { control, filteredRows, hasRows, hasFilteredRows, downloadMetricsCsv } = useMetricsResults(
+    rows,
+    metrics
+  )
 
   const chart = useMemo(
     () => (
@@ -81,12 +84,18 @@ export function MetricsResultsSection({ runId, analysisDepth, selectedLevels }: 
           <Tabs.Panel pt="md" value="table">
             <Stack gap="md">
               <Group align="flex-end" justify="space-between" grow>
-                <TextInput
-                  disabled={!hasRows}
-                  label="Поиск по пути"
-                  placeholder="Введите часть пути (например, group1/student2)"
-                  value={pathFilter}
-                  onChange={(event) => setPathFilter(event.currentTarget.value)}
+                <Controller
+                  control={control}
+                  name="pathFilter"
+                  render={({ field }) => (
+                    <TextInput
+                      disabled={!hasRows}
+                      label="Поиск по пути"
+                      placeholder="Введите часть пути (например, group1/student2)"
+                      value={field.value}
+                      onChange={(event) => field.onChange(event.currentTarget.value)}
+                    />
+                  )}
                 />
                 <Button
                   disabled={!hasFilteredRows}

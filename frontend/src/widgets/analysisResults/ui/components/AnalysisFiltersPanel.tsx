@@ -1,4 +1,6 @@
 import { Card, Grid, Loader, MultiSelect, Select, Stack, Text, Title } from "@mantine/core"
+import { useEffect } from "react"
+import { Controller, useForm } from "react-hook-form"
 
 type LevelOption = {
   level: number
@@ -18,6 +20,10 @@ type Props = {
   onChangeLevel: (index: number, values: string[]) => void
 }
 
+type AnalysisFiltersForm = {
+  levels: string[][]
+}
+
 export const AnalysisFiltersPanel = ({
   levels,
   cascadedOptions,
@@ -29,6 +35,16 @@ export const AnalysisFiltersPanel = ({
   onBlurLevel,
   onChangeLevel
 }: Props) => {
+  const form = useForm<AnalysisFiltersForm>({
+    defaultValues: {
+      levels: draftLevels.length ? draftLevels : selectedLevels
+    }
+  })
+
+  useEffect(() => {
+    form.reset({ levels: draftLevels.length ? draftLevels : selectedLevels })
+  }, [draftLevels, form, selectedLevels])
+
   return (
     <Grid align="stretch" gutter="md">
       <Grid.Col span={{ base: 12, md: 8 }}>
@@ -50,45 +66,66 @@ export const AnalysisFiltersPanel = ({
 
                 if (!level.multi) {
                   return (
-                    <Select
+                    <Controller
                       key={`shared-level-${level.level}`}
-                      data={data}
-                      disabled={isLoading}
-                      label={`Уровень ${level.level}`}
-                      readOnly
-                      rightSection={isLoading ? <Loader size="xs" /> : undefined}
-                      value={value[0] || null}
-                      onChange={() => undefined}
+                      control={form.control}
+                      name={`levels.${index}`}
+                      render={({ field }) => (
+                        <Select
+                          data={data}
+                          disabled={isLoading}
+                          label={`Уровень ${level.level}`}
+                          readOnly
+                          rightSection={isLoading ? <Loader size="xs" /> : undefined}
+                          value={field.value?.[0] || value[0] || null}
+                          onChange={() => undefined}
+                        />
+                      )}
                     />
                   )
                 }
 
                 return (
-                  <MultiSelect
+                  <Controller
                     key={`shared-level-${level.level}`}
-                    clearable
-                    data={data}
-                    disabled={isLoading}
-                    label={`Уровень ${level.level}`}
-                    placeholder={isLoading ? "Загрузка..." : "Выберите подпапки"}
-                    rightSection={isLoading ? <Loader size="xs" /> : undefined}
-                    searchable
-                    value={value}
-                    onBlur={() => onBlurLevel(index)}
-                    onChange={(values) => onChangeLevel(index, values)}
-                    onDropdownClose={() => onBlurLevel(index)}
+                    control={form.control}
+                    name={`levels.${index}`}
+                    render={({ field }) => (
+                      <MultiSelect
+                        clearable
+                        data={data}
+                        disabled={isLoading}
+                        label={`Уровень ${level.level}`}
+                        placeholder={isLoading ? "Загрузка..." : "Выберите подпапки"}
+                        rightSection={isLoading ? <Loader size="xs" /> : undefined}
+                        searchable
+                        value={field.value || value}
+                        onBlur={() => onBlurLevel(index)}
+                        onChange={(values) => {
+                          field.onChange(values)
+                          onChangeLevel(index, values)
+                        }}
+                        onDropdownClose={() => onBlurLevel(index)}
+                      />
+                    )}
                   />
                 )
               })
             ) : (
-              <Select
-                data={[]}
-                disabled
-                label="Уровень 1"
-                placeholder={
-                  !isResolved || isLoading ? "Загрузка фильтров..." : "Нет доступных значений"
-                }
-                rightSection={isLoading ? <Loader size="xs" /> : undefined}
+              <Controller
+                control={form.control}
+                name="levels.0"
+                render={() => (
+                  <Select
+                    data={[]}
+                    disabled
+                    label="Уровень 1"
+                    placeholder={
+                      !isResolved || isLoading ? "Загрузка фильтров..." : "Нет доступных значений"
+                    }
+                    rightSection={isLoading ? <Loader size="xs" /> : undefined}
+                  />
+                )}
               />
             )}
           </Stack>

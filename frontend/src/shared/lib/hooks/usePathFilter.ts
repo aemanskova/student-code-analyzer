@@ -29,6 +29,7 @@ export const usePathFilter = <T>(rows: T[], accessor: Accessor<T>, delayMs = 180
   }, [rows, accessor, normalizedFilter])
 
   return {
+    control: form.control,
     pathFilter,
     setPathFilter: (value: string) => form.setValue("pathFilter", value),
     filteredRows,

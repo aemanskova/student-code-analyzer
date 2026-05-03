@@ -1,10 +1,13 @@
 import { BadRequestException } from "@nestjs/common";
+import { AnalysisGitResult } from "../analysis/entities/analysis-git-result.entity";
 import { AnalysisJob } from "../analysis/entities/analysis-job.entity";
 import { AnalysisResult } from "../analysis/entities/analysis-result.entity";
 import { ClusteringService } from "./clustering.service";
 
 type RepositoryMock<T> = {
   find: jest.Mock<Promise<T[]>, unknown[]>;
+  create?: jest.Mock;
+  save?: jest.Mock;
   createQueryBuilder?: jest.Mock;
 };
 
@@ -61,6 +64,36 @@ const makeRow = (
 const makeJob = (depth: number): AnalysisJob =>
   ({ requestPayload: { depth } }) as unknown as AnalysisJob;
 
+const makeGitRow = (
+  id: number,
+  path: string,
+  hash: string,
+  date: string,
+  added: number,
+  deleted: number
+): AnalysisGitResult =>
+  ({
+    id,
+    userId: 1,
+    runId: "run-1",
+    direction: "html_css",
+    path,
+    groupValue: null,
+    studentValue: null,
+    branch: "main",
+    hash,
+    date,
+    message: "commit",
+    author: "Student",
+    filename: "index.html",
+    filetype: "text",
+    extraMetadata: "",
+    changes: `${added}/${deleted}`,
+    added,
+    deleted,
+    createdAt: new Date("2026-05-03T00:00:00.000Z")
+  }) as unknown as AnalysisGitResult;
+
 const createJobQueryBuilder = (job: AnalysisJob | null) => ({
   where: jest.fn().mockReturnThis(),
   andWhere: jest.fn().mockReturnThis(),
@@ -69,7 +102,12 @@ const createJobQueryBuilder = (job: AnalysisJob | null) => ({
   getOne: jest.fn().mockResolvedValue(job)
 });
 
-const createMockSklearn = (labels: number[], captured: { scaledInput?: number[][] } = {}) => {
+type LabelsInput = number[] | ((eps: number) => number[]);
+
+const createMockSklearn = (
+  labels: LabelsInput,
+  captured: { scaledInput?: number[][]; dbscanOptions?: Record<string, unknown> } = {}
+) => {
   class RobustScaler {
     async init() {
       return undefined;
@@ -119,12 +157,19 @@ const createMockSklearn = (labels: number[], captured: { scaledInput?: number[][
   }
 
   class DBSCAN {
+    private readonly eps: number;
+
+    constructor(opts: Record<string, unknown>) {
+      captured.dbscanOptions = opts;
+      this.eps = Number(opts.eps);
+    }
+
     async init() {
       return undefined;
     }
 
     async fit_predict() {
-      return labels;
+      return typeof labels === "function" ? labels(this.eps) : labels;
     }
 
     async dispose() {
@@ -145,17 +190,30 @@ const createMockSklearn = (labels: number[], captured: { scaledInput?: number[][
 const createService = (
   rows: AnalysisResult[],
   job: AnalysisJob | null = makeJob(3),
-  labels = [0, 0, 1, 1, -1],
-  captured: { scaledInput?: number[][] } = {}
+  labels: LabelsInput = [0, 0, 1, 1, -1],
+  captured: { scaledInput?: number[][]; dbscanOptions?: Record<string, unknown> } = {},
+  gitRows: AnalysisGitResult[] = []
 ) => {
   const resultRepo: RepositoryMock<AnalysisResult> = {
     find: jest.fn().mockResolvedValue(rows)
   };
+  const gitResultRepo: RepositoryMock<AnalysisGitResult> = {
+    find: jest.fn().mockResolvedValue(gitRows)
+  };
   const jobRepo: RepositoryMock<AnalysisJob> = {
     find: jest.fn(),
+    create: jest.fn((payload) => ({
+      ...payload,
+      createdAt: new Date("2026-05-03T00:00:00.000Z")
+    })),
+    save: jest.fn().mockImplementation((payload) => Promise.resolve(payload)),
     createQueryBuilder: jest.fn().mockReturnValue(createJobQueryBuilder(job))
   };
-  const service = new ClusteringService(resultRepo as never, jobRepo as never);
+  const service = new ClusteringService(
+    resultRepo as never,
+    gitResultRepo as never,
+    jobRepo as never
+  );
   Object.defineProperty(service, "loadSklearn", {
     value: jest.fn().mockResolvedValue(createMockSklearn(labels, captured))
   });
@@ -210,6 +268,78 @@ describe("ClusteringService", () => {
     await service.getClusters(1, "run-1");
 
     expect(captured.scaledInput?.[2]?.[1]).toBeCloseTo(0.3);
+  });
+
+  it("merges aggregated git metrics into clustering features and output rows", async () => {
+    const captured: { scaledInput?: number[][] } = {};
+    const rows = [
+      makeRow(1, "g1/s1/work1"),
+      makeRow(2, "g1/s1/work2"),
+      makeRow(3, "g1/s2/work3"),
+      makeRow(4, "g2/s3/work4"),
+      makeRow(5, "g2/s3/work5")
+    ];
+    const gitRows = [
+      makeGitRow(1, "g1/s1/work1", "a1", "2026-05-01T01:00:00.000Z", 10, 2),
+      makeGitRow(2, "g1/s1/work1", "a1", "2026-05-01T01:00:00.000Z", 5, 3),
+      makeGitRow(3, "g1/s1/work1", "b2", "2026-05-03T12:00:00.000Z", 20, 5)
+    ];
+    const service = createService(rows, makeJob(3), [0, 0, 1, 1, -1], captured, gitRows);
+
+    const result = await service.getClusters(1, "run-1");
+
+    expect(result.metrics).toEqual(expect.arrayContaining(["active_days", "total_lines_added"]));
+    expect(result.rows[0]?.metrics).toMatchObject({
+      active_days: 2,
+      churn_ratio: 0.2857,
+      development_duration_days: 2,
+      median_commit_size: 22.5,
+      night_commit_pct: 50,
+      total_lines_added: 35
+    });
+    expect(captured.scaledInput?.[0]?.[0]).toBeCloseTo(Math.log1p(2));
+    expect(captured.scaledInput?.[0]?.[4]).toBeCloseTo(Math.log1p(35));
+    expect(captured.scaledInput?.[0]?.[13]).toBeCloseTo(Math.log1p(22.5));
+    expect(captured.scaledInput?.[0]?.[15]).toBe(50);
+  });
+
+  it("uses custom eps for saved clusterization builds", async () => {
+    const captured: { dbscanOptions?: Record<string, unknown> } = {};
+    const rows = [
+      makeRow(1, "g1/s1/work1"),
+      makeRow(2, "g1/s1/work2"),
+      makeRow(3, "g1/s2/work3"),
+      makeRow(4, "g2/s3/work4"),
+      makeRow(5, "g2/s3/work5")
+    ];
+    const service = createService(rows, makeJob(3), [0, 0, 1, 1, -1], captured);
+
+    await service.buildClusterization(1, "run-1", { eps: 0.75 });
+
+    expect(captured.dbscanOptions).toMatchObject({ eps: 0.75, min_samples: 5 });
+  });
+
+  it("selects automatic eps that produces three clusters when possible", async () => {
+    const rows = [
+      makeRow(1, "g1/s1/work1"),
+      makeRow(2, "g1/s1/work2"),
+      makeRow(3, "g1/s2/work3"),
+      makeRow(4, "g2/s3/work4"),
+      makeRow(5, "g2/s3/work5")
+    ];
+    const labelsByEps = (eps: number) => {
+      if (eps >= 0.45 && eps < 1.8) {
+        return [0, 1, 2, -1, -1];
+      }
+      return [0, 0, 1, 1, -1];
+    };
+    const service = createService(rows, makeJob(3), labelsByEps);
+
+    const result = await service.getClusters(1, "run-1");
+
+    expect(result.eps).toBeCloseTo(0.5);
+    expect(result.clusters).toEqual([0, 1, 2]);
+    expect(result.rows.map((row) => row.cluster)).toEqual([0, 1, 2]);
   });
 
   it("rejects negative values in log-transformed features", async () => {
