@@ -1,9 +1,8 @@
 import type { AnalysisListItem } from "@entities/analysis/api"
-import { ActionIcon, Anchor, Group, Loader, Pagination, Stack, Tooltip } from "@mantine/core"
+import { ActionIcon, Anchor, Tooltip } from "@mantine/core"
 import { Trash } from "@phosphor-icons/react"
 import { routes } from "@shared/config/routes"
-import { EmptyState } from "@shared/ui"
-import { type VirtualizedColumn, VirtualizedTable } from "@shared/ui/table"
+import { DataTable, type VirtualizedColumn } from "@shared/ui/table"
 import { NavLink } from "react-router"
 
 type Props = {
@@ -25,14 +24,6 @@ export const ArchiveListTable = ({
   onPageChange,
   onDeleteRun
 }: Props) => {
-  if (isInitialLoading || isUpdating) {
-    return (
-      <Group justify="center" py="xl">
-        <Loader />
-      </Group>
-    )
-  }
-
   const columns: Array<VirtualizedColumn<AnalysisListItem>> = [
     {
       key: "path",
@@ -80,24 +71,18 @@ export const ArchiveListTable = ({
   const tableHeight = headerHeight + rows.length * rowHeight + tableBottomBuffer
 
   return (
-    <>
-      {rows.length ? (
-        <Stack gap="md">
-          <VirtualizedTable
-            columns={columns}
-            data={rows}
-            disableVerticalScroll
-            getRowKey={(row) => `${row.runId}:${row.path}:${row.date}:${row.direction}`}
-            fullWidth
-            maxHeight={tableHeight}
-            overscan={120}
-            rowHeight={rowHeight}
-          />
-          <Pagination total={totalPages} value={page} onChange={onPageChange} />
-        </Stack>
-      ) : (
-        <EmptyState text="По заданным фильтрам записи не найдены." />
-      )}
-    </>
+    <DataTable
+      columns={columns}
+      data={rows}
+      disableVerticalScroll
+      emptyText="По заданным фильтрам записи не найдены."
+      fullWidth
+      getRowKey={(row) => `${row.runId}:${row.path}:${row.date}:${row.direction}`}
+      isLoading={isInitialLoading || isUpdating}
+      maxHeight={tableHeight}
+      overscan={120}
+      pagination={{ page, total: totalPages, onChange: onPageChange }}
+      rowHeight={rowHeight}
+    />
   )
 }

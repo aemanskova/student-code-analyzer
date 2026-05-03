@@ -26,7 +26,9 @@ type Props = {
   initialValues?: Partial<AnalysisFormValues>
   locked?: boolean
   restoredArchiveName?: string
-  onQueryStateChange?: (values: Pick<AnalysisFormValues, "depth" | "direction" | "includeGitMetrics" | "recursive">) => void
+  onQueryStateChange?: (
+    values: Pick<AnalysisFormValues, "depth" | "direction" | "includeGitMetrics" | "recursive">
+  ) => void
   onSuccess: (result: AnalysisRunResult) => void
 }
 

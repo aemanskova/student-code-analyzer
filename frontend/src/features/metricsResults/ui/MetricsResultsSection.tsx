@@ -37,8 +37,10 @@ export function MetricsResultsSection({ runId, analysisDepth, selectedLevels }: 
     [metrics]
   )
 
-  const { control, filteredRows, hasRows, hasFilteredRows, downloadMetricsCsv } =
-    useMetricsResults(rows, visibleTableMetrics)
+  const { control, filteredRows, hasRows, hasFilteredRows, downloadMetricsCsv } = useMetricsResults(
+    rows,
+    visibleTableMetrics
+  )
 
   const chart = useMemo(
     () => (

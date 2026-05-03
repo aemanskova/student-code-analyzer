@@ -4,5 +4,6 @@ export const sidebarLinks = [
   { label: "Главная", to: routes.home },
   { label: "Анализ", to: routes.archive },
   { label: "Тепловые карты", to: routes.heatmap },
-  { label: "Кластеризация", to: routes.clusterizing }
+  { label: "Кластеризация", to: routes.clusterizing },
+  { label: "Глоссарий", to: routes.glossary }
 ]

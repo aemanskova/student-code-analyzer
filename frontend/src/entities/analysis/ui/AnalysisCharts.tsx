@@ -33,8 +33,7 @@ export function AnalysisCharts({ rows, gitRows = [], selectedMetrics, analysisDe
     }
   })
   const selectedChartMetrics =
-    useWatch({ control: form.control, name: "selectedMetrics" }) ||
-    DEFAULT_SELECTED_CHART_METRICS
+    useWatch({ control: form.control, name: "selectedMetrics" }) || DEFAULT_SELECTED_CHART_METRICS
   const gitYearResolver = useMemo(
     () => buildGitYearResolver(gitRows, analysisDepth, null),
     [analysisDepth, gitRows]

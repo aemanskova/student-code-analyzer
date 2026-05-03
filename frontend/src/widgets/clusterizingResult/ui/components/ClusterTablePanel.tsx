@@ -1,6 +1,6 @@
 import type { ClusteredMetricRow } from "@entities/clusterizing"
-import { Button, Group, Stack, Text, TextInput } from "@mantine/core"
-import { AllOptionsMultiSelect, type VirtualizedColumn, VirtualizedTable } from "@shared/ui"
+import { Button, Group, Stack, TextInput } from "@mantine/core"
+import { AllOptionsMultiSelect, DataTable, type VirtualizedColumn } from "@shared/ui"
 import { type Control, Controller } from "react-hook-form"
 
 import {
@@ -63,18 +63,15 @@ export function ClusterTablePanel({
           Скачать CSV
         </Button>
       </Group>
-      {filteredRows.length ? (
-        <VirtualizedTable
-          columns={columns}
-          data={filteredRows}
-          getRowKey={(row) => `${row.runId}:${row.path}:${row.cluster}`}
-          maxHeight={620}
-          minTableWidth={Math.max(760, 430 + metricsCount * 160)}
-          rowHeight={46}
-        />
-      ) : (
-        <Text c="dimmed">Строки не найдены.</Text>
-      )}
+      <DataTable
+        columns={columns}
+        data={filteredRows}
+        emptyText="Строки не найдены."
+        getRowKey={(row) => `${row.runId}:${row.path}:${row.cluster}`}
+        maxHeight={620}
+        minTableWidth={Math.max(760, 430 + metricsCount * 160)}
+        rowHeight={46}
+      />
     </Stack>
   )
 }

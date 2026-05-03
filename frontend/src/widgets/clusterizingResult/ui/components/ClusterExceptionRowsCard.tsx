@@ -1,6 +1,6 @@
 import type { ClusteredMetricRow, ExcludedMetricRow } from "@entities/clusterizing"
 import { Button, Card, Group, Stack, Text } from "@mantine/core"
-import { type VirtualizedColumn, VirtualizedTable } from "@shared/ui"
+import { DataTable, type VirtualizedColumn } from "@shared/ui"
 
 type Props<T extends ClusteredMetricRow | ExcludedMetricRow> = {
   columns: Array<VirtualizedColumn<T>>
@@ -30,18 +30,15 @@ export function ClusterExceptionRowsCard<T extends ClusteredMetricRow | Excluded
             Скачать CSV
           </Button>
         </Group>
-        {data.length ? (
-          <VirtualizedTable
-            columns={columns}
-            data={data}
-            getRowKey={getRowKey}
-            maxHeight={420}
-            minTableWidth={minTableWidth}
-            rowHeight={46}
-          />
-        ) : (
-          <Text c="dimmed">{emptyText}</Text>
-        )}
+        <DataTable
+          columns={columns}
+          data={data}
+          emptyText={emptyText}
+          getRowKey={getRowKey}
+          maxHeight={420}
+          minTableWidth={minTableWidth}
+          rowHeight={46}
+        />
       </Stack>
     </Card>
   )

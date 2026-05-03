@@ -1,6 +1,5 @@
 import type { AnalysisRow } from "@entities/analysis/api"
-import { Text } from "@mantine/core"
-import { type VirtualizedColumn, VirtualizedTable } from "@shared/ui/table"
+import { DataTable, type VirtualizedColumn } from "@shared/ui/table"
 
 type Props = {
   rows: AnalysisRow[]
@@ -8,10 +7,6 @@ type Props = {
 }
 
 export function AnalysisTable({ rows, metrics }: Props) {
-  if (!rows.length) {
-    return <Text c="dimmed">Нет строк для отображения.</Text>
-  }
-
   const columns: Array<VirtualizedColumn<AnalysisRow>> = [
     {
       key: "path",
@@ -28,9 +23,10 @@ export function AnalysisTable({ rows, metrics }: Props) {
   ]
 
   return (
-    <VirtualizedTable
+    <DataTable
       columns={columns}
       data={rows}
+      emptyText="Нет строк для отображения."
       getRowKey={(row) => row.path}
       maxHeight={480}
       // minTableWidth={Math.max(900, 260 + metrics.length * 140)}

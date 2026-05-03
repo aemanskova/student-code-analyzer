@@ -18,6 +18,7 @@ export const routes = {
   clusterizingCreate: "/clusterizing/create",
   clusterizingDetailsPath: "/clusterizing/:jobId",
   clusterizingDetails: (jobId: string) => `/clusterizing/${encodeURIComponent(jobId)}`,
+  glossary: "/glossary",
   login: "/login",
   profile: "/profile"
 } as const

@@ -1,4 +1,4 @@
-import { GIT_COLUMN_OPTIONS,GitAnalysisTable } from "@entities/analysis"
+import { GIT_COLUMN_OPTIONS, GitAnalysisTable } from "@entities/analysis"
 import { GitChartsSection } from "@features/gitCharts"
 import { Button, Group, MultiSelect, Skeleton, Stack, Tabs, Text, TextInput } from "@mantine/core"
 import { ChartLineUp, Table as TableIcon } from "@phosphor-icons/react"

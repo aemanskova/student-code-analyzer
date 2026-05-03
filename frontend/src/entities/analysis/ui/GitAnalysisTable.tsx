@@ -1,6 +1,5 @@
 import type { GitAnalysisRow } from "@entities/analysis/api"
-import { Text } from "@mantine/core"
-import { type VirtualizedColumn, VirtualizedTable } from "@shared/ui/table"
+import { DataTable, type VirtualizedColumn } from "@shared/ui/table"
 
 type Props = {
   columns?: string[]
@@ -23,18 +22,15 @@ const GIT_COLUMNS: Array<VirtualizedColumn<GitAnalysisRow>> = [
 ]
 
 export function GitAnalysisTable({ columns, rows }: Props) {
-  if (!rows.length) {
-    return <Text c="dimmed">Git-метрики отсутствуют.</Text>
-  }
-
   const visibleColumns = columns?.length
     ? GIT_COLUMNS.filter((column) => columns.includes(column.key))
     : GIT_COLUMNS
 
   return (
-    <VirtualizedTable
+    <DataTable
       columns={visibleColumns}
       data={rows}
+      emptyText="Git-метрики отсутствуют."
       getRowKey={(row) => `${row.path}:${row.branch}:${row.hash}:${row.filename}`}
       maxHeight={520}
       minTableWidth={Math.max(760, visibleColumns.length * 150)}

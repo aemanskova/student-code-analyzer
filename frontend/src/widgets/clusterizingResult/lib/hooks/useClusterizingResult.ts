@@ -41,9 +41,10 @@ export const useClusterizingResult = (data: ClusterizationDetailsResponse) => {
   const selectedMetrics = useWatch({ control: form.control, name: "selectedMetrics" }) || [
     ALL_CLUSTER_METRICS
   ]
-  const selectedTableMetrics = useWatch({ control: form.control, name: "selectedTableMetrics" }) || [
-    ALL_CLUSTER_TABLE_METRICS
-  ]
+  const selectedTableMetrics = useWatch({
+    control: form.control,
+    name: "selectedTableMetrics"
+  }) || [ALL_CLUSTER_TABLE_METRICS]
   const excludedRows = useMemo(() => data.excludedRows || [], [data.excludedRows])
   const outlierRows = useMemo(() => data.outlierRows || [], [data.outlierRows])
   const chartRows = useMemo(() => [...data.rows, ...outlierRows], [data.rows, outlierRows])
@@ -99,7 +100,8 @@ export const useClusterizingResult = (data: ClusterizationDetailsResponse) => {
     rows: Array<ClusteredMetricRow | ExcludedMetricRow>
   ) => {
     const csvMetrics = rows === filteredRows ? visibleTableMetrics : orderedMetrics
-    const headers = rows === filteredRows ? ["cluster", "path", ...csvMetrics] : ["path", ...csvMetrics]
+    const headers =
+      rows === filteredRows ? ["cluster", "path", ...csvMetrics] : ["path", ...csvMetrics]
     const csvRows = rows.map((row) =>
       "cluster" in row
         ? [

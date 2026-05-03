@@ -30,3 +30,30 @@ body {
 a {
   color: #4a413d;
 }
+
+.app-table-scroll {
+  scrollbar-color: var(--mantine-color-gray-5) transparent;
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+}
+
+.app-table-scroll::-webkit-scrollbar {
+  height: 10px;
+  width: 10px;
+}
+
+.app-table-scroll::-webkit-scrollbar-thumb {
+  background: var(--mantine-color-gray-5);
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background-clip: content-box;
+}
+
+.app-table-scroll::-webkit-scrollbar-thumb:hover {
+  background: var(--mantine-color-gray-6);
+  background-clip: content-box;
+}
+
+.app-table-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}

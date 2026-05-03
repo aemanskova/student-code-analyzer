@@ -10,6 +10,7 @@ import { PathParserModule } from "./apps/utils/path-parser/path-parser.module";
 import { MetricsModule } from "./apps/metrics/metrics.module";
 import { UsersModule } from "./apps/users/users.module";
 import { ClusteringModule } from "./apps/clustering/clustering.module";
+import { GlossaryModule } from "./apps/glossary/glossary.module";
 import { HealthController } from "./common/health.controller";
 
 @Module({
@@ -37,7 +38,8 @@ import { HealthController } from "./common/health.controller";
     UsersModule,
     AuthModule,
     AnalysisModule,
-    ClusteringModule
+    ClusteringModule,
+    GlossaryModule
   ],
   controllers: [HealthController],
   providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }]

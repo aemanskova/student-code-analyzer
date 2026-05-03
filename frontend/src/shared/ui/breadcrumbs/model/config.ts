@@ -93,6 +93,10 @@ export const BREADCRUMB_RULES: BreadcrumbRule[] = [
     label: "Результат"
   },
   {
+    path: routes.glossary,
+    label: "Глоссарий"
+  },
+  {
     path: routes.profile,
     label: "Профиль"
   }

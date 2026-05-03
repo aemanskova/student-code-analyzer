@@ -5,6 +5,7 @@ import { ArchiveDetailsPage } from "@pages/archive-details"
 import { ClusterizingPage } from "@pages/clusterizing"
 import { ClusterizingCreatePage } from "@pages/clusterizing-create"
 import { ClusterizingDetailsPage } from "@pages/clusterizing-details"
+import { GlossaryPage } from "@pages/glossary"
 import { HeatmapPage } from "@pages/heatmap"
 import { HeatmapBuildPage } from "@pages/heatmap-build"
 import { HeatmapDetailsPage } from "@pages/heatmap-details"
@@ -25,6 +26,7 @@ const ProtectedHeatmapDetailsPage = withProtection(HeatmapDetailsPage)
 const ProtectedClusterizingPage = withProtection(ClusterizingPage)
 const ProtectedClusterizingCreatePage = withProtection(ClusterizingCreatePage)
 const ProtectedClusterizingDetailsPage = withProtection(ClusterizingDetailsPage)
+const ProtectedGlossaryPage = withProtection(GlossaryPage)
 const ProtectedProfilePage = withProtection(ProfilePage)
 
 export function Router() {
@@ -50,6 +52,7 @@ export function Router() {
           path={routes.clusterizingDetailsPath}
           element={<ProtectedClusterizingDetailsPage />}
         />
+        <Route path={routes.glossary} element={<ProtectedGlossaryPage />} />
         <Route path="*" element={<NotFoundPage />} />
       </Route>
     </Routes>

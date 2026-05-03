@@ -3,6 +3,8 @@ import { TableVirtuoso } from "react-virtuoso"
 
 import { CELL_STYLE, HEAD_CELL_STYLE } from "../model/styles"
 
+const tableScrollClassName = "app-table-scroll"
+
 export type VirtualizedColumn<T> = {
   key: string
   title: string
@@ -14,7 +16,7 @@ type Props<T> = {
   data: T[]
   columns: Array<VirtualizedColumn<T>>
   getRowKey: (row: T, index: number) => string
-  maxHeight: number
+  maxHeight: number | string
   minTableWidth?: number
   fullWidth?: boolean
   disableVerticalScroll?: boolean
@@ -34,7 +36,8 @@ export function VirtualizedTable<T>({
   overscan = 120
 }: Props<T>) {
   const headerHeight = 42
-  const tableHeight = Math.min(maxHeight, headerHeight + data.length * rowHeight)
+  const contentHeight = headerHeight + data.length * rowHeight
+  const tableHeight = typeof maxHeight === "number" ? Math.min(maxHeight, contentHeight) : maxHeight
   const computedMinWidth =
     minTableWidth || columns.reduce((sum, column) => sum + (column.minWidth || 140), 0)
   const shouldUsePlainTable = data.length <= 1
@@ -42,11 +45,13 @@ export function VirtualizedTable<T>({
   const Scroller = forwardRef<HTMLDivElement, React.ComponentProps<"div">>((props, ref) => (
     <div
       {...props}
+      className={[tableScrollClassName, props.className].filter(Boolean).join(" ")}
       ref={ref}
       style={{
         ...props.style,
         overflowX: "auto",
-        overflowY: disableVerticalScroll ? "hidden" : "auto"
+        overflowY: disableVerticalScroll ? "hidden" : "auto",
+        scrollbarGutter: disableVerticalScroll ? undefined : "stable"
       }}
     />
   ))
@@ -59,23 +64,23 @@ export function VirtualizedTable<T>({
         ...props.style,
         borderCollapse: "separate",
         borderSpacing: 0,
-        minWidth: fullWidth ? undefined : computedMinWidth,
+        minWidth: fullWidth ? "100%" : computedMinWidth,
         tableLayout: fullWidth ? "auto" : "fixed",
-        width: fullWidth ? "100%" : "max-content"
+        width: "100%"
       }}
     />
   )
 
   if (shouldUsePlainTable) {
     return (
-      <div style={{ overflowX: "auto", width: "100%" }}>
+      <div className={tableScrollClassName} style={{ overflowX: "auto", width: "100%" }}>
         <table
           style={{
             borderCollapse: "separate",
             borderSpacing: 0,
-            minWidth: fullWidth ? undefined : computedMinWidth,
+            minWidth: fullWidth ? "100%" : computedMinWidth,
             tableLayout: fullWidth ? "auto" : "fixed",
-            width: fullWidth ? "100%" : "max-content"
+            width: "100%"
           }}
         >
           <thead>
@@ -118,7 +123,7 @@ export function VirtualizedTable<T>({
   }
 
   return (
-    <div style={{ overflowX: "auto", width: "100%" }}>
+    <div className={tableScrollClassName} style={{ overflowX: "auto", width: "100%" }}>
       <TableVirtuoso
         components={{
           Scroller,
