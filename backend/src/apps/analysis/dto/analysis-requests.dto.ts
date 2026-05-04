@@ -1,6 +1,16 @@
 import { Transform, Type } from "class-transformer";
 import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
-import { IsArray, IsBoolean, IsInt, IsOptional, IsString, Max, Min } from "class-validator";
+import {
+  IsArray,
+  IsBoolean,
+  IsIn,
+  IsInt,
+  IsOptional,
+  IsString,
+  Max,
+  MaxLength,
+  Min
+} from "class-validator";
 
 const parseMetricsValue = (value: unknown): string[] | undefined => {
   if (!value) {
@@ -62,6 +72,24 @@ export class RunFromS3AsyncDto {
   @IsArray()
   @IsString({ each: true })
   metrics?: string[];
+
+  @ApiPropertyOptional({
+    description: "ESLint flat config text for JavaScript analysis. Saved as eslint.config.mjs."
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(200_000)
+  eslintConfigText?: string;
+
+  @ApiPropertyOptional({
+    enum: ["js", "mjs", "cjs"],
+    default: "mjs",
+    description: "Extension used for the generated ESLint config file."
+  })
+  @IsOptional()
+  @IsString()
+  @IsIn(["js", "mjs", "cjs"])
+  eslintConfigFormat?: "js" | "mjs" | "cjs";
 
   @ApiPropertyOptional()
   @IsOptional()

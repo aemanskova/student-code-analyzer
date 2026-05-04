@@ -11,7 +11,7 @@ import { Agent as HttpsAgent } from "node:https";
 import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { Readable, Transform } from "node:stream";
@@ -67,6 +67,8 @@ interface ZipAnalysisInput {
   onProgress?: (stage: string, progressPercent: number) => Promise<void> | void;
   direction: string;
   metrics?: string[];
+  eslintConfigText?: string;
+  eslintConfigFormat?: "js" | "mjs" | "cjs";
   group?: string;
   student?: string;
   r?: boolean;
@@ -89,6 +91,8 @@ interface QueuedS3Job {
     key: string;
     direction: string;
     metrics?: string[];
+    eslintConfigText?: string;
+    eslintConfigFormat?: "js" | "mjs" | "cjs";
     group?: string;
     student?: string;
     r?: boolean;
@@ -479,6 +483,8 @@ export class AnalysisService implements OnModuleInit {
         }
       }
 
+      const eslintConfigPath = await this.writeEslintConfigIfNeeded(tempRoot, input);
+
       await input.onProgress?.("Запуск проверки работ", 40);
       const result = await this.run({
         runId: cacheKey,
@@ -487,6 +493,7 @@ export class AnalysisService implements OnModuleInit {
         group: input.group,
         student: input.student,
         rootPath: tempRoot,
+        eslintConfigPath,
         r: input.r,
         depth: input.depth,
         includeGitMetrics: input.includeGitMetrics,
@@ -561,6 +568,8 @@ export class AnalysisService implements OnModuleInit {
       errorMessage: null,
       requestPayload: {
         metrics: input.metrics || [],
+        eslintConfigHash: this.hashOptionalText(input.eslintConfigText),
+        eslintConfigFormat: this.resolveEslintConfigFormat(input.eslintConfigFormat),
         r: Boolean(input.r),
         depth: input.depth ?? null,
         includeGitMetrics: this.resolveIncludeGitMetrics(input.includeGitMetrics),
@@ -632,6 +641,8 @@ export class AnalysisService implements OnModuleInit {
     uploadId: string;
     direction: string;
     metrics?: string[];
+    eslintConfigText?: string;
+    eslintConfigFormat?: "js" | "mjs" | "cjs";
     group?: string;
     student?: string;
     r?: boolean;
@@ -671,6 +682,8 @@ export class AnalysisService implements OnModuleInit {
         cleanupArchivePath: true,
         direction: input.direction,
         metrics: input.metrics,
+        eslintConfigText: input.eslintConfigText,
+        eslintConfigFormat: input.eslintConfigFormat,
         group: input.group,
         student: input.student,
         r: input.r,
@@ -925,6 +938,8 @@ export class AnalysisService implements OnModuleInit {
     key: string;
     direction: string;
     metrics?: string[];
+    eslintConfigText?: string;
+    eslintConfigFormat?: "js" | "mjs" | "cjs";
     group?: string;
     student?: string;
     r?: boolean;
@@ -952,6 +967,8 @@ export class AnalysisService implements OnModuleInit {
       requestPayload: {
         key,
         metrics: input.metrics || [],
+        eslintConfigHash: this.hashOptionalText(input.eslintConfigText),
+        eslintConfigFormat: this.resolveEslintConfigFormat(input.eslintConfigFormat),
         r: Boolean(input.r),
         depth: input.depth ?? null,
         includeGitMetrics: this.resolveIncludeGitMetrics(input.includeGitMetrics),
@@ -973,6 +990,8 @@ export class AnalysisService implements OnModuleInit {
         key,
         direction: input.direction,
         metrics: input.metrics,
+        eslintConfigText: input.eslintConfigText,
+        eslintConfigFormat: input.eslintConfigFormat,
         group: input.group,
         student: input.student,
         r: input.r,
@@ -2700,7 +2719,8 @@ export class AnalysisService implements OnModuleInit {
         unit.relativePath,
         rootAbsolutePath,
         unit.targetKind,
-        dto.runId
+        dto.runId,
+        dto.eslintConfigPath
       );
 
       data.push({
@@ -2725,7 +2745,8 @@ export class AnalysisService implements OnModuleInit {
     relativePath: string,
     rootAbsolutePath?: string,
     targetKind: "directory" | "file" = "file",
-    runId?: string
+    runId?: string,
+    eslintConfigPath?: string
   ) {
     try {
       if (targetKind === "directory") {
@@ -2738,6 +2759,7 @@ export class AnalysisService implements OnModuleInit {
         {
           absolutePath,
           relativePath,
+          eslintConfigPath,
           runId,
           rootAbsolutePath
         },
@@ -4626,6 +4648,41 @@ export class AnalysisService implements OnModuleInit {
     return selected;
   }
 
+  private async writeEslintConfigIfNeeded(
+    tempRoot: string,
+    input: ZipAnalysisInput
+  ): Promise<string | undefined> {
+    if (input.direction !== "js") {
+      return undefined;
+    }
+
+    const configText = String(input.eslintConfigText || "").trim();
+    if (!configText) {
+      return undefined;
+    }
+
+    const configDir = path.join(tempRoot, ".analysis-eslint");
+    await fs.mkdir(configDir, { recursive: true });
+    const configPath = path.join(
+      configDir,
+      `eslint.config.${this.resolveEslintConfigFormat(input.eslintConfigFormat)}`
+    );
+    await fs.writeFile(configPath, `${configText}\n`, "utf8");
+    return configPath;
+  }
+
+  private resolveEslintConfigFormat(format?: string): "js" | "mjs" | "cjs" {
+    return format === "js" || format === "cjs" || format === "mjs" ? format : "mjs";
+  }
+
+  private hashOptionalText(text?: string): string | null {
+    const normalized = String(text || "").trim();
+    if (!normalized) {
+      return null;
+    }
+    return createHash("sha256").update(normalized).digest("hex");
+  }
+
   private async buildZipCacheKey(
     input: ZipAnalysisInput,
     archivePath: string | undefined,
@@ -4637,6 +4694,9 @@ export class AnalysisService implements OnModuleInit {
       `metrics=${metricsPart}`,
       `group=${input.group || ""}`,
       `student=${input.student || ""}`,
+      `eslintConfig=${this.hashOptionalText(input.eslintConfigText) || ""}`,
+      `eslintConfigFormat=${this.resolveEslintConfigFormat(input.eslintConfigFormat)}`,
+      `eslintRunner=v3`,
       `r=${input.r ? "1" : "0"}`,
       `depth=${input.depth ?? ""}`,
       `includeGitMetrics=${this.resolveIncludeGitMetrics(input.includeGitMetrics) ? "1" : "0"}`,
@@ -5026,6 +5086,8 @@ export class AnalysisService implements OnModuleInit {
           sourceFingerprint: `s3|bucket=${this.getS3Bucket()}|key=${job.input.key}|etag=${objectEtag}|size=${objectSize}`,
           direction: job.input.direction,
           metrics: job.input.metrics,
+          eslintConfigText: job.input.eslintConfigText,
+          eslintConfigFormat: job.input.eslintConfigFormat,
           group: job.input.group,
           student: job.input.student,
           r: job.input.r,

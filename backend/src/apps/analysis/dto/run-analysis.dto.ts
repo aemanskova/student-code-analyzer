@@ -46,6 +46,9 @@ export class RunAnalysisDto {
   @IsBoolean()
   includePlagiarismHeatmap?: boolean;
 
+  // Internal path to a generated ESLint config file. Not intended for request body.
+  eslintConfigPath?: string;
+
   // Internal callback for background job progress. Not intended for request body.
   onAnalyzeProgress?: (
     completed: number,

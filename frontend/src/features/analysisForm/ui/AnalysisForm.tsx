@@ -14,7 +14,8 @@ import {
   MultiSelect,
   NumberInput,
   Select,
-  Stack
+  Stack,
+  Textarea
 } from "@mantine/core"
 import { getApiErrorMessage } from "@shared/lib"
 import { useEffect } from "react"
@@ -130,6 +131,47 @@ export function AnalysisForm({
           />
         )}
       />
+
+      {direction === "js" ? (
+        <Stack gap="xs">
+          <Controller
+            control={form.control}
+            name="eslintConfigFormat"
+            render={({ field }) => (
+              <Select
+                data={[
+                  { value: "mjs", label: "eslint.config.mjs" },
+                  { value: "cjs", label: "eslint.config.cjs" },
+                  { value: "js", label: "eslint.config.js" }
+                ]}
+                disabled={controlsDisabled}
+                label="Формат ESLint config"
+                value={field.value}
+                onChange={(value) => field.onChange(value || "mjs")}
+              />
+            )}
+          />
+
+          <Controller
+            control={form.control}
+            name="eslintConfigText"
+            render={({ field, fieldState }) => (
+              <Textarea
+                autosize
+                disabled={controlsDisabled}
+                error={fieldState.error?.message}
+                label="ESLint config"
+                maxRows={18}
+                minRows={8}
+                spellCheck={false}
+                styles={{ input: { fontFamily: "monospace", fontSize: 13 } }}
+                value={field.value}
+                onChange={field.onChange}
+              />
+            )}
+          />
+        </Stack>
+      ) : null}
 
       <Controller
         control={form.control}

@@ -5,6 +5,8 @@ export const analysisSchema = z
     archive: z.instanceof(File).nullable(),
     direction: z.enum(["html_css", "js"]),
     metrics: z.array(z.string()),
+    eslintConfigText: z.string().max(200_000),
+    eslintConfigFormat: z.enum(["js", "mjs", "cjs"]),
     recursive: z.boolean(),
     depth: z.number().int().min(1).optional(),
     includeGitMetrics: z.boolean()

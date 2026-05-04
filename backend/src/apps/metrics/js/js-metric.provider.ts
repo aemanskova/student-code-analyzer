@@ -5,6 +5,7 @@ import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import * as os from "node:os";
 import { createHash } from "node:crypto";
+import { builtinModules, createRequire } from "node:module";
 import { promisify } from "node:util";
 import fg = require("fast-glob");
 import { get as levenshteinDistance } from "fast-levenshtein";
@@ -74,6 +75,7 @@ const IGNORE_PATTERNS = [
   "**/coverage/**",
   "**/.git/**",
   "**/.next/**",
+  "**/.analysis-eslint/**",
   "**/out/**",
   "**/public/three.js",
   "**/public/js/three.js",
@@ -207,6 +209,12 @@ type SonarCeTaskResponse = {
   };
 };
 
+type EslintFileReport = {
+  filePath?: string;
+  errorCount?: number;
+  warningCount?: number;
+};
+
 @Injectable()
 export class JsMetricProvider implements DirectionMetricProvider {
   readonly direction = "js";
@@ -214,13 +222,15 @@ export class JsMetricProvider implements DirectionMetricProvider {
   private readonly logger = new Logger(JsMetricProvider.name);
   private readonly execFileAsync = promisify(execFile);
   private readonly sonarAnalysisCache = new Map<string, Promise<string | null>>();
+  private readonly eslintReportCache = new Map<string, Promise<EslintFileReport[]>>();
+  private readonly eslintDependencyInstallCache = new Map<string, Promise<void>>();
 
   constructor(private readonly config: ConfigService) {}
 
   async computeSelected(context: MetricComputeContext, metrics: string[]): Promise<MetricValues> {
     const files = await this.listFiles(context.absolutePath);
     const eslintCountsPromise = metrics.some((metric) => metric.startsWith("eslint_"))
-      ? this.runEslintIfEnabled(context.absolutePath)
+      ? this.runEslintIfEnabled(context)
       : Promise.resolve({ errors: 0, warnings: 0 });
     const cognitiveComplexityPromise = metrics.includes("cognitive_complexity")
       ? this.fetchCognitiveComplexity(context)
@@ -901,49 +911,263 @@ export class JsMetricProvider implements DirectionMetricProvider {
   }
 
   private async runEslintIfEnabled(
-    folderPath: string
+    context: MetricComputeContext
   ): Promise<{ errors: number; warnings: number }> {
-    if (this.config.get<string>("JS_ESLINT_ENABLED", "false") !== "true") {
+    const hasExplicitConfig = Boolean(context.eslintConfigPath);
+    if (!hasExplicitConfig && this.config.get<string>("JS_ESLINT_ENABLED", "false") !== "true") {
       return { errors: 0, warnings: 0 };
     }
-    const eslintBin = path.join(
-      process.cwd(),
-      "node_modules",
-      ".bin",
-      process.platform === "win32" ? "eslint.cmd" : "eslint"
-    );
-    try {
-      await fs.access(eslintBin);
-    } catch {
-      this.logger.warn(`ESLint skipped: binary not found at ${eslintBin}`);
-      return { errors: 0, warnings: 0 };
+
+    const rootPath = context.rootAbsolutePath || context.absolutePath;
+    const report = await this.getEslintRootReport(rootPath, context.eslintConfigPath);
+    const folderPath = path.resolve(context.absolutePath);
+    return this.sumEslintReportForFolder(report, folderPath);
+  }
+
+  private async getEslintRootReport(
+    rootPath: string,
+    configPath?: string
+  ): Promise<EslintFileReport[]> {
+    const cacheKey = `${path.resolve(rootPath)}|${configPath ? path.resolve(configPath) : "auto"}`;
+    const cached = this.eslintReportCache.get(cacheKey);
+    if (cached) {
+      return cached;
     }
+
+    const promise = this.runEslintOnRoot(rootPath, configPath);
+    this.eslintReportCache.set(cacheKey, promise);
+    return promise;
+  }
+
+  private async runEslintOnRoot(
+    rootPath: string,
+    configPath?: string
+  ): Promise<EslintFileReport[]> {
+    const eslintBin = this.resolveEslintBin();
+    if (!eslintBin) {
+      this.logger.warn("ESLint skipped: package is not resolvable from backend dependencies");
+      return [];
+    }
+
+    if (configPath) {
+      try {
+        await this.ensureEslintConfigDependencies(configPath);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        this.logger.warn(`ESLint skipped: failed to prepare config dependencies: ${message}`);
+        return [];
+      }
+    }
+
+    const args = [".", "--format", "json"];
+    if (configPath) {
+      args.push("--config", configPath, "--no-config-lookup");
+    }
+
     try {
-      const { stdout } = await this.execFileAsync(eslintBin, [".", "--format", "json"], {
-        cwd: folderPath,
+      const { stdout } = await this.execFileAsync(eslintBin, args, {
+        cwd: rootPath,
         maxBuffer: 50 * 1024 * 1024,
         windowsHide: true
       });
-      return this.parseEslintJson(stdout);
+      return this.parseEslintJsonReport(stdout);
     } catch (error) {
-      const output = (error as { stdout?: string }).stdout || "";
-      return output ? this.parseEslintJson(output) : { errors: 0, warnings: 0 };
+      const execError = error as { message?: string; stdout?: string; stderr?: string };
+      const output = execError.stdout || "";
+      if (output) {
+        return this.parseEslintJsonReport(output);
+      }
+      const details = [execError.message, execError.stderr].filter(Boolean).join("\n").trim();
+      this.logger.warn(`ESLint did not produce JSON report for ${rootPath}: ${details}`);
+      return [];
     }
   }
 
-  private parseEslintJson(output: string): { errors: number; warnings: number } {
+  private resolveEslintBin(): string | null {
     try {
-      const report = JSON.parse(output) as Array<{ errorCount?: number; warningCount?: number }>;
-      return report.reduce(
+      const packageJsonPath = createRequire(__filename).resolve("eslint/package.json");
+      return path.join(path.dirname(packageJsonPath), "bin", "eslint.js");
+    } catch {
+      const fallbackBin = path.join(
+        process.cwd(),
+        "node_modules",
+        ".bin",
+        process.platform === "win32" ? "eslint.cmd" : "eslint"
+      );
+      return fallbackBin;
+    }
+  }
+
+  private async ensureEslintConfigDependencies(configPath: string): Promise<void> {
+    await this.linkBackendNodeModulesToConfigDir(configPath);
+
+    const configText = await fs.readFile(configPath, "utf8").catch(() => "");
+    const packages = this.extractEslintConfigPackages(configText);
+    if (!packages.length) {
+      return;
+    }
+
+    const missingPackages: string[] = [];
+    const requireFromConfig = createRequire(configPath);
+    for (const packageName of packages) {
+      try {
+        requireFromConfig.resolve(packageName);
+      } catch {
+        missingPackages.push(packageName);
+      }
+    }
+
+    if (!missingPackages.length) {
+      return;
+    }
+
+    const installDir = path.dirname(configPath);
+    await Promise.all(
+      missingPackages.map((packageName) => this.installEslintDependency(packageName, installDir))
+    );
+  }
+
+  private async linkBackendNodeModulesToConfigDir(configPath: string): Promise<void> {
+    const installDir = path.dirname(configPath);
+    const configNodeModules = path.join(installDir, "node_modules");
+    const backendNodeModules = this.resolveBackendNodeModulesPath();
+    if (!backendNodeModules) {
+      return;
+    }
+
+    try {
+      await fs.symlink(backendNodeModules, configNodeModules, "dir");
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code !== "EEXIST") {
+        throw error;
+      }
+    }
+  }
+
+  private resolveBackendNodeModulesPath(): string | null {
+    try {
+      const packageJsonPath = createRequire(__filename).resolve("eslint/package.json");
+      return path.dirname(path.dirname(packageJsonPath));
+    } catch {
+      return null;
+    }
+  }
+
+  private extractEslintConfigPackages(configText: string): string[] {
+    const stripped = configText.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/.*$/gm, "$1");
+    const packages = new Set<string>();
+    const patterns = [
+      /\bimport\s+(?:[^'"]+\s+from\s+)?["']([^"']+)["']/g,
+      /\bexport\s+[^'"]+\s+from\s+["']([^"']+)["']/g,
+      /\bimport\s*\(\s*["']([^"']+)["']\s*\)/g,
+      /\brequire\s*\(\s*["']([^"']+)["']\s*\)/g
+    ];
+
+    for (const pattern of patterns) {
+      let match: RegExpExecArray | null;
+      while ((match = pattern.exec(stripped))) {
+        const packageName = this.toInstallablePackageName(match[1]);
+        if (packageName) {
+          packages.add(packageName);
+        }
+      }
+    }
+
+    return [...packages].sort();
+  }
+
+  private toInstallablePackageName(specifier: string): string | null {
+    const value = String(specifier || "").trim();
+    if (
+      !value ||
+      value.startsWith(".") ||
+      value.startsWith("/") ||
+      value.startsWith("node:") ||
+      /^[a-zA-Z]+:/.test(value)
+    ) {
+      return null;
+    }
+
+    if (this.isNodeBuiltin(value)) {
+      return null;
+    }
+
+    if (value.startsWith("@")) {
+      const [scope, name] = value.split("/");
+      return scope && name ? `${scope}/${name}` : null;
+    }
+
+    return value.split("/")[0] || null;
+  }
+
+  private isNodeBuiltin(packageName: string): boolean {
+    const normalized = packageName.replace(/^node:/, "");
+    return builtinModules.includes(normalized);
+  }
+
+  private async installEslintDependency(packageName: string, installDir: string): Promise<void> {
+    const cacheKey = `${path.resolve(installDir)}|${packageName}`;
+    const cached = this.eslintDependencyInstallCache.get(cacheKey);
+    if (cached) {
+      return cached;
+    }
+
+    const promise = this.installEslintDependencyUncached(packageName, installDir);
+    this.eslintDependencyInstallCache.set(cacheKey, promise);
+    return promise;
+  }
+
+  private async installEslintDependencyUncached(
+    packageName: string,
+    installDir: string
+  ): Promise<void> {
+    this.logger.log(`Installing ESLint config dependency: ${packageName}`);
+    await fs.mkdir(installDir, { recursive: true });
+    await this.execFileAsync("npm", ["install", "--no-save", "--no-package-lock", packageName], {
+      cwd: installDir,
+      maxBuffer: 20 * 1024 * 1024,
+      windowsHide: true
+    });
+  }
+
+  private parseEslintJsonReport(output: string): EslintFileReport[] {
+    try {
+      const report = JSON.parse(output) as EslintFileReport[];
+      return Array.isArray(report) ? report : [];
+    } catch {
+      return [];
+    }
+  }
+
+  private sumEslintReportForFolder(
+    report: EslintFileReport[],
+    folderPath: string
+  ): { errors: number; warnings: number } {
+    const normalizedFolder = path.resolve(folderPath);
+    return report
+      .filter((file) => {
+        const filePath = path.resolve(file.filePath || "");
+        return (
+          this.isPathInside(normalizedFolder, filePath) && !this.isInternalAnalysisFile(filePath)
+        );
+      })
+      .reduce(
         (acc, file) => ({
           errors: acc.errors + Number(file.errorCount || 0),
           warnings: acc.warnings + Number(file.warningCount || 0)
         }),
         { errors: 0, warnings: 0 }
       );
-    } catch {
-      return { errors: 0, warnings: 0 };
-    }
+  }
+
+  private isPathInside(parentPath: string, childPath: string): boolean {
+    const relative = path.relative(parentPath, childPath);
+    return !relative || (!relative.startsWith("..") && !path.isAbsolute(relative));
+  }
+
+  private isInternalAnalysisFile(filePath: string): boolean {
+    return filePath.split(path.sep).includes(".analysis-eslint");
   }
 
   private createScope(type: Scope["type"], parent: Scope | null): Scope {

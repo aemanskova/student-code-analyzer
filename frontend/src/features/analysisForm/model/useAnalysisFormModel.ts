@@ -5,6 +5,7 @@ import { getApiErrorMessage } from "@shared/lib"
 import { useState } from "react"
 import { useForm } from "react-hook-form"
 
+import { DEFAULT_JS_ESLINT_CONFIG } from "./constants"
 import type { AnalysisFormValues, AnalysisRunResult } from "./types"
 import { analysisSchema } from "./validator"
 
@@ -26,6 +27,8 @@ export const useAnalysisFormModel = ({ initialValues, onSuccess }: Params) => {
       archive: null,
       direction: initialValues?.direction ?? "html_css",
       metrics: [],
+      eslintConfigText: initialValues?.eslintConfigText ?? DEFAULT_JS_ESLINT_CONFIG,
+      eslintConfigFormat: initialValues?.eslintConfigFormat ?? "mjs",
       recursive: initialValues?.recursive ?? true,
       depth: initialValues?.depth,
       includeGitMetrics: initialValues?.includeGitMetrics ?? true
@@ -44,6 +47,14 @@ export const useAnalysisFormModel = ({ initialValues, onSuccess }: Params) => {
         key: uploadedArchive.key,
         direction: values.direction,
         metrics: values.metrics.length > 0 ? values.metrics : undefined,
+        eslintConfigText:
+          values.direction === "js" && values.eslintConfigText.trim()
+            ? values.eslintConfigText
+            : undefined,
+        eslintConfigFormat:
+          values.direction === "js" && values.eslintConfigText.trim()
+            ? values.eslintConfigFormat
+            : undefined,
         r: values.recursive,
         depth: values.recursive ? values.depth : undefined,
         includeGitMetrics: values.includeGitMetrics,

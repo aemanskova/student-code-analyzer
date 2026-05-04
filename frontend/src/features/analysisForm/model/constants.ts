@@ -90,6 +90,44 @@ const JS_METRICS = [
   "switch_without_default_count"
 ]
 
+export const DEFAULT_JS_ESLINT_CONFIG = `export default [
+  {
+    files: ["**/*.{js,mjs,cjs,jsx,ts,tsx}"],
+    ignores: [
+      "**/node_modules/**",
+      "**/dist/**",
+      "**/build/**",
+      "**/coverage/**",
+      "**/.git/**"
+    ],
+    languageOptions: {
+      ecmaVersion: "latest",
+      sourceType: "module",
+      globals: {
+        console: "readonly",
+        window: "readonly",
+        document: "readonly",
+        process: "readonly",
+        module: "readonly",
+        require: "readonly"
+      }
+    },
+    rules: {
+      "no-undef": "error",
+      "no-unused-vars": "warn",
+      "no-redeclare": "error",
+      "no-unreachable": "error",
+      "no-inner-declarations": "warn"
+    }
+  },
+  {
+    files: ["**/*.cjs"],
+    languageOptions: {
+      sourceType: "commonjs"
+    }
+  }
+]`
+
 export const METRICS_BY_DIRECTION: Record<Direction, string[]> = {
   html_css: HTML_CSS_METRICS,
   js: JS_METRICS

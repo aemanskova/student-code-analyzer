@@ -1,6 +1,7 @@
 export interface MetricComputeContext {
   absolutePath: string;
   relativePath: string;
+  eslintConfigPath?: string;
   runId?: string;
   rootAbsolutePath?: string;
 }
