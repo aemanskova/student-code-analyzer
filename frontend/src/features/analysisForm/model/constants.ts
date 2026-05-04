@@ -1,9 +1,8 @@
 import type { Direction } from "@entities/analysis/api"
+import { ANALYSIS_DIRECTION_OPTIONS } from "@entities/analysis/model/direction"
 
-export const DIRECTION_OPTIONS: Array<{ value: Direction; label: string }> = [
-  { value: "html_css", label: "html/css" },
-  { value: "js", label: "js" }
-]
+export const DIRECTION_OPTIONS: Array<{ value: Direction; label: string }> =
+  ANALYSIS_DIRECTION_OPTIONS
 
 const HTML_CSS_METRICS = [
   "html_files",
@@ -89,6 +88,9 @@ const JS_METRICS = [
   "inner_html_usage_count",
   "switch_without_default_count"
 ]
+
+export const ESLINT_METRICS = ["eslint_errors_count", "eslint_warnings_count"] as const
+export const ESLINT_METRIC_SET = new Set<string>(ESLINT_METRICS)
 
 export const DEFAULT_JS_ESLINT_CONFIG = `export default [
   {

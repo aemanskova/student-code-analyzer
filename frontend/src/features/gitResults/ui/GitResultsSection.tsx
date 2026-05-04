@@ -83,8 +83,8 @@ export function GitResultsSection({ runId, analysisDepth, selectedLevels }: Prop
                     render={({ field }) => (
                       <TextInput
                         disabled={!hasRows}
-                        label="Поиск по пути"
-                        placeholder="Введите часть пути репозитория"
+                        label="Папка"
+                        placeholder="Введите название папки"
                         value={field.value}
                         w={520}
                         onChange={(event) => field.onChange(event.currentTarget.value)}

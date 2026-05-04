@@ -198,7 +198,7 @@ export function GitChartsSection({ runId, rows, analysisDepth, selectedLevels }:
             <MultiSelect
               clearable={!field.value.includes(ALL_GIT_METRICS_OPTION)}
               data={metricOptions}
-              label="Метрики для графиков (Git)"
+              label="Метрики"
               placeholder="Выберите метрики"
               searchable
               value={field.value}

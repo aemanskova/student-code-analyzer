@@ -1,3 +1,7 @@
+import {
+  AnalysisDirectionLabel,
+  getAnalysisDirectionLabel
+} from "@entities/analysis/model/direction"
 import { type ClusterizationListItem, formatClusterDate } from "@entities/clusterizing"
 import { Anchor } from "@mantine/core"
 import { useDebouncedValue } from "@mantine/hooks"
@@ -8,7 +12,9 @@ import { useForm, useWatch } from "react-hook-form"
 import { NavLink } from "react-router"
 
 export const CLUSTERIZING_LIST_PAGE_SIZE = 8
-export const CLUSTERIZING_DIRECTION_OPTIONS = [{ label: "HTML/CSS", value: "html_css" }]
+export const CLUSTERIZING_DIRECTION_OPTIONS = [
+  { label: AnalysisDirectionLabel.HtmlCss, value: "html_css" }
+]
 
 export type ClusterizingListFiltersForm = {
   dateFrom: Date | null
@@ -94,9 +100,14 @@ export const useClusterizingList = (rows: ClusterizationListItem[]) => {
             {row.sourcePath || row.runId}
           </Anchor>
         ),
-        title: "Папка анализа"
+        title: "Папка"
       },
-      { key: "direction", minWidth: 160, render: (row) => row.direction, title: "Направление" },
+      {
+        key: "direction",
+        minWidth: 160,
+        render: (row) => getAnalysisDirectionLabel(row.direction),
+        title: "Направление"
+      },
       {
         key: "clustersCount",
         minWidth: 120,

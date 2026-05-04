@@ -5,7 +5,6 @@ import { getApiErrorMessage } from "@shared/lib"
 import { useState } from "react"
 import { useForm } from "react-hook-form"
 
-import { DEFAULT_JS_ESLINT_CONFIG } from "./constants"
 import type { AnalysisFormValues, AnalysisRunResult } from "./types"
 import { analysisSchema } from "./validator"
 
@@ -25,10 +24,10 @@ export const useAnalysisFormModel = ({ initialValues, onSuccess }: Params) => {
     mode: "onBlur",
     defaultValues: {
       archive: null,
-      direction: initialValues?.direction ?? "html_css",
+      direction: initialValues?.direction ?? null,
       metrics: [],
-      eslintConfigText: initialValues?.eslintConfigText ?? DEFAULT_JS_ESLINT_CONFIG,
-      eslintConfigFormat: initialValues?.eslintConfigFormat ?? "mjs",
+      eslintConfigText: initialValues?.eslintConfigText ?? "",
+      eslintConfigFormat: initialValues?.eslintConfigFormat,
       recursive: initialValues?.recursive ?? true,
       depth: initialValues?.depth,
       includeGitMetrics: initialValues?.includeGitMetrics ?? true
@@ -43,6 +42,11 @@ export const useAnalysisFormModel = ({ initialValues, onSuccess }: Params) => {
 
     setRunFormError(null)
     try {
+      if (!values.direction) {
+        setRunFormError("Выберите направление анализа.")
+        return
+      }
+
       const request = {
         key: uploadedArchive.key,
         direction: values.direction,
@@ -53,7 +57,7 @@ export const useAnalysisFormModel = ({ initialValues, onSuccess }: Params) => {
             : undefined,
         eslintConfigFormat:
           values.direction === "js" && values.eslintConfigText.trim()
-            ? values.eslintConfigFormat
+            ? (values.eslintConfigFormat ?? "mjs")
             : undefined,
         r: values.recursive,
         depth: values.recursive ? values.depth : undefined,

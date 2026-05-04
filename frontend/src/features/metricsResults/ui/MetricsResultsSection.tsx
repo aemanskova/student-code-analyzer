@@ -1,4 +1,5 @@
 import { AnalysisCharts, AnalysisTable } from "@entities/analysis"
+import { getMetricLabel } from "@entities/glossary"
 import { Button, Group, Skeleton, Stack, Tabs, Text, TextInput } from "@mantine/core"
 import { ChartLineUp, Table as TableIcon } from "@phosphor-icons/react"
 import { AllOptionsMultiSelect } from "@shared/ui"
@@ -33,7 +34,7 @@ export function MetricsResultsSection({ runId, analysisDepth, selectedLevels }: 
     [metrics, selectedTableMetrics]
   )
   const metricOptions = useMemo(
-    () => metrics.map((metric) => ({ value: metric, label: metric })),
+    () => metrics.map((metric) => ({ value: metric, label: getMetricLabel(metric) })),
     [metrics]
   )
 
@@ -109,8 +110,8 @@ export function MetricsResultsSection({ runId, analysisDepth, selectedLevels }: 
                     render={({ field }) => (
                       <TextInput
                         disabled={!hasRows}
-                        label="Поиск по пути"
-                        placeholder="Введите часть пути (например, group1/student2)"
+                        label="Папка"
+                        placeholder="Введите название папки"
                         value={field.value}
                         w={520}
                         onChange={(event) => field.onChange(event.currentTarget.value)}
@@ -121,7 +122,7 @@ export function MetricsResultsSection({ runId, analysisDepth, selectedLevels }: 
                     allLabel="Все метрики"
                     allValue={ALL_TABLE_METRICS}
                     disabled={!hasRows}
-                    label="Метрики для таблицы"
+                    label="Метрики"
                     options={metricOptions}
                     searchable
                     value={selectedTableMetrics}

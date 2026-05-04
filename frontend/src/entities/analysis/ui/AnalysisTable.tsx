@@ -1,4 +1,5 @@
 import type { AnalysisRow } from "@entities/analysis/api"
+import { getMetricLabel } from "@entities/glossary"
 import { DataTable, type VirtualizedColumn } from "@shared/ui/table"
 
 type Props = {
@@ -10,13 +11,13 @@ export function AnalysisTable({ rows, metrics }: Props) {
   const columns: Array<VirtualizedColumn<AnalysisRow>> = [
     {
       key: "path",
-      title: "Путь",
+      title: "Папка",
       minWidth: 260,
       render: (row) => row.path
     },
     ...metrics.map((metric) => ({
       key: metric,
-      title: metric,
+      title: getMetricLabel(metric),
       minWidth: 140,
       render: (row: AnalysisRow) => String(row[metric] ?? "")
     }))

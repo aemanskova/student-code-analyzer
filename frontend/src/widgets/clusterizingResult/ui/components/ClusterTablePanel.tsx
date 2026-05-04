@@ -34,8 +34,8 @@ export function ClusterTablePanel({
             name="pathFilter"
             render={({ field }) => (
               <TextInput
-                label="Поиск по пути"
-                placeholder="Введите часть пути"
+                label="Папка"
+                placeholder="Введите название папки"
                 value={field.value}
                 w={520}
                 onChange={(event) => field.onChange(event.currentTarget.value)}
@@ -49,7 +49,7 @@ export function ClusterTablePanel({
               <AllOptionsMultiSelect
                 allLabel="Все метрики"
                 allValue={ALL_CLUSTER_TABLE_METRICS}
-                label="Метрики для таблицы"
+                label="Метрики"
                 options={tableMetricOptions}
                 searchable
                 value={field.value}

@@ -1,3 +1,5 @@
+import type { Direction } from "@entities/analysis/api"
+import { getAnalysisDirectionLabel } from "@entities/analysis/model/direction"
 import { Card, Grid, Loader, MultiSelect, Select, Stack, Text, Title } from "@mantine/core"
 import { useEffect } from "react"
 import { Controller, useForm } from "react-hook-form"
@@ -13,6 +15,7 @@ type Props = {
   cascadedOptions: string[][]
   draftLevels: string[][]
   selectedLevels: string[][]
+  direction?: Direction
   pathsCount: number
   isLoading: boolean
   isResolved: boolean
@@ -29,6 +32,7 @@ export const AnalysisFiltersPanel = ({
   cascadedOptions,
   draftLevels,
   selectedLevels,
+  direction,
   pathsCount,
   isLoading,
   isResolved,
@@ -139,6 +143,7 @@ export const AnalysisFiltersPanel = ({
               Параметры среза
             </Text>
             <Text fw={600}>Уровней доступно: {levels.length || 1}</Text>
+            <Text size="sm">Направление: {getAnalysisDirectionLabel(direction)}</Text>
             <Text size="sm">Папок в срезе: {pathsCount}</Text>
           </Stack>
         </Card>

@@ -1,6 +1,7 @@
 import {
   type AnalysisRunResult,
   DIRECTION_OPTIONS,
+  ESLINT_METRIC_SET,
   METRICS_BY_DIRECTION,
   useAnalysisFormModel
 } from "@features/analysisForm/model"
@@ -14,11 +15,10 @@ import {
   MultiSelect,
   NumberInput,
   Select,
-  Stack,
-  Textarea
+  Stack
 } from "@mantine/core"
 import { getApiErrorMessage } from "@shared/lib"
-import { useEffect } from "react"
+import { useEffect, useMemo } from "react"
 import { Controller, useWatch } from "react-hook-form"
 
 import type { AnalysisFormValues } from "../model"
@@ -31,6 +31,15 @@ type Props = {
     values: Pick<AnalysisFormValues, "depth" | "direction" | "includeGitMetrics" | "recursive">
   ) => void
   onSuccess: (result: AnalysisRunResult) => void
+}
+
+const ESLINT_CONFIG_EXTENSIONS = new Set(["js", "mjs", "cjs"])
+
+const getEslintConfigFormat = (fileName: string): AnalysisFormValues["eslintConfigFormat"] => {
+  const extension = fileName.split(".").pop()?.toLowerCase()
+  return ESLINT_CONFIG_EXTENSIONS.has(extension || "")
+    ? (extension as AnalysisFormValues["eslintConfigFormat"])
+    : undefined
 }
 
 export function AnalysisForm({
@@ -57,11 +66,37 @@ export function AnalysisForm({
   const archive = useWatch({ control: form.control, name: "archive" })
   const depth = useWatch({ control: form.control, name: "depth" })
   const includeGitMetrics = useWatch({ control: form.control, name: "includeGitMetrics" })
+  const eslintConfigText = useWatch({ control: form.control, name: "eslintConfigText" })
+  const selectedMetrics = useWatch({ control: form.control, name: "metrics" }) || []
   const controlsDisabled = locked || isAnalyzing
+  const hasEslintConfig = direction === "js" && Boolean(eslintConfigText?.trim())
+  const metricsOptions = useMemo(() => {
+    if (!direction) {
+      return []
+    }
+    const directionMetrics = METRICS_BY_DIRECTION[direction]
+    if (direction !== "js" || hasEslintConfig) {
+      return directionMetrics
+    }
+    return directionMetrics.filter((metric) => !ESLINT_METRIC_SET.has(metric))
+  }, [direction, hasEslintConfig])
 
   useEffect(() => {
     onQueryStateChange?.({ depth, direction, includeGitMetrics, recursive })
   }, [depth, direction, includeGitMetrics, onQueryStateChange, recursive])
+
+  useEffect(() => {
+    const unavailableSelectedMetrics = selectedMetrics.filter(
+      (metric) => !metricsOptions.includes(metric)
+    )
+    if (unavailableSelectedMetrics.length) {
+      form.setValue(
+        "metrics",
+        selectedMetrics.filter((metric) => metricsOptions.includes(metric)),
+        { shouldDirty: true }
+      )
+    }
+  }, [form, metricsOptions, selectedMetrics])
 
   return (
     <Stack gap="md">
@@ -104,13 +139,20 @@ export function AnalysisForm({
       <Controller
         control={form.control}
         name="direction"
-        render={({ field }) => (
+        render={({ field, fieldState }) => (
           <Select
             data={DIRECTION_OPTIONS}
             disabled={controlsDisabled}
+            error={fieldState.error?.message}
             label="Направление"
+            placeholder="Выберите направление"
             value={field.value}
-            onChange={(value) => field.onChange(value || "html_css")}
+            onChange={(value) => {
+              field.onChange(value)
+              form.setValue("metrics", [], { shouldDirty: true })
+              form.setValue("eslintConfigText", "", { shouldDirty: true })
+              form.setValue("eslintConfigFormat", undefined, { shouldDirty: true })
+            }}
           />
         )}
       />
@@ -121,10 +163,10 @@ export function AnalysisForm({
         render={({ field }) => (
           <MultiSelect
             clearable
-            data={METRICS_BY_DIRECTION[direction]}
-            disabled={controlsDisabled}
+            data={metricsOptions}
+            disabled={controlsDisabled || !direction}
             label="Метрики"
-            placeholder="Выберите метрики"
+            placeholder={direction ? "Выберите метрики" : "Сначала выберите направление"}
             searchable
             value={field.value}
             onChange={field.onChange}
@@ -136,37 +178,43 @@ export function AnalysisForm({
         <Stack gap="xs">
           <Controller
             control={form.control}
-            name="eslintConfigFormat"
-            render={({ field }) => (
-              <Select
-                data={[
-                  { value: "mjs", label: "eslint.config.mjs" },
-                  { value: "cjs", label: "eslint.config.cjs" },
-                  { value: "js", label: "eslint.config.js" }
-                ]}
-                disabled={controlsDisabled}
-                label="Формат ESLint config"
-                value={field.value}
-                onChange={(value) => field.onChange(value || "mjs")}
-              />
-            )}
-          />
-
-          <Controller
-            control={form.control}
             name="eslintConfigText"
             render={({ field, fieldState }) => (
-              <Textarea
-                autosize
+              <FileInput
+                accept=".js,.mjs,.cjs"
                 disabled={controlsDisabled}
                 error={fieldState.error?.message}
                 label="ESLint config"
-                maxRows={18}
-                minRows={8}
-                spellCheck={false}
-                styles={{ input: { fontFamily: "monospace", fontSize: 13 } }}
-                value={field.value}
-                onChange={field.onChange}
+                placeholder="Загрузите eslint.config.js, .mjs или .cjs"
+                description="Для подсчета метрик ошибок и предупреждений линтера загрузите ESLint конфиг."
+                onChange={(file) => {
+                  if (!file) {
+                    field.onChange("")
+                    form.setValue("eslintConfigFormat", undefined, { shouldDirty: true })
+                    return
+                  }
+
+                  const format = getEslintConfigFormat(file.name)
+                  if (!format) {
+                    form.setError("eslintConfigText", {
+                      message: "Поддерживаются только файлы .js, .mjs и .cjs"
+                    })
+                    return
+                  }
+
+                  form.setValue("eslintConfigFormat", format, { shouldDirty: true })
+                  file
+                    .text()
+                    .then((text) => {
+                      field.onChange(text)
+                      form.clearErrors("eslintConfigText")
+                    })
+                    .catch(() => {
+                      form.setError("eslintConfigText", {
+                        message: "Не удалось прочитать ESLint config"
+                      })
+                    })
+                }}
               />
             )}
           />

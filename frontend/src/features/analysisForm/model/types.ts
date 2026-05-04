@@ -7,10 +7,10 @@ import type {
 
 export interface AnalysisFormValues {
   archive: File | null
-  direction: Direction
+  direction: Direction | null
   metrics: string[]
   eslintConfigText: string
-  eslintConfigFormat: EslintConfigFormat
+  eslintConfigFormat?: EslintConfigFormat
   recursive: boolean
   depth?: number
   includeGitMetrics: boolean

@@ -1,4 +1,5 @@
 import type { AnalysisListItem } from "@entities/analysis/api"
+import { getAnalysisDirectionLabel } from "@entities/analysis/model/direction"
 import { ActionIcon, Anchor, Tooltip } from "@mantine/core"
 import { Trash } from "@phosphor-icons/react"
 import { routes } from "@shared/config/routes"
@@ -27,7 +28,7 @@ export const ArchiveListTable = ({
   const columns: Array<VirtualizedColumn<AnalysisListItem>> = [
     {
       key: "path",
-      title: "Папка анализа",
+      title: "Папка",
       minWidth: 360,
       render: (row) => (
         <Anchor
@@ -44,7 +45,7 @@ export const ArchiveListTable = ({
       key: "direction",
       title: "Направление",
       minWidth: 180,
-      render: (row) => row.direction
+      render: (row) => getAnalysisDirectionLabel(row.direction)
     },
     {
       key: "date",

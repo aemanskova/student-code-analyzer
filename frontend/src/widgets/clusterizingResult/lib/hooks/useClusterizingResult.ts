@@ -66,7 +66,10 @@ export const useClusterizingResult = (data: ClusterizationDetailsResponse) => {
     value: metric,
     label: getMetricLabel(metric)
   }))
-  const tableMetricOptions = orderedMetrics.map((metric) => ({ value: metric, label: metric }))
+  const tableMetricOptions = orderedMetrics.map((metric) => ({
+    value: metric,
+    label: getMetricLabel(metric)
+  }))
   const visibleTableMetrics = selectedTableMetrics.includes(ALL_CLUSTER_TABLE_METRICS)
     ? orderedMetrics
     : selectedTableMetrics.filter((metric) => orderedMetrics.includes(metric))
@@ -80,7 +83,7 @@ export const useClusterizingResult = (data: ClusterizationDetailsResponse) => {
       { key: "path", title: "Папка", minWidth: 320, render: (row) => row.path },
       ...visibleTableMetrics.map((metric) => ({
         key: metric,
-        title: metric,
+        title: getMetricLabel(metric),
         minWidth: 160,
         render: (row: ClusteredMetricRow) => toMetricDisplayValue(row.metrics[metric])
       }))
@@ -91,7 +94,7 @@ export const useClusterizingResult = (data: ClusterizationDetailsResponse) => {
     () =>
       orderedMetrics.map((metric) => ({
         key: metric,
-        title: metric,
+        title: getMetricLabel(metric),
         minWidth: 160,
         render: (row: ClusteredMetricRow | ExcludedMetricRow) =>
           toMetricDisplayValue(row.metrics[metric])

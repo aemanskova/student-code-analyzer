@@ -154,6 +154,20 @@ export const HTML_GLOSSARY_METRICS: GlossaryMetric[] = [
     description: "Количество уникальных значений id, которые повторялись больше одного раза."
   },
   {
+    order: 22,
+    metric: "img_missing_alt_ratio",
+    translation: "Доля изображений без alt.",
+    description:
+      "Доля тегов img без атрибута alt или с некорректным alt относительно общего количества тегов img."
+  },
+  {
+    order: 23,
+    metric: "form_controls_missing_label_ratio",
+    translation: "Доля элементов формы без label.",
+    description:
+      "Доля элементов управления формы без корректной текстовой метки label относительно общего количества элементов формы."
+  },
+  {
     order: 24,
     metric: "vnu_files_checked",
     translation: "Количество файлов, проверенных VNU.",

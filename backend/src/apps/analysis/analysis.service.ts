@@ -133,6 +133,8 @@ const JAVASCRIPT_METRIC_ORDER = [
   "switch_without_default_count"
 ];
 
+const ESLINT_METRICS = new Set(["eslint_errors_count", "eslint_warnings_count"]);
+
 const JAVASCRIPT_METRIC_ORDER_INDEX = new Map(
   JAVASCRIPT_METRIC_ORDER.map((metric, index) => [metric, index])
 );
@@ -355,7 +357,7 @@ export class AnalysisService implements OnModuleInit {
       return this.withOptionalGitData(basicResult, dto);
     }
 
-    const selectedMetrics = dto.metrics?.length ? dto.metrics : basicMetrics;
+    const selectedMetrics = dto.metrics !== undefined ? dto.metrics : basicMetrics;
 
     if (!selectedMetrics.length) {
       throw new BadRequestException("No available metrics for selected direction");
@@ -412,7 +414,11 @@ export class AnalysisService implements OnModuleInit {
       throw new BadRequestException("archive content is empty");
     }
 
-    const selectedMetrics = this.resolveSelectedMetrics(input.direction, input.metrics);
+    const selectedMetrics = this.filterEslintMetricsIfConfigMissing(
+      input.direction,
+      this.resolveSelectedMetrics(input.direction, input.metrics),
+      input.eslintConfigText
+    );
     // Временный каталог должен быть внутри worksRoot, иначе не пройдёт security-проверку
     // `requirePathUnderRoot` в `run()` (см. SECURITY_FIXES §10 и resolveRootPath).
     await fs.mkdir(this.worksRoot, { recursive: true });
@@ -1542,7 +1548,7 @@ export class AnalysisService implements OnModuleInit {
         student: row.studentValue,
         year:
           this.extractYearValue(row.metrics, row.path) || resolveYearFromGit(row.runId, row.path),
-        ...row.metrics
+        ...this.sanitizeReturnedMetrics(row.direction, row.metrics, row.cacheKey)
       })),
       gitData: gitRows.map((row) => ({
         runId: row.runId,
@@ -1612,7 +1618,7 @@ export class AnalysisService implements OnModuleInit {
         student: row.studentValue,
         year:
           this.extractYearValue(row.metrics, row.path) || resolveYearFromGit(row.runId, row.path),
-        ...row.metrics
+        ...this.sanitizeReturnedMetrics(row.direction, row.metrics, row.cacheKey)
       })),
       gitData: gitRows.map((row) => ({
         runId: row.runId,
@@ -1879,7 +1885,9 @@ export class AnalysisService implements OnModuleInit {
 
     const metricSet = new Set<string>();
     for (const row of filteredRows) {
-      for (const key of Object.keys(row.metrics || {})) {
+      for (const key of Object.keys(
+        this.sanitizeReturnedMetrics(row.direction, row.metrics, row.cacheKey)
+      )) {
         metricSet.add(key);
       }
     }
@@ -1904,7 +1912,7 @@ export class AnalysisService implements OnModuleInit {
         student: row.studentValue,
         year:
           this.extractYearValue(row.metrics, row.path) || resolveYearFromGit(row.runId, row.path),
-        ...row.metrics
+        ...this.sanitizeReturnedMetrics(row.direction, row.metrics, row.cacheKey)
       })),
       gitRows: filteredGitRows.map((row) => ({
         runId: row.runId,
@@ -4648,6 +4656,41 @@ export class AnalysisService implements OnModuleInit {
     return selected;
   }
 
+  private filterEslintMetricsIfConfigMissing(
+    direction: string,
+    selectedMetrics: string[],
+    eslintConfigText?: string
+  ): string[] {
+    if (direction !== "js" || this.hasEslintConfigText(eslintConfigText)) {
+      return selectedMetrics;
+    }
+
+    return selectedMetrics.filter((metric) => !ESLINT_METRICS.has(metric));
+  }
+
+  private sanitizeReturnedMetrics(
+    direction: string,
+    metrics: Record<string, string | number | null>,
+    cacheKey?: string | null
+  ): Record<string, string | number | null> {
+    if (direction !== "js" || this.cacheKeyHasEslintConfig(cacheKey)) {
+      return metrics || {};
+    }
+
+    return Object.fromEntries(
+      Object.entries(metrics || {}).filter(([metric]) => !ESLINT_METRICS.has(metric))
+    );
+  }
+
+  private cacheKeyHasEslintConfig(cacheKey?: string | null): boolean {
+    const match = String(cacheKey || "").match(/(?:^|\|)eslintConfig=([^|]*)/);
+    return Boolean(match?.[1]);
+  }
+
+  private hasEslintConfigText(text?: string): boolean {
+    return String(text || "").trim().length > 0;
+  }
+
   private async writeEslintConfigIfNeeded(
     tempRoot: string,
     input: ZipAnalysisInput
@@ -4656,10 +4699,10 @@ export class AnalysisService implements OnModuleInit {
       return undefined;
     }
 
-    const configText = String(input.eslintConfigText || "").trim();
-    if (!configText) {
+    if (!this.hasEslintConfigText(input.eslintConfigText)) {
       return undefined;
     }
+    const configText = String(input.eslintConfigText).trim();
 
     const configDir = path.join(tempRoot, ".analysis-eslint");
     await fs.mkdir(configDir, { recursive: true });

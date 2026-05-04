@@ -11,6 +11,7 @@ import { NavLink } from "react-router"
 import {
   ALL_METRICS_OPTION,
   buildGitYearResolver,
+  extractMetricYearPoints,
   getYearChartSpecialties
 } from "../model/analysis-charts"
 import { getNumericMetrics } from "../model/helpers"
@@ -115,6 +116,13 @@ export function AnalysisCharts({
     () => getYearChartSpecialties(rows, metrics, analysisDepth, gitYearResolver),
     [analysisDepth, gitYearResolver, metrics, rows]
   )
+  const hasYearCharts = useMemo(
+    () =>
+      metrics.some(
+        (metric) => extractMetricYearPoints(rows, metric, analysisDepth, gitYearResolver).length > 0
+      ),
+    [analysisDepth, gitYearResolver, metrics, rows]
+  )
   const chartSearch = useMemo(
     () => buildLevelsSearch(analysisDepth, selectedLevels),
     [analysisDepth, selectedLevels]
@@ -132,6 +140,12 @@ export function AnalysisCharts({
       form.setValue("selectedMetrics", nextMetrics)
     }
   }, [availableMetrics, form, selectedChartMetrics])
+
+  useEffect(() => {
+    if (chartTab === "years" && !hasYearCharts) {
+      setChartTab("distribution")
+    }
+  }, [chartTab, hasYearCharts])
 
   const handleMetricChange = (values: string[]) => {
     const normalizedValues = values.filter(
@@ -181,7 +195,7 @@ export function AnalysisCharts({
           <AllOptionsMultiSelect
             allLabel="Все метрики"
             allValue={ALL_METRICS_OPTION}
-            label="Метрики для графиков"
+            label="Метрики"
             options={metricOptions}
             placeholder="Выберите метрики"
             searchable
@@ -197,9 +211,11 @@ export function AnalysisCharts({
           <Tabs.Tab leftSection={<ChartBar size={16} />} value="distribution">
             Распределение показателей
           </Tabs.Tab>
-          <Tabs.Tab leftSection={<CalendarDots size={16} />} value="years">
-            Динамика по годам
-          </Tabs.Tab>
+          {hasYearCharts ? (
+            <Tabs.Tab leftSection={<CalendarDots size={16} />} value="years">
+              Динамика по годам
+            </Tabs.Tab>
+          ) : null}
         </Tabs.List>
 
         <Tabs.Panel pt="md" value="distribution">
@@ -222,34 +238,36 @@ export function AnalysisCharts({
           </Grid>
         </Tabs.Panel>
 
-        <Tabs.Panel pt="md" value="years">
-          <Stack gap="md">
-            <YearChartLegend specialties={yearSpecialties} />
-            <Grid>
-              {metrics.map((metric) => (
-                <Grid.Col key={`year:${metric}`} span={{ base: 12, sm: 6, lg: 4 }}>
-                  <Card withBorder>
-                    <Stack gap="md">
-                      <MetricTitle
-                        label={getMetricLabel(metric)}
-                        metric={metric}
-                        runId={runId}
-                        search={`${chartSearch}&mode=years`}
-                      />
-                      <MetricYearViolinChart
-                        analysisDepth={analysisDepth}
-                        gitYearResolver={gitYearResolver}
-                        metric={metric}
-                        rows={rows}
-                        specialties={yearSpecialties}
-                      />
-                    </Stack>
-                  </Card>
-                </Grid.Col>
-              ))}
-            </Grid>
-          </Stack>
-        </Tabs.Panel>
+        {hasYearCharts ? (
+          <Tabs.Panel pt="md" value="years">
+            <Stack gap="md">
+              <YearChartLegend specialties={yearSpecialties} />
+              <Grid>
+                {metrics.map((metric) => (
+                  <Grid.Col key={`year:${metric}`} span={{ base: 12, sm: 6, lg: 4 }}>
+                    <Card withBorder>
+                      <Stack gap="md">
+                        <MetricTitle
+                          label={getMetricLabel(metric)}
+                          metric={metric}
+                          runId={runId}
+                          search={`${chartSearch}&mode=years`}
+                        />
+                        <MetricYearViolinChart
+                          analysisDepth={analysisDepth}
+                          gitYearResolver={gitYearResolver}
+                          metric={metric}
+                          rows={rows}
+                          specialties={yearSpecialties}
+                        />
+                      </Stack>
+                    </Card>
+                  </Grid.Col>
+                ))}
+              </Grid>
+            </Stack>
+          </Tabs.Panel>
+        ) : null}
       </Tabs>
     </Stack>
   )
