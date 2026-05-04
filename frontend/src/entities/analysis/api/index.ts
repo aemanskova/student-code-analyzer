@@ -31,6 +31,7 @@ export type {
   DeleteSavedRunResponse,
   DeleteStandaloneHeatmapResponse,
   Direction,
+  EslintConfigFormat,
   GitAnalysisRow,
   HeatmapLimitValidationResponse,
   HeatmapValidateUploadRequest,

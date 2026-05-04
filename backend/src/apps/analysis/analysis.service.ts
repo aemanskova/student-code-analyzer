@@ -11,7 +11,7 @@ import { Agent as HttpsAgent } from "node:https";
 import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { Readable, Transform } from "node:stream";
@@ -67,6 +67,8 @@ interface ZipAnalysisInput {
   onProgress?: (stage: string, progressPercent: number) => Promise<void> | void;
   direction: string;
   metrics?: string[];
+  eslintConfigText?: string;
+  eslintConfigFormat?: "js" | "mjs" | "cjs";
   group?: string;
   student?: string;
   r?: boolean;
@@ -89,6 +91,8 @@ interface QueuedS3Job {
     key: string;
     direction: string;
     metrics?: string[];
+    eslintConfigText?: string;
+    eslintConfigFormat?: "js" | "mjs" | "cjs";
     group?: string;
     student?: string;
     r?: boolean;
@@ -97,6 +101,43 @@ interface QueuedS3Job {
     includePlagiarismHeatmap?: boolean;
   };
 }
+
+const JAVASCRIPT_METRIC_ORDER = [
+  "lines_of_code",
+  "functions_count_user",
+  "functions_count_all",
+  "average_function_size",
+  "files_count",
+  "cyclomatic_complexity_avg",
+  "cyclomatic_complexity_sum",
+  "maximum_nesting_depth",
+  "max_parameters_per_function",
+  "halstead_volume",
+  "halstead_difficulty",
+  "halstead_effort",
+  "cognitive_complexity",
+  "eslint_errors_count",
+  "eslint_warnings_count",
+  "internal_similarity",
+  "maintainability",
+  "complex_methods_count",
+  "long_parameter_list_count",
+  "dead_code_count",
+  "long_methods_count",
+  "unused_parameters_count",
+  "unused_variables_count",
+  "undeclared_variables_count",
+  "long_message_chains_count",
+  "long_scope_chaining_count",
+  "inner_html_usage_count",
+  "switch_without_default_count"
+];
+
+const ESLINT_METRICS = new Set(["eslint_errors_count", "eslint_warnings_count"]);
+
+const JAVASCRIPT_METRIC_ORDER_INDEX = new Map(
+  JAVASCRIPT_METRIC_ORDER.map((metric, index) => [metric, index])
+);
 
 interface QueuedHeatmapJob {
   jobId: string;
@@ -130,6 +171,11 @@ type RunFilterInput = {
 };
 
 type ZipEntryFilter = (relativePath: string) => boolean;
+type FolderMetricUnit = {
+  absolutePath: string;
+  relativePath: string;
+  targetKind: "directory" | "file";
+};
 
 const HEATMAP_MAX_WORKS = 100;
 const HEATMAP_LIMIT_MESSAGE =
@@ -311,7 +357,7 @@ export class AnalysisService implements OnModuleInit {
       return this.withOptionalGitData(basicResult, dto);
     }
 
-    const selectedMetrics = dto.metrics?.length ? dto.metrics : basicMetrics;
+    const selectedMetrics = dto.metrics !== undefined ? dto.metrics : basicMetrics;
 
     if (!selectedMetrics.length) {
       throw new BadRequestException("No available metrics for selected direction");
@@ -325,6 +371,10 @@ export class AnalysisService implements OnModuleInit {
     }
 
     if (dto.rootPath) {
+      if (dto.direction === "js") {
+        const folderResult = await this.runFromFolderJs(dto, selectedMetrics);
+        return this.withOptionalGitData(folderResult, dto);
+      }
       const folderResult = await this.runFromFolderBasic(dto, selectedMetrics);
       return this.withOptionalGitData(folderResult, dto);
     }
@@ -364,7 +414,11 @@ export class AnalysisService implements OnModuleInit {
       throw new BadRequestException("archive content is empty");
     }
 
-    const selectedMetrics = this.resolveSelectedMetrics(input.direction, input.metrics);
+    const selectedMetrics = this.filterEslintMetricsIfConfigMissing(
+      input.direction,
+      this.resolveSelectedMetrics(input.direction, input.metrics),
+      input.eslintConfigText
+    );
     // Временный каталог должен быть внутри worksRoot, иначе не пройдёт security-проверку
     // `requirePathUnderRoot` в `run()` (см. SECURITY_FIXES §10 и resolveRootPath).
     await fs.mkdir(this.worksRoot, { recursive: true });
@@ -435,13 +489,17 @@ export class AnalysisService implements OnModuleInit {
         }
       }
 
+      const eslintConfigPath = await this.writeEslintConfigIfNeeded(tempRoot, input);
+
       await input.onProgress?.("Запуск проверки работ", 40);
       const result = await this.run({
+        runId: cacheKey,
         direction: input.direction,
         metrics: selectedMetrics,
         group: input.group,
         student: input.student,
         rootPath: tempRoot,
+        eslintConfigPath,
         r: input.r,
         depth: input.depth,
         includeGitMetrics: input.includeGitMetrics,
@@ -516,6 +574,8 @@ export class AnalysisService implements OnModuleInit {
       errorMessage: null,
       requestPayload: {
         metrics: input.metrics || [],
+        eslintConfigHash: this.hashOptionalText(input.eslintConfigText),
+        eslintConfigFormat: this.resolveEslintConfigFormat(input.eslintConfigFormat),
         r: Boolean(input.r),
         depth: input.depth ?? null,
         includeGitMetrics: this.resolveIncludeGitMetrics(input.includeGitMetrics),
@@ -587,6 +647,8 @@ export class AnalysisService implements OnModuleInit {
     uploadId: string;
     direction: string;
     metrics?: string[];
+    eslintConfigText?: string;
+    eslintConfigFormat?: "js" | "mjs" | "cjs";
     group?: string;
     student?: string;
     r?: boolean;
@@ -626,6 +688,8 @@ export class AnalysisService implements OnModuleInit {
         cleanupArchivePath: true,
         direction: input.direction,
         metrics: input.metrics,
+        eslintConfigText: input.eslintConfigText,
+        eslintConfigFormat: input.eslintConfigFormat,
         group: input.group,
         student: input.student,
         r: input.r,
@@ -880,6 +944,8 @@ export class AnalysisService implements OnModuleInit {
     key: string;
     direction: string;
     metrics?: string[];
+    eslintConfigText?: string;
+    eslintConfigFormat?: "js" | "mjs" | "cjs";
     group?: string;
     student?: string;
     r?: boolean;
@@ -907,6 +973,8 @@ export class AnalysisService implements OnModuleInit {
       requestPayload: {
         key,
         metrics: input.metrics || [],
+        eslintConfigHash: this.hashOptionalText(input.eslintConfigText),
+        eslintConfigFormat: this.resolveEslintConfigFormat(input.eslintConfigFormat),
         r: Boolean(input.r),
         depth: input.depth ?? null,
         includeGitMetrics: this.resolveIncludeGitMetrics(input.includeGitMetrics),
@@ -928,6 +996,8 @@ export class AnalysisService implements OnModuleInit {
         key,
         direction: input.direction,
         metrics: input.metrics,
+        eslintConfigText: input.eslintConfigText,
+        eslintConfigFormat: input.eslintConfigFormat,
         group: input.group,
         student: input.student,
         r: input.r,
@@ -1478,7 +1548,7 @@ export class AnalysisService implements OnModuleInit {
         student: row.studentValue,
         year:
           this.extractYearValue(row.metrics, row.path) || resolveYearFromGit(row.runId, row.path),
-        ...row.metrics
+        ...this.sanitizeReturnedMetrics(row.direction, row.metrics, row.cacheKey)
       })),
       gitData: gitRows.map((row) => ({
         runId: row.runId,
@@ -1548,7 +1618,7 @@ export class AnalysisService implements OnModuleInit {
         student: row.studentValue,
         year:
           this.extractYearValue(row.metrics, row.path) || resolveYearFromGit(row.runId, row.path),
-        ...row.metrics
+        ...this.sanitizeReturnedMetrics(row.direction, row.metrics, row.cacheKey)
       })),
       gitData: gitRows.map((row) => ({
         runId: row.runId,
@@ -1815,11 +1885,16 @@ export class AnalysisService implements OnModuleInit {
 
     const metricSet = new Set<string>();
     for (const row of filteredRows) {
-      for (const key of Object.keys(row.metrics || {})) {
+      for (const key of Object.keys(
+        this.sanitizeReturnedMetrics(row.direction, row.metrics, row.cacheKey)
+      )) {
         metricSet.add(key);
       }
     }
-    const metrics = Array.from(metricSet).sort((a, b) => a.localeCompare(b));
+    const metrics = this.sortMetricsForDirection(
+      filteredRows[0]?.direction || rows[0]?.direction || "",
+      Array.from(metricSet)
+    );
 
     return {
       runId: normalizedRunId,
@@ -1837,7 +1912,7 @@ export class AnalysisService implements OnModuleInit {
         student: row.studentValue,
         year:
           this.extractYearValue(row.metrics, row.path) || resolveYearFromGit(row.runId, row.path),
-        ...row.metrics
+        ...this.sanitizeReturnedMetrics(row.direction, row.metrics, row.cacheKey)
       })),
       gitRows: filteredGitRows.map((row) => ({
         runId: row.runId,
@@ -2604,40 +2679,64 @@ export class AnalysisService implements OnModuleInit {
     const rootAbsolutePath = this.resolveRootPath(dto.rootPath as string);
     await this.ensureDirectoryExists(rootAbsolutePath);
 
-    const workDirs = await this.collectWorkDirs(rootAbsolutePath, Boolean(dto.r));
+    const units = await this.collectHtmlMetricUnits(rootAbsolutePath, dto);
+    return this.runFromFolderMetricUnits(dto, selectedMetrics, rootAbsolutePath, units);
+  }
+
+  private async runFromFolderJs(
+    dto: RunAnalysisDto,
+    selectedMetrics: string[]
+  ): Promise<AnalysisResponse> {
+    const rootAbsolutePath = this.resolveRootPath(dto.rootPath as string);
+    const rootDisplayLabel = await this.inferRootDisplayLabel(rootAbsolutePath);
+    await this.ensureDirectoryExists(rootAbsolutePath);
+
+    const units = await this.collectJsMetricUnits(rootAbsolutePath, rootDisplayLabel, dto);
+    return this.runFromFolderMetricUnits(dto, selectedMetrics, rootAbsolutePath, units);
+  }
+
+  private async runFromFolderMetricUnits(
+    dto: RunAnalysisDto,
+    selectedMetrics: string[],
+    rootAbsolutePath: string,
+    units: FolderMetricUnit[]
+  ): Promise<AnalysisResponse> {
     const data: AnalysisRow[] = [];
+    const total = Math.max(1, units.length);
 
-    for (const workDir of workDirs) {
-      const htmlFiles = await this.collectFilesByExtension(workDir, [".html", ".htm"], dto.depth);
-
-      for (const absoluteHtmlPath of htmlFiles) {
-        const relativePath = this.normalizePath(path.relative(rootAbsolutePath, absoluteHtmlPath));
-        if (!relativePath || relativePath.startsWith("..")) {
-          continue;
-        }
-
-        const parsed = this.pathParserService.parse(relativePath);
-        if (dto.group && parsed.group !== dto.group) {
-          continue;
-        }
-        if (dto.student && parsed.student !== dto.student) {
-          continue;
-        }
-
-        const metricValues = await this.safeComputeMetrics(
-          dto.direction,
-          selectedMetrics,
-          absoluteHtmlPath,
-          relativePath
-        );
-
-        data.push({
-          path: relativePath,
-          group: parsed.group,
-          student: parsed.student,
-          ...metricValues
-        });
+    for (let index = 0; index < units.length; index += 1) {
+      const unit = units[index];
+      await dto.onAnalyzeProgress?.(index + 1, total, unit.relativePath);
+      if (!unit.relativePath || unit.relativePath.startsWith("..")) {
+        continue;
       }
+
+      const parsed = this.pathParserService.parse(unit.relativePath);
+
+      if (dto.group && parsed.group !== dto.group) {
+        continue;
+      }
+      if (dto.student && parsed.student !== dto.student) {
+        continue;
+      }
+
+      const metricValues = await this.safeComputeMetrics(
+        dto.direction,
+        selectedMetrics,
+        unit.absolutePath,
+        unit.relativePath,
+        rootAbsolutePath,
+        unit.targetKind,
+        dto.runId,
+        dto.eslintConfigPath
+      );
+
+      data.push({
+        path: unit.relativePath,
+        group: parsed.group,
+        student: parsed.student,
+        ...metricValues
+      });
     }
 
     return {
@@ -2651,19 +2750,32 @@ export class AnalysisService implements OnModuleInit {
     direction: string,
     metrics: string[],
     absolutePath: string,
-    relativePath: string
+    relativePath: string,
+    rootAbsolutePath?: string,
+    targetKind: "directory" | "file" = "file",
+    runId?: string,
+    eslintConfigPath?: string
   ) {
     try {
-      await this.ensureFileExists(absolutePath);
+      if (targetKind === "directory") {
+        await this.ensureDirectoryExists(absolutePath);
+      } else {
+        await this.ensureFileExists(absolutePath);
+      }
       return await this.metricsService.compute(
         direction,
         {
           absolutePath,
-          relativePath
+          relativePath,
+          eslintConfigPath,
+          runId,
+          rootAbsolutePath
         },
         metrics
       );
-    } catch {
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.warn(`Не удалось посчитать метрики ${direction} для ${relativePath}: ${message}`);
       const empty: Record<string, null> = {};
       for (const metric of metrics) {
         empty[metric] = null;
@@ -2750,6 +2862,97 @@ export class AnalysisService implements OnModuleInit {
     return files.length > 0;
   }
 
+  private async collectHtmlMetricUnits(
+    rootAbsolutePath: string,
+    dto: RunAnalysisDto
+  ): Promise<FolderMetricUnit[]> {
+    const workDirs = await this.collectWorkDirs(rootAbsolutePath, Boolean(dto.r));
+    const units: FolderMetricUnit[] = [];
+
+    for (const workDir of workDirs) {
+      const htmlFiles = await this.collectFilesByExtension(workDir, [".html", ".htm"], dto.depth);
+      for (const absolutePath of htmlFiles) {
+        const relativePath = this.normalizePath(path.relative(rootAbsolutePath, absolutePath));
+        if (!relativePath || relativePath.startsWith("..")) {
+          continue;
+        }
+        units.push({
+          absolutePath,
+          relativePath,
+          targetKind: "file"
+        });
+      }
+    }
+
+    return units;
+  }
+
+  private async collectJsMetricUnits(
+    rootAbsolutePath: string,
+    rootDisplayLabel: string,
+    dto: RunAnalysisDto
+  ): Promise<FolderMetricUnit[]> {
+    const depth =
+      typeof dto.depth === "number" ? dto.depth : Boolean(dto.r) ? Number.POSITIVE_INFINITY : 0;
+    const workDirs = await this.collectJsWorkDirs(rootAbsolutePath, depth);
+
+    return workDirs.map((absolutePath) => {
+      const relativePathRaw =
+        this.normalizePath(path.relative(rootAbsolutePath, absolutePath)) || ".";
+      return {
+        absolutePath,
+        relativePath: this.normalizeResultPath(relativePathRaw, rootDisplayLabel),
+        targetKind: "directory" as const
+      };
+    });
+  }
+
+  private async collectJsWorkDirs(rootAbsolutePath: string, maxDepth: number): Promise<string[]> {
+    if (maxDepth === 0) {
+      return [rootAbsolutePath];
+    }
+
+    const result: string[] = [];
+
+    const walk = async (directoryPath: string, depth: number) => {
+      if (depth === maxDepth) {
+        if (await this.hasJsFiles(directoryPath)) {
+          result.push(directoryPath);
+        }
+        return;
+      }
+
+      const entries = await fs.readdir(directoryPath, { withFileTypes: true }).catch(() => []);
+      const subdirs = entries
+        .filter((entry) => entry.isDirectory())
+        .filter((entry) => !entry.name.startsWith("."))
+        .filter((entry) => !this.ignoredDirNames.has(entry.name));
+
+      if (!subdirs.length) {
+        if (await this.hasJsFiles(directoryPath)) {
+          result.push(directoryPath);
+        }
+        return;
+      }
+
+      for (const entry of subdirs) {
+        await walk(path.join(directoryPath, entry.name), depth + 1);
+      }
+    };
+
+    await walk(rootAbsolutePath, 0);
+    return Array.from(new Set(result)).sort((a, b) => a.localeCompare(b));
+  }
+
+  private async hasJsFiles(directoryPath: string): Promise<boolean> {
+    const files = await this.collectFilesByExtension(
+      directoryPath,
+      [".js", ".mjs", ".cjs", ".jsx", ".ts", ".tsx"],
+      1
+    );
+    return files.length > 0;
+  }
+
   private async collectFilesByExtension(
     rootDir: string,
     extensions: string[],
@@ -2806,6 +3009,21 @@ export class AnalysisService implements OnModuleInit {
     await walk(rootDir, 0);
     files.sort((a, b) => a.localeCompare(b));
     return files;
+  }
+
+  private sortMetricsForDirection(direction: string, metrics: string[]): string[] {
+    if (direction !== "js") {
+      return [...metrics].sort((a, b) => a.localeCompare(b));
+    }
+
+    return [...metrics].sort((a, b) => {
+      const aIndex = JAVASCRIPT_METRIC_ORDER_INDEX.get(a);
+      const bIndex = JAVASCRIPT_METRIC_ORDER_INDEX.get(b);
+      if (aIndex !== undefined && bIndex !== undefined) return aIndex - bIndex;
+      if (aIndex !== undefined) return -1;
+      if (bIndex !== undefined) return 1;
+      return a.localeCompare(b);
+    });
   }
 
   private toCsv(data: AnalysisRow[], metrics: string[]): string {
@@ -4438,6 +4656,76 @@ export class AnalysisService implements OnModuleInit {
     return selected;
   }
 
+  private filterEslintMetricsIfConfigMissing(
+    direction: string,
+    selectedMetrics: string[],
+    eslintConfigText?: string
+  ): string[] {
+    if (direction !== "js" || this.hasEslintConfigText(eslintConfigText)) {
+      return selectedMetrics;
+    }
+
+    return selectedMetrics.filter((metric) => !ESLINT_METRICS.has(metric));
+  }
+
+  private sanitizeReturnedMetrics(
+    direction: string,
+    metrics: Record<string, string | number | null>,
+    cacheKey?: string | null
+  ): Record<string, string | number | null> {
+    if (direction !== "js" || this.cacheKeyHasEslintConfig(cacheKey)) {
+      return metrics || {};
+    }
+
+    return Object.fromEntries(
+      Object.entries(metrics || {}).filter(([metric]) => !ESLINT_METRICS.has(metric))
+    );
+  }
+
+  private cacheKeyHasEslintConfig(cacheKey?: string | null): boolean {
+    const match = String(cacheKey || "").match(/(?:^|\|)eslintConfig=([^|]*)/);
+    return Boolean(match?.[1]);
+  }
+
+  private hasEslintConfigText(text?: string): boolean {
+    return String(text || "").trim().length > 0;
+  }
+
+  private async writeEslintConfigIfNeeded(
+    tempRoot: string,
+    input: ZipAnalysisInput
+  ): Promise<string | undefined> {
+    if (input.direction !== "js") {
+      return undefined;
+    }
+
+    if (!this.hasEslintConfigText(input.eslintConfigText)) {
+      return undefined;
+    }
+    const configText = String(input.eslintConfigText).trim();
+
+    const configDir = path.join(tempRoot, ".analysis-eslint");
+    await fs.mkdir(configDir, { recursive: true });
+    const configPath = path.join(
+      configDir,
+      `eslint.config.${this.resolveEslintConfigFormat(input.eslintConfigFormat)}`
+    );
+    await fs.writeFile(configPath, `${configText}\n`, "utf8");
+    return configPath;
+  }
+
+  private resolveEslintConfigFormat(format?: string): "js" | "mjs" | "cjs" {
+    return format === "js" || format === "cjs" || format === "mjs" ? format : "mjs";
+  }
+
+  private hashOptionalText(text?: string): string | null {
+    const normalized = String(text || "").trim();
+    if (!normalized) {
+      return null;
+    }
+    return createHash("sha256").update(normalized).digest("hex");
+  }
+
   private async buildZipCacheKey(
     input: ZipAnalysisInput,
     archivePath: string | undefined,
@@ -4449,6 +4737,9 @@ export class AnalysisService implements OnModuleInit {
       `metrics=${metricsPart}`,
       `group=${input.group || ""}`,
       `student=${input.student || ""}`,
+      `eslintConfig=${this.hashOptionalText(input.eslintConfigText) || ""}`,
+      `eslintConfigFormat=${this.resolveEslintConfigFormat(input.eslintConfigFormat)}`,
+      `eslintRunner=v3`,
       `r=${input.r ? "1" : "0"}`,
       `depth=${input.depth ?? ""}`,
       `includeGitMetrics=${this.resolveIncludeGitMetrics(input.includeGitMetrics) ? "1" : "0"}`,
@@ -4838,6 +5129,8 @@ export class AnalysisService implements OnModuleInit {
           sourceFingerprint: `s3|bucket=${this.getS3Bucket()}|key=${job.input.key}|etag=${objectEtag}|size=${objectSize}`,
           direction: job.input.direction,
           metrics: job.input.metrics,
+          eslintConfigText: job.input.eslintConfigText,
+          eslintConfigFormat: job.input.eslintConfigFormat,
           group: job.input.group,
           student: job.input.student,
           r: job.input.r,

@@ -1,6 +1,7 @@
 import { useGetRunViewQuery } from "@entities/analysis/api"
 import {
   buildGitYearResolver,
+  extractMetricYearPoints,
   getYearChartSpecialties
 } from "@entities/analysis/model/analysis-charts"
 import {
@@ -93,7 +94,7 @@ export function AnalysisMetricChartPage() {
           </Stack>
           <Select
             data={metricOptions}
-            label="Метрика"
+            label="Метрики"
             searchable
             value={metric}
             w={520}
@@ -155,12 +156,17 @@ function MetricAnalysisChart({
     () => getYearChartSpecialties(rows, [metric], analysisDepth, gitYearResolver),
     [analysisDepth, gitYearResolver, metric, rows]
   )
+  const hasYearChart = useMemo(
+    () => extractMetricYearPoints(rows, metric, analysisDepth, gitYearResolver).length > 0,
+    [analysisDepth, gitYearResolver, metric, rows]
+  )
+  const safeMode = mode === "years" && !hasYearChart ? "distribution" : mode || "distribution"
 
   return (
-    <Tabs keepMounted={false} value={mode || "distribution"} onChange={setMode}>
+    <Tabs keepMounted={false} value={safeMode} onChange={setMode}>
       <Tabs.List>
         <Tabs.Tab value="distribution">Распределение</Tabs.Tab>
-        <Tabs.Tab value="years">Динамика по годам</Tabs.Tab>
+        {hasYearChart ? <Tabs.Tab value="years">Динамика по годам</Tabs.Tab> : null}
       </Tabs.List>
       <Tabs.Panel pt="md" value="distribution">
         <MetricHistogram
@@ -170,20 +176,22 @@ function MetricAnalysisChart({
           rows={rows}
         />
       </Tabs.Panel>
-      <Tabs.Panel pt="md" value="years">
-        <Stack gap="md">
-          <YearChartLegend specialties={specialties} />
-          <MetricYearViolinChart
-            analysisDepth={analysisDepth}
-            chartHeight={chartSize.height}
-            chartWidth={chartSize.width}
-            gitYearResolver={gitYearResolver}
-            metric={metric}
-            rows={rows}
-            specialties={specialties}
-          />
-        </Stack>
-      </Tabs.Panel>
+      {hasYearChart ? (
+        <Tabs.Panel pt="md" value="years">
+          <Stack gap="md">
+            <YearChartLegend specialties={specialties} />
+            <MetricYearViolinChart
+              analysisDepth={analysisDepth}
+              chartHeight={chartSize.height}
+              chartWidth={chartSize.width}
+              gitYearResolver={gitYearResolver}
+              metric={metric}
+              rows={rows}
+              specialties={specialties}
+            />
+          </Stack>
+        </Tabs.Panel>
+      ) : null}
     </Tabs>
   )
 }

@@ -1,6 +1,10 @@
 import { IsArray, IsBoolean, IsInt, IsOptional, IsString, Min } from "class-validator";
 
 export class RunAnalysisDto {
+  @IsOptional()
+  @IsString()
+  runId?: string;
+
   @IsString()
   direction!: string;
 
@@ -41,6 +45,9 @@ export class RunAnalysisDto {
   @IsOptional()
   @IsBoolean()
   includePlagiarismHeatmap?: boolean;
+
+  // Internal path to a generated ESLint config file. Not intended for request body.
+  eslintConfigPath?: string;
 
   // Internal callback for background job progress. Not intended for request body.
   onAnalyzeProgress?: (

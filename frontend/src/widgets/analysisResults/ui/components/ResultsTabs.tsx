@@ -1,3 +1,4 @@
+import type { Direction } from "@entities/analysis/api"
 import { GitResultsSection } from "@features/gitResults"
 import { MetricsResultsSection } from "@features/metricsResults"
 import { Tabs } from "@mantine/core"
@@ -7,6 +8,7 @@ type Props = {
   runId: string
   analysisDepth?: number
   selectedLevels: string[][]
+  direction?: Direction
   hasGitTab: boolean
   activeTab: string | null
   onTabChange: (value: string | null) => void
@@ -16,6 +18,7 @@ export const ResultsTabs = ({
   runId,
   analysisDepth,
   selectedLevels,
+  direction,
   hasGitTab,
   activeTab,
   onTabChange
@@ -23,7 +26,7 @@ export const ResultsTabs = ({
   <Tabs keepMounted={false} value={activeTab} onChange={onTabChange}>
     <Tabs.List>
       <Tabs.Tab leftSection={<ShieldCheck size={16} />} value="metrics">
-        Качество и доступность
+        {direction === "js" ? "Качество, сложность и «code smells»" : "Качество и доступность"}
       </Tabs.Tab>
       {hasGitTab ? (
         <Tabs.Tab leftSection={<GitBranch size={16} />} value="git">

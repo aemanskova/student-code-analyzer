@@ -71,7 +71,7 @@ export function ClusterizingMetricChartPage() {
           </Stack>
           <Select
             data={metricOptions}
-            label="Метрика"
+            label="Метрики"
             searchable
             value={metric}
             w={520}

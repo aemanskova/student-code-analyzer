@@ -1,4 +1,5 @@
 export type Direction = "html_css" | "js"
+export type EslintConfigFormat = "js" | "mjs" | "cjs"
 
 export interface AnalysisRow {
   path: string
@@ -39,6 +40,8 @@ export interface RunS3AsyncRequest {
   key: string
   direction: Direction
   metrics?: string[]
+  eslintConfigText?: string
+  eslintConfigFormat?: EslintConfigFormat
   r?: boolean
   depth?: number
   includeGitMetrics?: boolean

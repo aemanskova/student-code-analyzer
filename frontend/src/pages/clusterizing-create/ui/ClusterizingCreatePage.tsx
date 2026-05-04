@@ -1,4 +1,5 @@
 import { useGetSavedAnalysisListQuery } from "@entities/analysis/api"
+import { AnalysisDirectionLabel } from "@entities/analysis/model/direction"
 import { useBuildClusterizationMutation } from "@entities/clusterizing"
 import { Alert, Button, Card, Container, Group, Select, Stack, Text, Title } from "@mantine/core"
 import { routes } from "@shared/config/routes"
@@ -66,7 +67,7 @@ export function ClusterizingCreatePage() {
                 name="direction"
                 render={({ field }) => (
                   <Select
-                    data={[{ value: "html_css", label: "HTML/CSS" }]}
+                    data={[{ value: "html_css", label: AnalysisDirectionLabel.HtmlCss }]}
                     label="Направление"
                     readOnly
                     value={field.value}
@@ -82,7 +83,7 @@ export function ClusterizingCreatePage() {
                     clearable
                     data={runOptions}
                     disabled={isLoading || isFetching || isBuilding}
-                    label="Папка анализа"
+                    label="Папка"
                     nothingFoundMessage="Анализы не найдены"
                     placeholder="Выберите папку"
                     searchable
@@ -101,7 +102,7 @@ export function ClusterizingCreatePage() {
               </Button>
             </Group>
             <Text c="dimmed" size="sm">
-              Для выбора доступны сохраненные анализы направления HTML/CSS.
+              Для выбора доступны сохраненные анализы направления {AnalysisDirectionLabel.HtmlCss}.
             </Text>
             {error ? <Alert color="red">{error}</Alert> : null}
           </Stack>

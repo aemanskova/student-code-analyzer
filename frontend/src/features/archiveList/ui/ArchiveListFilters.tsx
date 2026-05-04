@@ -54,8 +54,8 @@ export const ArchiveListFilters = ({
         name="pathFilter"
         render={({ field }) => (
           <TextInput
-            label="Путь"
-            placeholder="Введите часть пути"
+            label="Папка"
+            placeholder="Введите название папки"
             value={field.value}
             onChange={(event) => {
               const value = event.currentTarget.value

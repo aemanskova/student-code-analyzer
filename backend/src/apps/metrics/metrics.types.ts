@@ -1,6 +1,9 @@
 export interface MetricComputeContext {
   absolutePath: string;
   relativePath: string;
+  eslintConfigPath?: string;
+  runId?: string;
+  rootAbsolutePath?: string;
 }
 
 export type MetricValues = Record<string, number | string | null>;

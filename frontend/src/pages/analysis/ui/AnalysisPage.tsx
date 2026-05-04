@@ -42,8 +42,8 @@ const formatDuration = (seconds: number | null | undefined): string | null => {
   return minutes > 0 ? `${minutes} мин. ${rest.toString().padStart(2, "0")} сек.` : `${rest} сек.`
 }
 
-const parseDirection = (value: string | null): Direction =>
-  value === "js" || value === "html_css" ? value : "html_css"
+const parseDirection = (value: string | null): Direction | undefined =>
+  value === "js" || value === "html_css" ? value : undefined
 
 const parseBooleanParam = (value: string | null, fallback: boolean): boolean => {
   if (value === "true") {
@@ -83,10 +83,13 @@ export function AnalysisPage() {
   const handleFormQueryStateChange = useCallback(
     (values: {
       depth?: number
-      direction: Direction
+      direction: Direction | null
       includeGitMetrics: boolean
       recursive: boolean
     }) => {
+      if (!values.direction) {
+        return
+      }
       const params = new URLSearchParams(searchParams)
       params.set("direction", values.direction)
       params.set("recursive", String(values.recursive))
@@ -132,7 +135,9 @@ export function AnalysisPage() {
 
     const params = new URLSearchParams()
     params.set("runId", nextRunId)
-    params.set("direction", direction)
+    if (direction) {
+      params.set("direction", direction)
+    }
     if (analysisDepth) {
       params.set("depth", String(analysisDepth))
     }
@@ -211,7 +216,7 @@ export function AnalysisPage() {
 
     return (
       <Container py="md" size="xl">
-        <AnalysisResultsWidget analysisDepth={analysisDepth} runId={runId} />
+        <AnalysisResultsWidget analysisDepth={analysisDepth} direction={direction} runId={runId} />
       </Container>
     )
   }

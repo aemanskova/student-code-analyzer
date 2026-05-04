@@ -156,8 +156,8 @@ export function HeatmapPage() {
                 name="folder"
                 render={({ field }) => (
                   <TextInput
-                    label="Путь"
-                    placeholder="Введите часть пути"
+                    label="Папка"
+                    placeholder="Введите название папки"
                     value={field.value}
                     onChange={(event) => {
                       field.onChange(event.currentTarget.value)

@@ -1,3 +1,4 @@
+import type { Direction } from "@entities/analysis/api"
 import { Stack } from "@mantine/core"
 import { Info } from "@phosphor-icons/react"
 import { InfoNotice } from "@shared/ui"
@@ -10,9 +11,10 @@ import { ResultsTabs } from "./components/ResultsTabs"
 type Props = {
   runId: string
   analysisDepth?: number
+  direction?: Direction
 }
 
-export function AnalysisResultsWidget({ runId, analysisDepth }: Props) {
+export function AnalysisResultsWidget({ runId, analysisDepth, direction }: Props) {
   const [activeTab, setActiveTab] = useState<string | null>("metrics")
   const {
     cascadedOptions,
@@ -40,13 +42,13 @@ export function AnalysisResultsWidget({ runId, analysisDepth }: Props) {
   const isLoading = !isOptionsResolved || optionsQuery.isLoading || optionsQuery.isFetching
   const shouldShowNoGitNotice = isGitOptionsResolved && !hasGitTab
   const shouldShowFeatureNotice = shouldShowNoGitNotice
-  const noticeText =
-    "Для этого запуска Git-метрики не рассчитывались. Доступен только отчет по качеству и доступности."
+  const noticeText = "Для этого запуска Git-метрики не рассчитывались."
 
   return (
     <Stack gap="md">
       <AnalysisFiltersPanel
         cascadedOptions={cascadedOptions}
+        direction={direction}
         draftLevels={draftLevels}
         isLoading={isLoading}
         isResolved={isOptionsResolved}
@@ -62,6 +64,7 @@ export function AnalysisResultsWidget({ runId, analysisDepth }: Props) {
       <ResultsTabs
         activeTab={activeTab}
         analysisDepth={analysisDepth}
+        direction={direction}
         hasGitTab={hasGitTab}
         runId={runId}
         selectedLevels={selectedLevels}

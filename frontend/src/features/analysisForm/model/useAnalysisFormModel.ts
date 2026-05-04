@@ -24,8 +24,10 @@ export const useAnalysisFormModel = ({ initialValues, onSuccess }: Params) => {
     mode: "onBlur",
     defaultValues: {
       archive: null,
-      direction: initialValues?.direction ?? "html_css",
+      direction: initialValues?.direction ?? null,
       metrics: [],
+      eslintConfigText: initialValues?.eslintConfigText ?? "",
+      eslintConfigFormat: initialValues?.eslintConfigFormat,
       recursive: initialValues?.recursive ?? true,
       depth: initialValues?.depth,
       includeGitMetrics: initialValues?.includeGitMetrics ?? true
@@ -40,10 +42,23 @@ export const useAnalysisFormModel = ({ initialValues, onSuccess }: Params) => {
 
     setRunFormError(null)
     try {
+      if (!values.direction) {
+        setRunFormError("Выберите направление анализа.")
+        return
+      }
+
       const request = {
         key: uploadedArchive.key,
         direction: values.direction,
         metrics: values.metrics.length > 0 ? values.metrics : undefined,
+        eslintConfigText:
+          values.direction === "js" && values.eslintConfigText.trim()
+            ? values.eslintConfigText
+            : undefined,
+        eslintConfigFormat:
+          values.direction === "js" && values.eslintConfigText.trim()
+            ? (values.eslintConfigFormat ?? "mjs")
+            : undefined,
         r: values.recursive,
         depth: values.recursive ? values.depth : undefined,
         includeGitMetrics: values.includeGitMetrics,

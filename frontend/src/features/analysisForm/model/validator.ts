@@ -3,8 +3,10 @@ import { z } from "zod"
 export const analysisSchema = z
   .object({
     archive: z.instanceof(File).nullable(),
-    direction: z.enum(["html_css", "js"]),
+    direction: z.enum(["html_css", "js"]).nullable(),
     metrics: z.array(z.string()),
+    eslintConfigText: z.string().max(200_000),
+    eslintConfigFormat: z.enum(["js", "mjs", "cjs"]).optional(),
     recursive: z.boolean(),
     depth: z.number().int().min(1).optional(),
     includeGitMetrics: z.boolean()
@@ -15,6 +17,14 @@ export const analysisSchema = z
         code: z.ZodIssueCode.custom,
         path: ["archive"],
         message: "Загрузите zip-архив"
+      })
+    }
+
+    if (!value.direction) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["direction"],
+        message: "Выберите направление анализа"
       })
     }
 

@@ -154,6 +154,20 @@ export const HTML_GLOSSARY_METRICS: GlossaryMetric[] = [
     description: "Количество уникальных значений id, которые повторялись больше одного раза."
   },
   {
+    order: 22,
+    metric: "img_missing_alt_ratio",
+    translation: "Доля изображений без alt.",
+    description:
+      "Доля тегов img без атрибута alt или с некорректным alt относительно общего количества тегов img."
+  },
+  {
+    order: 23,
+    metric: "form_controls_missing_label_ratio",
+    translation: "Доля элементов формы без label.",
+    description:
+      "Доля элементов управления формы без корректной текстовой метки label относительно общего количества элементов формы."
+  },
+  {
     order: 24,
     metric: "vnu_files_checked",
     translation: "Количество файлов, проверенных VNU.",
@@ -441,177 +455,177 @@ export const GIT_GLOSSARY_METRICS: GlossaryMetric[] = [
 export const JAVASCRIPT_GLOSSARY_METRICS: GlossaryMetric[] = [
   {
     order: 1,
-    metric: "Lines of Code (LOC)",
+    metric: "lines_of_code",
     translation: "Количество строк кода.",
     description: "Количество строк кода без учёта пустых строк и комментариев."
   },
   {
     order: 2,
-    metric: "Functions Count (user)",
+    metric: "functions_count_user",
     translation: "Количество пользовательских функций.",
     description: "Количество функций и методов, написанных пользователем."
   },
   {
     order: 3,
-    metric: "Functions Count (all)",
+    metric: "functions_count_all",
     translation: "Общее количество функций.",
     description:
       "Общее количество пользовательских функций, а также вызовов встроенных функций языка JavaScript, например map, filter, reduce, setTimeout и других."
   },
   {
     order: 4,
-    metric: "Average Function Size (LOC/function)",
+    metric: "average_function_size",
     translation: "Средний размер функции.",
     description: "Среднее количество строк кода на одну функцию."
   },
   {
     order: 5,
-    metric: "Files Count",
+    metric: "files_count",
     translation: "Количество файлов.",
     description: "Количество файлов с исходным кодом, вошедших в анализ."
   },
   {
     order: 6,
-    metric: "Cyclomatic Complexity (avg)",
+    metric: "cyclomatic_complexity_avg",
     translation: "Средняя цикломатическая сложность.",
     description: "Среднее значение цикломатической сложности по всему анализируемому коду."
   },
   {
     order: 7,
-    metric: "Cyclomatic Complexity (sum)",
+    metric: "cyclomatic_complexity_sum",
     translation: "Суммарная цикломатическая сложность.",
     description: "Суммарное значение цикломатической сложности по всему анализируемому коду."
   },
   {
     order: 8,
-    metric: "Maximum Nesting Depth",
+    metric: "maximum_nesting_depth",
     translation: "Максимальная глубина вложенности.",
     description:
       "Максимальная глубина вложенности управляющих конструкций: if, for, while, try и других."
   },
   {
     order: 9,
-    metric: "Max Parameters per Function",
+    metric: "max_parameters_per_function",
     translation: "Максимальное число параметров функции.",
     description:
       "Максимальное количество параметров у одной функции среди всех пользовательских функций."
   },
   {
     order: 10,
-    metric: "Halstead Volume",
+    metric: "halstead_volume",
     translation: "Объём Холстеда.",
     description:
       "Метрика Холстеда, отражающая объём программы на основе количества операторов и операндов."
   },
   {
     order: 11,
-    metric: "Halstead Difficulty",
+    metric: "halstead_difficulty",
     translation: "Трудность Холстеда.",
     description: "Метрика Холстеда, оценивающая сложность понимания и реализации кода."
   },
   {
     order: 12,
-    metric: "Halstead Effort",
+    metric: "halstead_effort",
     translation: "Усилие Холстеда.",
     description: "Метрика Холстеда, оценивающая трудозатраты на понимание или реализацию кода."
   },
   {
     order: 13,
-    metric: "Cognitive Complexity",
+    metric: "cognitive_complexity",
     translation: "Когнитивная сложность.",
     description: "Показатель сложности понимания кода с учётом вложенности."
   },
   {
     order: 14,
-    metric: "ESLint Errors Count",
+    metric: "eslint_errors_count",
     translation: "Количество ошибок ESLint.",
     description: "Количество ошибок и нарушений, найденных инструментом ESLint."
   },
   {
     order: 15,
-    metric: "ESLint Warnings Count",
+    metric: "eslint_warnings_count",
     translation: "Количество предупреждений ESLint.",
     description: "Количество предупреждений, найденных инструментом ESLint."
   },
   {
     order: 16,
-    metric: "Internal Similarity (%)",
+    metric: "internal_similarity",
     translation: "Дублирование кода в процентах.",
     description: "Процент внутреннего сходства или дублирования кода внутри проекта."
   },
   {
     order: 17,
-    metric: "Maintainability",
+    metric: "maintainability",
     translation: "Сопровождаемость.",
     description: "Индекс или оценка сопровождаемости кода."
   },
   {
     order: 18,
-    metric: "Complex Methods Count",
+    metric: "complex_methods_count",
     translation: "Количество сложных методов.",
     description: "Число функций или методов с цикломатической сложностью больше 20."
   },
   {
     order: 19,
-    metric: "Long Parameter List Count",
+    metric: "long_parameter_list_count",
     translation: "Количество длинных списков параметров.",
     description: "Число функций или методов с количеством параметров больше 5."
   },
   {
     order: 20,
-    metric: "Dead Code Count",
+    metric: "dead_code_count",
     translation: "Количество мёртвого кода.",
     description:
       "Число недостижимых инструкций внутри блоков кода, расположенных после return, throw, continue или break."
   },
   {
     order: 21,
-    metric: "Long Methods Count",
+    metric: "long_methods_count",
     translation: "Количество длинных методов.",
     description:
       "Число пользовательских функций или методов, длина которых превышает 105 строк при цикломатической сложности больше 9."
   },
   {
     order: 22,
-    metric: "Unused Parameters Count",
+    metric: "unused_parameters_count",
     translation: "Количество неиспользуемых параметров.",
     description: "Число параметров функций, которые объявлены, но не используются в теле функции."
   },
   {
     order: 23,
-    metric: "Unused Variables Count",
+    metric: "unused_variables_count",
     translation: "Количество неиспользуемых переменных.",
     description: "Число переменных, которые объявлены в коде, но не используются."
   },
   {
     order: 24,
-    metric: "Undeclared Variables Count",
+    metric: "undeclared_variables_count",
     translation: "Количество необъявленных переменных.",
     description:
       "Число обращений к идентификаторам, которые не были объявлены в доступной области видимости и не входят в список известных глобальных объектов."
   },
   {
     order: 25,
-    metric: "Long Message Chains Count",
+    metric: "long_message_chains_count",
     translation: "Количество длинных цепочек обращений.",
     description: "Число цепочек обращений к свойствам или методам объектов длиной 4 и более."
   },
   {
     order: 26,
-    metric: "Long Scope Chaining Count",
+    metric: "long_scope_chaining_count",
     translation: "Количество длинных цепочек областей видимости.",
     description: "Число случаев, когда глубина вложенности функций превышает 3 уровня."
   },
   {
     order: 27,
-    metric: "innerHTML Usage Count",
+    metric: "inner_html_usage_count",
     translation: "Количество использований innerHTML.",
     description:
       "Число обращений к свойству innerHTML. Может указывать на потенциальный риск XSS при вставке непроверенных данных."
   },
   {
     order: 28,
-    metric: "Switch Without Default Count",
+    metric: "switch_without_default_count",
     translation: "Количество операторов switch без default.",
     description: "Число операторов switch, в которых отсутствует ветка default."
   }

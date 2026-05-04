@@ -1,9 +1,16 @@
-import type { Direction, RunS3AsyncRequest, RunS3AsyncResponse } from "@entities/analysis/api"
+import type {
+  Direction,
+  EslintConfigFormat,
+  RunS3AsyncRequest,
+  RunS3AsyncResponse
+} from "@entities/analysis/api"
 
 export interface AnalysisFormValues {
   archive: File | null
-  direction: Direction
+  direction: Direction | null
   metrics: string[]
+  eslintConfigText: string
+  eslintConfigFormat?: EslintConfigFormat
   recursive: boolean
   depth?: number
   includeGitMetrics: boolean

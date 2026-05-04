@@ -35,7 +35,7 @@ export function ClusterDashboardPanel({
           <AllOptionsMultiSelect
             allLabel="Все метрики"
             allValue={ALL_CLUSTER_METRICS}
-            label="Метрики для графиков"
+            label="Метрики"
             options={metricOptions}
             searchable
             value={field.value}

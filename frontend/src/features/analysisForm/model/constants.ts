@@ -1,9 +1,8 @@
 import type { Direction } from "@entities/analysis/api"
+import { ANALYSIS_DIRECTION_OPTIONS } from "@entities/analysis/model/direction"
 
-export const DIRECTION_OPTIONS: Array<{ value: Direction; label: string }> = [
-  { value: "html_css", label: "html/css" },
-  { value: "js", label: "js" }
-]
+export const DIRECTION_OPTIONS: Array<{ value: Direction; label: string }> =
+  ANALYSIS_DIRECTION_OPTIONS
 
 const HTML_CSS_METRICS = [
   "html_files",
@@ -60,12 +59,76 @@ const HTML_CSS_METRICS = [
 ]
 
 const JS_METRICS = [
-  "loc",
-  "cyclomatic_complexity",
-  "functions_total",
-  "eslint_errors_total",
-  "eslint_warnings_total"
+  "lines_of_code",
+  "functions_count_user",
+  "functions_count_all",
+  "average_function_size",
+  "files_count",
+  "cyclomatic_complexity_avg",
+  "cyclomatic_complexity_sum",
+  "maximum_nesting_depth",
+  "max_parameters_per_function",
+  "halstead_volume",
+  "halstead_difficulty",
+  "halstead_effort",
+  "cognitive_complexity",
+  "eslint_errors_count",
+  "eslint_warnings_count",
+  "internal_similarity",
+  "maintainability",
+  "complex_methods_count",
+  "long_parameter_list_count",
+  "dead_code_count",
+  "long_methods_count",
+  "unused_parameters_count",
+  "unused_variables_count",
+  "undeclared_variables_count",
+  "long_message_chains_count",
+  "long_scope_chaining_count",
+  "inner_html_usage_count",
+  "switch_without_default_count"
 ]
+
+export const ESLINT_METRICS = ["eslint_errors_count", "eslint_warnings_count"] as const
+export const ESLINT_METRIC_SET = new Set<string>(ESLINT_METRICS)
+
+export const DEFAULT_JS_ESLINT_CONFIG = `export default [
+  {
+    files: ["**/*.{js,mjs,cjs,jsx,ts,tsx}"],
+    ignores: [
+      "**/node_modules/**",
+      "**/dist/**",
+      "**/build/**",
+      "**/coverage/**",
+      "**/.git/**"
+    ],
+    languageOptions: {
+      ecmaVersion: "latest",
+      sourceType: "module",
+      globals: {
+        console: "readonly",
+        window: "readonly",
+        document: "readonly",
+        process: "readonly",
+        module: "readonly",
+        require: "readonly"
+      }
+    },
+    rules: {
+      "no-undef": "error",
+      "no-unused-vars": "warn",
+      "no-redeclare": "error",
+      "no-unreachable": "error",
+      "no-inner-declarations": "warn"
+    }
+  },
+  {
+    files: ["**/*.cjs"],
+    languageOptions: {
+      sourceType: "commonjs"
+    }
+  }
+]`
 
 export const METRICS_BY_DIRECTION: Record<Direction, string[]> = {
   html_css: HTML_CSS_METRICS,
