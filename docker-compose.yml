@@ -25,6 +25,11 @@ services:
       WORKS_ROOT: /app/works
       PATH_GROUP_INDEX: 0
       PATH_STUDENT_INDEX: 1
+      SONAR_HOST: http://sonarqube:9000
+      SONAR_SCANNER_BIN: sonar-scanner
+      SONAR_TASK_TIMEOUT_MS: 120000
+      SONAR_TOKEN: ${SONAR_TOKEN:-}
+      JS_ESLINT_ENABLED: "false"
       S3_BUCKET: analysis-uploads
       S3_REGION: us-east-1
       S3_ENDPOINT: http://minio:9000
@@ -41,6 +46,7 @@ services:
     mem_limit: 1536m
     depends_on:
       - minio
+      - sonarqube
 
   frontend:
     build:

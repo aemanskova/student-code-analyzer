@@ -1,6 +1,10 @@
 import { IsArray, IsBoolean, IsInt, IsOptional, IsString, Min } from "class-validator";
 
 export class RunAnalysisDto {
+  @IsOptional()
+  @IsString()
+  runId?: string;
+
   @IsString()
   direction!: string;
 

@@ -4,7 +4,11 @@ FROM public.ecr.aws/docker/library/node:20-bookworm
 WORKDIR /app
 
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends chromium default-jre-headless python3 python3-venv \
+  && apt-get install -y --no-install-recommends chromium default-jre-headless python3 python3-venv unzip wget \
+  && wget -qO /tmp/sonar-scanner.zip https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-6.2.1.4610.zip \
+  && unzip -q /tmp/sonar-scanner.zip -d /opt \
+  && ln -s /opt/sonar-scanner-6.2.1.4610/bin/sonar-scanner /usr/local/bin/sonar-scanner \
+  && rm -f /tmp/sonar-scanner.zip \
   && rm -rf /var/lib/apt/lists/*
 
 RUN python3 -m venv /opt/sklearn-venv \

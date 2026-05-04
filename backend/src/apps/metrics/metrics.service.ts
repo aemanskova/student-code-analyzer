@@ -1,13 +1,15 @@
 import { Injectable } from "@nestjs/common";
 import { DirectionMetricProvider, MetricComputeContext, MetricValues } from "./metrics.types";
 import { HtmlCssMetricProvider } from "./html-css/html-css-metric.provider";
+import { JsMetricProvider } from "./js/js-metric.provider";
 
 @Injectable()
 export class MetricsService {
   private readonly providers = new Map<string, DirectionMetricProvider>();
 
-  constructor(htmlCssProvider: HtmlCssMetricProvider) {
+  constructor(htmlCssProvider: HtmlCssMetricProvider, jsProvider: JsMetricProvider) {
     this.providers.set(htmlCssProvider.direction, htmlCssProvider);
+    this.providers.set(jsProvider.direction, jsProvider);
   }
 
   getSupportedDirections() {

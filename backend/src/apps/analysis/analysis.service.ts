@@ -98,6 +98,41 @@ interface QueuedS3Job {
   };
 }
 
+const JAVASCRIPT_METRIC_ORDER = [
+  "lines_of_code",
+  "functions_count_user",
+  "functions_count_all",
+  "average_function_size",
+  "files_count",
+  "cyclomatic_complexity_avg",
+  "cyclomatic_complexity_sum",
+  "maximum_nesting_depth",
+  "max_parameters_per_function",
+  "halstead_volume",
+  "halstead_difficulty",
+  "halstead_effort",
+  "cognitive_complexity",
+  "eslint_errors_count",
+  "eslint_warnings_count",
+  "internal_similarity",
+  "maintainability",
+  "complex_methods_count",
+  "long_parameter_list_count",
+  "dead_code_count",
+  "long_methods_count",
+  "unused_parameters_count",
+  "unused_variables_count",
+  "undeclared_variables_count",
+  "long_message_chains_count",
+  "long_scope_chaining_count",
+  "inner_html_usage_count",
+  "switch_without_default_count"
+];
+
+const JAVASCRIPT_METRIC_ORDER_INDEX = new Map(
+  JAVASCRIPT_METRIC_ORDER.map((metric, index) => [metric, index])
+);
+
 interface QueuedHeatmapJob {
   jobId: string;
   input: {
@@ -130,6 +165,11 @@ type RunFilterInput = {
 };
 
 type ZipEntryFilter = (relativePath: string) => boolean;
+type FolderMetricUnit = {
+  absolutePath: string;
+  relativePath: string;
+  targetKind: "directory" | "file";
+};
 
 const HEATMAP_MAX_WORKS = 100;
 const HEATMAP_LIMIT_MESSAGE =
@@ -325,6 +365,10 @@ export class AnalysisService implements OnModuleInit {
     }
 
     if (dto.rootPath) {
+      if (dto.direction === "js") {
+        const folderResult = await this.runFromFolderJs(dto, selectedMetrics);
+        return this.withOptionalGitData(folderResult, dto);
+      }
       const folderResult = await this.runFromFolderBasic(dto, selectedMetrics);
       return this.withOptionalGitData(folderResult, dto);
     }
@@ -437,6 +481,7 @@ export class AnalysisService implements OnModuleInit {
 
       await input.onProgress?.("Запуск проверки работ", 40);
       const result = await this.run({
+        runId: cacheKey,
         direction: input.direction,
         metrics: selectedMetrics,
         group: input.group,
@@ -1819,7 +1864,10 @@ export class AnalysisService implements OnModuleInit {
         metricSet.add(key);
       }
     }
-    const metrics = Array.from(metricSet).sort((a, b) => a.localeCompare(b));
+    const metrics = this.sortMetricsForDirection(
+      filteredRows[0]?.direction || rows[0]?.direction || "",
+      Array.from(metricSet)
+    );
 
     return {
       runId: normalizedRunId,
@@ -2604,40 +2652,63 @@ export class AnalysisService implements OnModuleInit {
     const rootAbsolutePath = this.resolveRootPath(dto.rootPath as string);
     await this.ensureDirectoryExists(rootAbsolutePath);
 
-    const workDirs = await this.collectWorkDirs(rootAbsolutePath, Boolean(dto.r));
+    const units = await this.collectHtmlMetricUnits(rootAbsolutePath, dto);
+    return this.runFromFolderMetricUnits(dto, selectedMetrics, rootAbsolutePath, units);
+  }
+
+  private async runFromFolderJs(
+    dto: RunAnalysisDto,
+    selectedMetrics: string[]
+  ): Promise<AnalysisResponse> {
+    const rootAbsolutePath = this.resolveRootPath(dto.rootPath as string);
+    const rootDisplayLabel = await this.inferRootDisplayLabel(rootAbsolutePath);
+    await this.ensureDirectoryExists(rootAbsolutePath);
+
+    const units = await this.collectJsMetricUnits(rootAbsolutePath, rootDisplayLabel, dto);
+    return this.runFromFolderMetricUnits(dto, selectedMetrics, rootAbsolutePath, units);
+  }
+
+  private async runFromFolderMetricUnits(
+    dto: RunAnalysisDto,
+    selectedMetrics: string[],
+    rootAbsolutePath: string,
+    units: FolderMetricUnit[]
+  ): Promise<AnalysisResponse> {
     const data: AnalysisRow[] = [];
+    const total = Math.max(1, units.length);
 
-    for (const workDir of workDirs) {
-      const htmlFiles = await this.collectFilesByExtension(workDir, [".html", ".htm"], dto.depth);
-
-      for (const absoluteHtmlPath of htmlFiles) {
-        const relativePath = this.normalizePath(path.relative(rootAbsolutePath, absoluteHtmlPath));
-        if (!relativePath || relativePath.startsWith("..")) {
-          continue;
-        }
-
-        const parsed = this.pathParserService.parse(relativePath);
-        if (dto.group && parsed.group !== dto.group) {
-          continue;
-        }
-        if (dto.student && parsed.student !== dto.student) {
-          continue;
-        }
-
-        const metricValues = await this.safeComputeMetrics(
-          dto.direction,
-          selectedMetrics,
-          absoluteHtmlPath,
-          relativePath
-        );
-
-        data.push({
-          path: relativePath,
-          group: parsed.group,
-          student: parsed.student,
-          ...metricValues
-        });
+    for (let index = 0; index < units.length; index += 1) {
+      const unit = units[index];
+      await dto.onAnalyzeProgress?.(index + 1, total, unit.relativePath);
+      if (!unit.relativePath || unit.relativePath.startsWith("..")) {
+        continue;
       }
+
+      const parsed = this.pathParserService.parse(unit.relativePath);
+
+      if (dto.group && parsed.group !== dto.group) {
+        continue;
+      }
+      if (dto.student && parsed.student !== dto.student) {
+        continue;
+      }
+
+      const metricValues = await this.safeComputeMetrics(
+        dto.direction,
+        selectedMetrics,
+        unit.absolutePath,
+        unit.relativePath,
+        rootAbsolutePath,
+        unit.targetKind,
+        dto.runId
+      );
+
+      data.push({
+        path: unit.relativePath,
+        group: parsed.group,
+        student: parsed.student,
+        ...metricValues
+      });
     }
 
     return {
@@ -2651,19 +2722,30 @@ export class AnalysisService implements OnModuleInit {
     direction: string,
     metrics: string[],
     absolutePath: string,
-    relativePath: string
+    relativePath: string,
+    rootAbsolutePath?: string,
+    targetKind: "directory" | "file" = "file",
+    runId?: string
   ) {
     try {
-      await this.ensureFileExists(absolutePath);
+      if (targetKind === "directory") {
+        await this.ensureDirectoryExists(absolutePath);
+      } else {
+        await this.ensureFileExists(absolutePath);
+      }
       return await this.metricsService.compute(
         direction,
         {
           absolutePath,
-          relativePath
+          relativePath,
+          runId,
+          rootAbsolutePath
         },
         metrics
       );
-    } catch {
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.warn(`Не удалось посчитать метрики ${direction} для ${relativePath}: ${message}`);
       const empty: Record<string, null> = {};
       for (const metric of metrics) {
         empty[metric] = null;
@@ -2750,6 +2832,97 @@ export class AnalysisService implements OnModuleInit {
     return files.length > 0;
   }
 
+  private async collectHtmlMetricUnits(
+    rootAbsolutePath: string,
+    dto: RunAnalysisDto
+  ): Promise<FolderMetricUnit[]> {
+    const workDirs = await this.collectWorkDirs(rootAbsolutePath, Boolean(dto.r));
+    const units: FolderMetricUnit[] = [];
+
+    for (const workDir of workDirs) {
+      const htmlFiles = await this.collectFilesByExtension(workDir, [".html", ".htm"], dto.depth);
+      for (const absolutePath of htmlFiles) {
+        const relativePath = this.normalizePath(path.relative(rootAbsolutePath, absolutePath));
+        if (!relativePath || relativePath.startsWith("..")) {
+          continue;
+        }
+        units.push({
+          absolutePath,
+          relativePath,
+          targetKind: "file"
+        });
+      }
+    }
+
+    return units;
+  }
+
+  private async collectJsMetricUnits(
+    rootAbsolutePath: string,
+    rootDisplayLabel: string,
+    dto: RunAnalysisDto
+  ): Promise<FolderMetricUnit[]> {
+    const depth =
+      typeof dto.depth === "number" ? dto.depth : Boolean(dto.r) ? Number.POSITIVE_INFINITY : 0;
+    const workDirs = await this.collectJsWorkDirs(rootAbsolutePath, depth);
+
+    return workDirs.map((absolutePath) => {
+      const relativePathRaw =
+        this.normalizePath(path.relative(rootAbsolutePath, absolutePath)) || ".";
+      return {
+        absolutePath,
+        relativePath: this.normalizeResultPath(relativePathRaw, rootDisplayLabel),
+        targetKind: "directory" as const
+      };
+    });
+  }
+
+  private async collectJsWorkDirs(rootAbsolutePath: string, maxDepth: number): Promise<string[]> {
+    if (maxDepth === 0) {
+      return [rootAbsolutePath];
+    }
+
+    const result: string[] = [];
+
+    const walk = async (directoryPath: string, depth: number) => {
+      if (depth === maxDepth) {
+        if (await this.hasJsFiles(directoryPath)) {
+          result.push(directoryPath);
+        }
+        return;
+      }
+
+      const entries = await fs.readdir(directoryPath, { withFileTypes: true }).catch(() => []);
+      const subdirs = entries
+        .filter((entry) => entry.isDirectory())
+        .filter((entry) => !entry.name.startsWith("."))
+        .filter((entry) => !this.ignoredDirNames.has(entry.name));
+
+      if (!subdirs.length) {
+        if (await this.hasJsFiles(directoryPath)) {
+          result.push(directoryPath);
+        }
+        return;
+      }
+
+      for (const entry of subdirs) {
+        await walk(path.join(directoryPath, entry.name), depth + 1);
+      }
+    };
+
+    await walk(rootAbsolutePath, 0);
+    return Array.from(new Set(result)).sort((a, b) => a.localeCompare(b));
+  }
+
+  private async hasJsFiles(directoryPath: string): Promise<boolean> {
+    const files = await this.collectFilesByExtension(
+      directoryPath,
+      [".js", ".mjs", ".cjs", ".jsx", ".ts", ".tsx"],
+      1
+    );
+    return files.length > 0;
+  }
+
   private async collectFilesByExtension(
     rootDir: string,
     extensions: string[],
@@ -2806,6 +2979,21 @@ export class AnalysisService implements OnModuleInit {
     await walk(rootDir, 0);
     files.sort((a, b) => a.localeCompare(b));
     return files;
+  }
+
+  private sortMetricsForDirection(direction: string, metrics: string[]): string[] {
+    if (direction !== "js") {
+      return [...metrics].sort((a, b) => a.localeCompare(b));
+    }
+
+    return [...metrics].sort((a, b) => {
+      const aIndex = JAVASCRIPT_METRIC_ORDER_INDEX.get(a);
+      const bIndex = JAVASCRIPT_METRIC_ORDER_INDEX.get(b);
+      if (aIndex !== undefined && bIndex !== undefined) return aIndex - bIndex;
+      if (aIndex !== undefined) return -1;
+      if (bIndex !== undefined) return 1;
+      return a.localeCompare(b);
+    });
   }
 
   private toCsv(data: AnalysisRow[], metrics: string[]): string {

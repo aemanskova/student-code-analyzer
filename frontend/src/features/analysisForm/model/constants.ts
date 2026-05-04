@@ -60,11 +60,34 @@ const HTML_CSS_METRICS = [
 ]
 
 const JS_METRICS = [
-  "loc",
-  "cyclomatic_complexity",
-  "functions_total",
-  "eslint_errors_total",
-  "eslint_warnings_total"
+  "lines_of_code",
+  "functions_count_user",
+  "functions_count_all",
+  "average_function_size",
+  "files_count",
+  "cyclomatic_complexity_avg",
+  "cyclomatic_complexity_sum",
+  "maximum_nesting_depth",
+  "max_parameters_per_function",
+  "halstead_volume",
+  "halstead_difficulty",
+  "halstead_effort",
+  "cognitive_complexity",
+  "eslint_errors_count",
+  "eslint_warnings_count",
+  "internal_similarity",
+  "maintainability",
+  "complex_methods_count",
+  "long_parameter_list_count",
+  "dead_code_count",
+  "long_methods_count",
+  "unused_parameters_count",
+  "unused_variables_count",
+  "undeclared_variables_count",
+  "long_message_chains_count",
+  "long_scope_chaining_count",
+  "inner_html_usage_count",
+  "switch_without_default_count"
 ]
 
 export const METRICS_BY_DIRECTION: Record<Direction, string[]> = {
