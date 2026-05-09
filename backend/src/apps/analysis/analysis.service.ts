@@ -74,7 +74,6 @@ interface ZipAnalysisInput {
   r?: boolean;
   depth?: number;
   includeGitMetrics?: boolean;
-  includePlagiarismHeatmap?: boolean;
 }
 
 interface QueuedZipJob {
@@ -93,12 +92,9 @@ interface QueuedS3Job {
     metrics?: string[];
     eslintConfigText?: string;
     eslintConfigFormat?: "js" | "mjs" | "cjs";
-    group?: string;
-    student?: string;
     r?: boolean;
     depth?: number;
     includeGitMetrics?: boolean;
-    includePlagiarismHeatmap?: boolean;
   };
 }
 
@@ -137,6 +133,35 @@ const ESLINT_METRICS = new Set(["eslint_errors_count", "eslint_warnings_count"])
 
 const JAVASCRIPT_METRIC_ORDER_INDEX = new Map(
   JAVASCRIPT_METRIC_ORDER.map((metric, index) => [metric, index])
+);
+
+const TYPESCRIPT_METRIC_ORDER = [
+  ...JAVASCRIPT_METRIC_ORDER,
+  "LOC",
+  "MLOC avg",
+  "MLOC max",
+  "ADI",
+  "AESI (typed throws ratio)",
+  "AMGI",
+  "AMNOI (перегрузки функций)",
+  "APLCI",
+  "APXI",
+  "ASYNC_USAGE total (async function + await + then/catch/finally + new Promise)",
+  "ASYNC_USAGE per LOC",
+  "CHAIN_LENGTH max (длинные цепочки вызовов/обращений)",
+  "Discriminated Unions share (Tagged Union)",
+  "explicit any count",
+  "explicit unknown count",
+  "Files count analyzed",
+  "Generic Precision score",
+  "implicit any count (diagnostics)",
+  "strict enabled",
+  "type assertions count (as/<T>)",
+  "Typed Error Handling score"
+];
+
+const TYPESCRIPT_METRIC_ORDER_INDEX = new Map(
+  TYPESCRIPT_METRIC_ORDER.map((metric, index) => [metric, index])
 );
 
 interface QueuedHeatmapJob {
@@ -371,7 +396,7 @@ export class AnalysisService implements OnModuleInit {
     }
 
     if (dto.rootPath) {
-      if (dto.direction === "js") {
+      if (dto.direction === "js" || dto.direction === "typescript") {
         const folderResult = await this.runFromFolderJs(dto, selectedMetrics);
         return this.withOptionalGitData(folderResult, dto);
       }
@@ -477,18 +502,6 @@ export class AnalysisService implements OnModuleInit {
       if (!extractedFiles) {
         throw new BadRequestException("zip archive is empty");
       }
-      if (this.resolveIncludePlagiarismHeatmap(input.includePlagiarismHeatmap)) {
-        await input.onProgress?.("Проверяем лимиты тепловой карты", 36);
-        const heatmapFoldersCount = await this.plagiarismHeatmapService.countFromRoot(
-          tempRoot,
-          Boolean(input.r),
-          input.depth
-        );
-        if (heatmapFoldersCount > HEATMAP_MAX_WORKS) {
-          throw new BadRequestException(HEATMAP_LIMIT_MESSAGE);
-        }
-      }
-
       const eslintConfigPath = await this.writeEslintConfigIfNeeded(tempRoot, input);
 
       await input.onProgress?.("Запуск проверки работ", 40);
@@ -528,8 +541,6 @@ export class AnalysisService implements OnModuleInit {
           );
         }
       });
-      await input.onProgress?.("Подготавливаем тепловую карту", 91);
-      result.plagiarismHeatmap = await this.buildPlagiarismHeatmapIfNeeded(tempRoot, input);
       await input.onProgress?.("Сохраняем результаты", 98);
       const runId = await this.saveResultsForUser(input.userId, result, cacheKey);
       await input.onProgress?.("Готово", 100);
@@ -578,10 +589,7 @@ export class AnalysisService implements OnModuleInit {
         eslintConfigFormat: this.resolveEslintConfigFormat(input.eslintConfigFormat),
         r: Boolean(input.r),
         depth: input.depth ?? null,
-        includeGitMetrics: this.resolveIncludeGitMetrics(input.includeGitMetrics),
-        includePlagiarismHeatmap: this.resolveIncludePlagiarismHeatmap(
-          input.includePlagiarismHeatmap
-        )
+        includeGitMetrics: this.resolveIncludeGitMetrics(input.includeGitMetrics)
       },
       resultPayload: null,
       startedAt: null,
@@ -649,12 +657,9 @@ export class AnalysisService implements OnModuleInit {
     metrics?: string[];
     eslintConfigText?: string;
     eslintConfigFormat?: "js" | "mjs" | "cjs";
-    group?: string;
-    student?: string;
     r?: boolean;
     depth?: number;
     includeGitMetrics?: boolean;
-    includePlagiarismHeatmap?: boolean;
   }) {
     const uploadId = String(input.uploadId || "").trim();
     if (!uploadId) {
@@ -690,12 +695,9 @@ export class AnalysisService implements OnModuleInit {
         metrics: input.metrics,
         eslintConfigText: input.eslintConfigText,
         eslintConfigFormat: input.eslintConfigFormat,
-        group: input.group,
-        student: input.student,
         r: input.r,
         depth: input.depth,
-        includeGitMetrics: input.includeGitMetrics,
-        includePlagiarismHeatmap: input.includePlagiarismHeatmap
+        includeGitMetrics: input.includeGitMetrics
       },
       {
         onSuccess: async () => {
@@ -946,12 +948,9 @@ export class AnalysisService implements OnModuleInit {
     metrics?: string[];
     eslintConfigText?: string;
     eslintConfigFormat?: "js" | "mjs" | "cjs";
-    group?: string;
-    student?: string;
     r?: boolean;
     depth?: number;
     includeGitMetrics?: boolean;
-    includePlagiarismHeatmap?: boolean;
   }) {
     await this.ensureS3BucketExists();
     const key = String(input.key || "").trim();
@@ -977,10 +976,7 @@ export class AnalysisService implements OnModuleInit {
         eslintConfigFormat: this.resolveEslintConfigFormat(input.eslintConfigFormat),
         r: Boolean(input.r),
         depth: input.depth ?? null,
-        includeGitMetrics: this.resolveIncludeGitMetrics(input.includeGitMetrics),
-        includePlagiarismHeatmap: this.resolveIncludePlagiarismHeatmap(
-          input.includePlagiarismHeatmap
-        )
+        includeGitMetrics: this.resolveIncludeGitMetrics(input.includeGitMetrics)
       },
       resultPayload: null,
       startedAt: null,
@@ -998,12 +994,9 @@ export class AnalysisService implements OnModuleInit {
         metrics: input.metrics,
         eslintConfigText: input.eslintConfigText,
         eslintConfigFormat: input.eslintConfigFormat,
-        group: input.group,
-        student: input.student,
         r: input.r,
         depth: input.depth,
-        includeGitMetrics: input.includeGitMetrics,
-        includePlagiarismHeatmap: input.includePlagiarismHeatmap
+        includeGitMetrics: input.includeGitMetrics
       }
     });
     void this.processQueue();
@@ -1350,7 +1343,6 @@ export class AnalysisService implements OnModuleInit {
     r?: boolean;
     depth?: number;
     includeGitMetrics?: boolean;
-    includePlagiarismHeatmap?: boolean;
   }) {
     const zipPathRaw = String(input.zipPath || "").trim();
     if (!zipPathRaw) {
@@ -1375,8 +1367,7 @@ export class AnalysisService implements OnModuleInit {
       student: input.student,
       r: input.r,
       depth: input.depth,
-      includeGitMetrics: input.includeGitMetrics,
-      includePlagiarismHeatmap: input.includePlagiarismHeatmap
+      includeGitMetrics: input.includeGitMetrics
     });
   }
 
@@ -2650,7 +2641,7 @@ export class AnalysisService implements OnModuleInit {
         continue;
       }
 
-      const filteredMetrics: Record<string, string | number | null> = {};
+      const filteredMetrics: Record<string, string | number | boolean | null> = {};
       for (const metric of selectedMetrics) {
         const raw = row[metric];
         filteredMetrics[metric] =
@@ -2691,7 +2682,10 @@ export class AnalysisService implements OnModuleInit {
     const rootDisplayLabel = await this.inferRootDisplayLabel(rootAbsolutePath);
     await this.ensureDirectoryExists(rootAbsolutePath);
 
-    const units = await this.collectJsMetricUnits(rootAbsolutePath, rootDisplayLabel, dto);
+    const units =
+      dto.direction === "typescript"
+        ? await this.collectTypeScriptMetricUnits(rootAbsolutePath, rootDisplayLabel, dto)
+        : await this.collectJsMetricUnits(rootAbsolutePath, rootDisplayLabel, dto);
     return this.runFromFolderMetricUnits(dto, selectedMetrics, rootAbsolutePath, units);
   }
 
@@ -2907,9 +2901,38 @@ export class AnalysisService implements OnModuleInit {
     });
   }
 
+  private async collectTypeScriptMetricUnits(
+    rootAbsolutePath: string,
+    rootDisplayLabel: string,
+    dto: RunAnalysisDto
+  ): Promise<FolderMetricUnit[]> {
+    const depth =
+      typeof dto.depth === "number" ? dto.depth : Boolean(dto.r) ? Number.POSITIVE_INFINITY : 0;
+    const workDirs = await this.collectTypeScriptWorkDirs(rootAbsolutePath, depth);
+
+    return workDirs.map((absolutePath) => {
+      const relativePathRaw =
+        this.normalizePath(path.relative(rootAbsolutePath, absolutePath)) || ".";
+      return {
+        absolutePath,
+        relativePath: this.normalizeResultPath(relativePathRaw, rootDisplayLabel),
+        targetKind: "directory" as const
+      };
+    });
+  }
+
   private async collectJsWorkDirs(rootAbsolutePath: string, maxDepth: number): Promise<string[]> {
     if (maxDepth === 0) {
-      return [rootAbsolutePath];
+      return [
+        await this.resolveSingleChildWorkDir(rootAbsolutePath, [
+          ".js",
+          ".mjs",
+          ".cjs",
+          ".jsx",
+          ".ts",
+          ".tsx"
+        ])
+      ];
     }
 
     const result: string[] = [];
@@ -2950,6 +2973,89 @@ export class AnalysisService implements OnModuleInit {
       [".js", ".mjs", ".cjs", ".jsx", ".ts", ".tsx"],
       1
     );
+    return files.length > 0;
+  }
+
+  private async collectTypeScriptWorkDirs(
+    rootAbsolutePath: string,
+    maxDepth: number
+  ): Promise<string[]> {
+    if (maxDepth === 0) {
+      return [await this.resolveSingleChildWorkDir(rootAbsolutePath, [".ts", ".tsx"])];
+    }
+
+    const result: string[] = [];
+
+    const walk = async (directoryPath: string, depth: number) => {
+      if (depth === maxDepth) {
+        if (await this.hasTypeScriptFiles(directoryPath)) {
+          result.push(directoryPath);
+        }
+        return;
+      }
+
+      const entries = await fs.readdir(directoryPath, { withFileTypes: true }).catch(() => []);
+      const subdirs = entries
+        .filter((entry) => entry.isDirectory())
+        .filter((entry) => !entry.name.startsWith("."))
+        .filter((entry) => !this.ignoredDirNames.has(entry.name));
+
+      if (!subdirs.length) {
+        if (await this.hasTypeScriptFiles(directoryPath)) {
+          result.push(directoryPath);
+        }
+        return;
+      }
+
+      for (const entry of subdirs) {
+        await walk(path.join(directoryPath, entry.name), depth + 1);
+      }
+    };
+
+    await walk(rootAbsolutePath, 0);
+    return Array.from(new Set(result)).sort((a, b) => a.localeCompare(b));
+  }
+
+  private async hasTypeScriptFiles(directoryPath: string): Promise<boolean> {
+    const files = await this.collectFilesByExtension(directoryPath, [".ts", ".tsx"], 1);
+    return files.length > 0;
+  }
+
+  private async resolveSingleChildWorkDir(
+    rootAbsolutePath: string,
+    extensions: string[]
+  ): Promise<string> {
+    if (await this.hasDirectFilesByExtension(rootAbsolutePath, extensions)) {
+      return rootAbsolutePath;
+    }
+
+    const entries = await fs.readdir(rootAbsolutePath, { withFileTypes: true }).catch(() => []);
+    const subdirs = entries
+      .filter((entry) => entry.isDirectory())
+      .filter((entry) => !entry.name.startsWith("."))
+      .filter((entry) => !this.ignoredDirNames.has(entry.name));
+
+    if (subdirs.length !== 1) {
+      return rootAbsolutePath;
+    }
+
+    const childPath = path.join(rootAbsolutePath, subdirs[0].name);
+    return (await this.hasFilesByExtension(childPath, extensions)) ? childPath : rootAbsolutePath;
+  }
+
+  private async hasDirectFilesByExtension(
+    directoryPath: string,
+    extensions: string[]
+  ): Promise<boolean> {
+    const extensionSet = new Set(extensions.map((ext) => ext.toLowerCase()));
+    const entries = await fs.readdir(directoryPath, { withFileTypes: true }).catch(() => []);
+    return entries.some(
+      (entry) => entry.isFile() && extensionSet.has(path.extname(entry.name).toLowerCase())
+    );
+  }
+
+  private async hasFilesByExtension(directoryPath: string, extensions: string[]): Promise<boolean> {
+    const files = await this.collectFilesByExtension(directoryPath, extensions, 1);
     return files.length > 0;
   }
 
@@ -3012,13 +3118,16 @@ export class AnalysisService implements OnModuleInit {
   }
 
   private sortMetricsForDirection(direction: string, metrics: string[]): string[] {
-    if (direction !== "js") {
+    if (direction !== "js" && direction !== "typescript") {
       return [...metrics].sort((a, b) => a.localeCompare(b));
     }
 
+    const orderIndex =
+      direction === "typescript" ? TYPESCRIPT_METRIC_ORDER_INDEX : JAVASCRIPT_METRIC_ORDER_INDEX;
+
     return [...metrics].sort((a, b) => {
-      const aIndex = JAVASCRIPT_METRIC_ORDER_INDEX.get(a);
-      const bIndex = JAVASCRIPT_METRIC_ORDER_INDEX.get(b);
+      const aIndex = orderIndex.get(a);
+      const bIndex = orderIndex.get(b);
       if (aIndex !== undefined && bIndex !== undefined) return aIndex - bIndex;
       if (aIndex !== undefined) return -1;
       if (bIndex !== undefined) return 1;
@@ -3041,7 +3150,7 @@ export class AnalysisService implements OnModuleInit {
     return `${rows.join("\n")}\n`;
   }
 
-  private escapeCsvValue(value: string | number | null | undefined): string {
+  private escapeCsvValue(value: string | number | boolean | null | undefined): string {
     if (value === null || value === undefined) {
       return "";
     }
@@ -3109,10 +3218,6 @@ export class AnalysisService implements OnModuleInit {
   }
 
   private resolveIncludeGitMetrics(value: boolean | undefined): boolean {
-    return value !== false;
-  }
-
-  private resolveIncludePlagiarismHeatmap(value: boolean | undefined): boolean {
     return value !== false;
   }
 
@@ -3622,7 +3727,7 @@ export class AnalysisService implements OnModuleInit {
   private async getRunRequestedFeatures(
     userId: number,
     runId: string
-  ): Promise<{ includeGitMetrics: boolean; includePlagiarismHeatmap: boolean } | null> {
+  ): Promise<{ includeGitMetrics: boolean } | null> {
     const job = await this.findSuccessfulJobByRunId(userId, runId, { requireSourceKey: true });
 
     if (!job) {
@@ -3630,53 +3735,8 @@ export class AnalysisService implements OnModuleInit {
     }
 
     return {
-      includeGitMetrics: this.normalizeFeatureFlag(job.requestPayload?.includeGitMetrics),
-      includePlagiarismHeatmap: this.normalizeFeatureFlag(
-        job.requestPayload?.includePlagiarismHeatmap
-      )
+      includeGitMetrics: this.normalizeFeatureFlag(job.requestPayload?.includeGitMetrics)
     };
-  }
-
-  private async buildPlagiarismHeatmapIfNeeded(
-    rootAbsolutePath: string,
-    input: Pick<ZipAnalysisInput, "includePlagiarismHeatmap" | "r" | "depth" | "onProgress">
-  ) {
-    if (!this.resolveIncludePlagiarismHeatmap(input.includePlagiarismHeatmap)) {
-      return null;
-    }
-
-    try {
-      const raw = await this.plagiarismHeatmapService.buildFromRoot(
-        rootAbsolutePath,
-        Boolean(input.r),
-        input.depth,
-        async (completedPairs, totalPairs, folder1, folder2) => {
-          if (!input.onProgress) {
-            return;
-          }
-          const safeTotal = Math.max(1, totalPairs);
-          const progress = this.mapProgressRange(92, 97, completedPairs, safeTotal);
-          const pairLabel = [folder1, folder2]
-            .map((value) => this.extractWorkLabel(String(value || "")))
-            .filter(Boolean)
-            .join(" ↔ ");
-          await input.onProgress(
-            pairLabel
-              ? `Считаем тепловую карту: ${pairLabel} (${completedPairs}/${safeTotal})`
-              : `Считаем тепловую карту: пары ${completedPairs}/${safeTotal}`,
-            progress
-          );
-        }
-      );
-      if (!raw) {
-        return null;
-      }
-      return this.normalizePlagiarismHeatmapPayload(raw, rootAbsolutePath, input.depth);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Unknown plagiarism heatmap error";
-      this.logger.warn(`Plagiarism heatmap calculation failed: ${message}`);
-      return null;
-    }
   }
 
   private async buildStandaloneHeatmapFromS3(input: {
@@ -3837,7 +3897,7 @@ export class AnalysisService implements OnModuleInit {
   }
 
   private extractYearValue(
-    metrics: Record<string, string | number | null>,
+    metrics: Record<string, string | number | boolean | null>,
     pathValue: string
   ): string | null {
     const directYear = this.parseYearValue(metrics.year);
@@ -4570,10 +4630,11 @@ export class AnalysisService implements OnModuleInit {
     const runId = randomUUID();
     if (result.data?.length) {
       const entities = result.data.map((row) => {
-        const metrics: Record<string, string | number | null> = {};
+        const metrics: Record<string, string | number | boolean | null> = {};
         for (const metric of result.metrics) {
           const value = row[metric];
-          metrics[metric] = value === undefined ? null : (value as string | number | null);
+          metrics[metric] =
+            value === undefined ? null : (value as string | number | boolean | null);
         }
         return this.analysisResultRepo.create({
           userId,
@@ -4614,16 +4675,6 @@ export class AnalysisService implements OnModuleInit {
       await this.analysisGitResultRepo.save(gitEntities);
     }
 
-    if (result.plagiarismHeatmap) {
-      const plagiarismEntity = this.analysisPlagiarismRepo.create({
-        userId,
-        runId,
-        direction: result.direction,
-        payload: result.plagiarismHeatmap
-      });
-      await this.analysisPlagiarismRepo.save(plagiarismEntity);
-    }
-
     return runId;
   }
 
@@ -4661,7 +4712,7 @@ export class AnalysisService implements OnModuleInit {
     selectedMetrics: string[],
     eslintConfigText?: string
   ): string[] {
-    if (direction !== "js" || this.hasEslintConfigText(eslintConfigText)) {
+    if (!this.supportsEslintMetrics(direction) || this.hasEslintConfigText(eslintConfigText)) {
       return selectedMetrics;
     }
 
@@ -4670,10 +4721,10 @@ export class AnalysisService implements OnModuleInit {
 
   private sanitizeReturnedMetrics(
     direction: string,
-    metrics: Record<string, string | number | null>,
+    metrics: Record<string, string | number | boolean | null>,
     cacheKey?: string | null
-  ): Record<string, string | number | null> {
-    if (direction !== "js" || this.cacheKeyHasEslintConfig(cacheKey)) {
+  ): Record<string, string | number | boolean | null> {
+    if (!this.supportsEslintMetrics(direction) || this.cacheKeyHasEslintConfig(cacheKey)) {
       return metrics || {};
     }
 
@@ -4691,11 +4742,15 @@ export class AnalysisService implements OnModuleInit {
     return String(text || "").trim().length > 0;
   }
 
+  private supportsEslintMetrics(direction: string): boolean {
+    return direction === "js" || direction === "typescript";
+  }
+
   private async writeEslintConfigIfNeeded(
     tempRoot: string,
     input: ZipAnalysisInput
   ): Promise<string | undefined> {
-    if (input.direction !== "js") {
+    if (!this.supportsEslintMetrics(input.direction)) {
       return undefined;
     }
 
@@ -4742,8 +4797,7 @@ export class AnalysisService implements OnModuleInit {
       `eslintRunner=v3`,
       `r=${input.r ? "1" : "0"}`,
       `depth=${input.depth ?? ""}`,
-      `includeGitMetrics=${this.resolveIncludeGitMetrics(input.includeGitMetrics) ? "1" : "0"}`,
-      `includePlagiarismHeatmap=${this.resolveIncludePlagiarismHeatmap(input.includePlagiarismHeatmap) ? "1" : "0"}`
+      `includeGitMetrics=${this.resolveIncludeGitMetrics(input.includeGitMetrics) ? "1" : "0"}`
     ].join("|");
 
     if (input.sourceFingerprint) {
@@ -5131,12 +5185,9 @@ export class AnalysisService implements OnModuleInit {
           metrics: job.input.metrics,
           eslintConfigText: job.input.eslintConfigText,
           eslintConfigFormat: job.input.eslintConfigFormat,
-          group: job.input.group,
-          student: job.input.student,
           r: job.input.r,
           depth: job.input.depth,
           includeGitMetrics: job.input.includeGitMetrics,
-          includePlagiarismHeatmap: job.input.includePlagiarismHeatmap,
           onProgress: writeProgress
         });
       } else if ("key" in job.input) {
@@ -5322,9 +5373,8 @@ export class AnalysisService implements OnModuleInit {
         ? ""
         : String(requestPayload.depth);
     const includeGitMetrics = requestPayload?.includeGitMetrics === false ? "0" : "1";
-    const includePlagiarismHeatmap = requestPayload?.includePlagiarismHeatmap === false ? "0" : "1";
 
-    return `${direction}|metrics=${metrics}|r=${recursive}|depth=${depth}|git=${includeGitMetrics}|plag=${includePlagiarismHeatmap}`;
+    return `${direction}|metrics=${metrics}|r=${recursive}|depth=${depth}|git=${includeGitMetrics}`;
   }
 
   private getS3Bucket(): string {

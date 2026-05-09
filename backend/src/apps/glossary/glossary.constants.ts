@@ -193,86 +193,30 @@ export const HTML_GLOSSARY_METRICS: GlossaryMetric[] = [
   },
   {
     order: 28,
-    metric: "lighthouse_a11y_avg",
-    translation: "Средний балл доступности Lighthouse.",
-    description:
-      "Среднее значение показателя доступности, рассчитанное по результатам проверок всех страниц в Lighthouse."
-  },
-  {
-    order: 29,
-    metric: "lighthouse_a11y_min",
-    translation: "Минимальный балл доступности Lighthouse.",
-    description:
-      "Минимальный балл доступности, рассчитанный по результатам проверок всех страниц в Lighthouse."
-  },
-  {
-    order: 30,
-    metric: "lighthouse_a11y_max",
-    translation: "Максимальный балл доступности Lighthouse.",
-    description:
-      "Максимальный балл доступности, рассчитанный по результатам проверок всех страниц в Lighthouse."
-  },
-  {
-    order: 31,
-    metric: "lighthouse_perf_avg",
-    translation: "Средний балл производительности Lighthouse.",
-    description:
-      "Средний балл производительности, рассчитанный по результатам проверок всех страниц в Lighthouse."
-  },
-  {
-    order: 32,
-    metric: "lighthouse_perf_min",
-    translation: "Минимальный балл производительности Lighthouse.",
-    description:
-      "Минимальный балл производительности, рассчитанный по результатам проверок всех страниц в Lighthouse."
-  },
-  {
-    order: 33,
-    metric: "lighthouse_perf_max",
-    translation: "Максимальный балл производительности Lighthouse.",
-    description:
-      "Максимальный балл производительности, рассчитанный по результатам проверок всех страниц в Lighthouse."
-  },
-  {
-    order: 34,
-    metric: "lighthouse_ttfb_avg_ms",
-    translation: "Среднее значение TTFB.",
-    description:
-      "Среднее значение времени до получения первого байта Time To First Byte (TTFB) в миллисекундах."
-  },
-  {
-    order: 35,
-    metric: "lighthouse_ttfb_max_ms",
-    translation: "Максимальное значение TTFB.",
-    description:
-      "Максимальное значение времени до получения первого байта Time To First Byte (TTFB) в миллисекундах."
-  },
-  {
-    order: 36,
     metric: "axe_violations_total",
     translation: "Количество нарушений доступности Axe.",
     description: "Общее количество нарушений доступности, найденных инструментом Axe."
   },
   {
-    order: 37,
+    order: 29,
     metric: "axe_critical",
     translation: "Количество критических нарушений Axe.",
     description: "Количество нарушений доступности критического уровня."
   },
   {
-    order: 38,
+    order: 30,
     metric: "axe_serious",
     translation: "Количество серьёзных нарушений Axe.",
     description: "Количество нарушений доступности серьёзного уровня."
   },
   {
-    order: 39,
+    order: 31,
     metric: "axe_moderate",
     translation: "Количество умеренных нарушений Axe.",
     description: "Количество нарушений доступности умеренного уровня."
   },
   {
-    order: 40,
+    order: 32,
     metric: "axe_minor",
     translation: "Количество незначительных нарушений Axe.",
     description: "Количество нарушений доступности незначительного уровня."
@@ -765,13 +709,6 @@ export const TYPESCRIPT_GLOSSARY_METRICS: GlossaryMetric[] = [
     metric: "Type Assertions Count",
     translation: "Количество утверждений типов.",
     description: "Число приведений типов через as или синтаксис <T>value."
-  },
-  {
-    order: 21,
-    metric: "Type Safety Score",
-    translation: "Оценка безопасности типов.",
-    description:
-      "Итоговая оценка типовой безопасности. Начинается со 100 баллов и снижается за выключенный strict, использование any, неявные any, утверждения типов и использование unknown."
   }
 ];
 

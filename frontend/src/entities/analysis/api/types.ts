@@ -1,11 +1,11 @@
-export type Direction = "html_css" | "js"
+export type Direction = "html_css" | "js" | "typescript"
 export type EslintConfigFormat = "js" | "mjs" | "cjs"
 
 export interface AnalysisRow {
   path: string
   group: string | null
   student: string | null
-  [key: string]: string | number | null
+  [key: string]: string | number | boolean | null
 }
 
 export interface GitAnalysisRow {
@@ -33,7 +33,7 @@ export interface SavedResultItem {
   path: string
   group: string | null
   student: string | null
-  [key: string]: string | number | null
+  [key: string]: string | number | boolean | null
 }
 
 export interface RunS3AsyncRequest {
@@ -45,7 +45,6 @@ export interface RunS3AsyncRequest {
   r?: boolean
   depth?: number
   includeGitMetrics?: boolean
-  includePlagiarismHeatmap?: boolean
 }
 
 export interface HeatmapValidateUploadRequest {
@@ -249,7 +248,6 @@ export interface RunHeatmapHistoryResponse {
 
 export interface RunRequestedFeatures {
   includeGitMetrics: boolean
-  includePlagiarismHeatmap: boolean
 }
 
 export interface PlagiarismFileSimilarity {

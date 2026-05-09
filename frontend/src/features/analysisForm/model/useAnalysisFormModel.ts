@@ -5,6 +5,7 @@ import { getApiErrorMessage } from "@shared/lib"
 import { useState } from "react"
 import { useForm } from "react-hook-form"
 
+import { supportsEslintConfig } from "./eslintConfig"
 import type { AnalysisFormValues, AnalysisRunResult } from "./types"
 import { analysisSchema } from "./validator"
 
@@ -52,17 +53,16 @@ export const useAnalysisFormModel = ({ initialValues, onSuccess }: Params) => {
         direction: values.direction,
         metrics: values.metrics.length > 0 ? values.metrics : undefined,
         eslintConfigText:
-          values.direction === "js" && values.eslintConfigText.trim()
+          supportsEslintConfig(values.direction) && values.eslintConfigText.trim()
             ? values.eslintConfigText
             : undefined,
         eslintConfigFormat:
-          values.direction === "js" && values.eslintConfigText.trim()
+          supportsEslintConfig(values.direction) && values.eslintConfigText.trim()
             ? (values.eslintConfigFormat ?? "mjs")
             : undefined,
         r: values.recursive,
         depth: values.recursive ? values.depth : undefined,
-        includeGitMetrics: values.includeGitMetrics,
-        includePlagiarismHeatmap: false
+        includeGitMetrics: values.includeGitMetrics
       }
       const response = await runS3Async(request).unwrap()
       onSuccess({ response, request })

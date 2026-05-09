@@ -42,10 +42,6 @@ export class RunAnalysisDto {
   @IsBoolean()
   includeGitMetrics?: boolean;
 
-  @IsOptional()
-  @IsBoolean()
-  includePlagiarismHeatmap?: boolean;
-
   // Internal path to a generated ESLint config file. Not intended for request body.
   eslintConfigPath?: string;
 

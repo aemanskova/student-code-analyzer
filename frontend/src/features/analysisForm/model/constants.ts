@@ -89,6 +89,30 @@ const JS_METRICS = [
   "switch_without_default_count"
 ]
 
+const TYPESCRIPT_METRICS = [
+  "LOC",
+  "MLOC avg",
+  "MLOC max",
+  "ADI",
+  "AESI (typed throws ratio)",
+  "AMGI",
+  "AMNOI (перегрузки функций)",
+  "APLCI",
+  "APXI",
+  "ASYNC_USAGE total (async function + await + then/catch/finally + new Promise)",
+  "ASYNC_USAGE per LOC",
+  "CHAIN_LENGTH max (длинные цепочки вызовов/обращений)",
+  "Discriminated Unions share (Tagged Union)",
+  "explicit any count",
+  "explicit unknown count",
+  "Files count analyzed",
+  "Generic Precision score",
+  "implicit any count (diagnostics)",
+  "strict enabled",
+  "type assertions count (as/<T>)",
+  "Typed Error Handling score"
+]
+
 export const ESLINT_METRICS = ["eslint_errors_count", "eslint_warnings_count"] as const
 export const ESLINT_METRIC_SET = new Set<string>(ESLINT_METRICS)
 
@@ -132,5 +156,6 @@ export const DEFAULT_JS_ESLINT_CONFIG = `export default [
 
 export const METRICS_BY_DIRECTION: Record<Direction, string[]> = {
   html_css: HTML_CSS_METRICS,
-  js: JS_METRICS
+  js: JS_METRICS,
+  typescript: [...JS_METRICS, ...TYPESCRIPT_METRICS]
 }

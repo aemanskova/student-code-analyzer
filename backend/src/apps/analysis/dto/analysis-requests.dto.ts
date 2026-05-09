@@ -93,16 +93,6 @@ export class RunFromS3AsyncDto {
 
   @ApiPropertyOptional()
   @IsOptional()
-  @IsString()
-  group?: string;
-
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsString()
-  student?: string;
-
-  @ApiPropertyOptional()
-  @IsOptional()
   @Transform(({ value }) => parseBooleanValue(value))
   @IsBoolean()
   r?: boolean;
@@ -119,12 +109,6 @@ export class RunFromS3AsyncDto {
   @Transform(({ value }) => parseBooleanValue(value))
   @IsBoolean()
   includeGitMetrics?: boolean;
-
-  @ApiPropertyOptional({ default: true })
-  @IsOptional()
-  @Transform(({ value }) => parseBooleanValue(value))
-  @IsBoolean()
-  includePlagiarismHeatmap?: boolean;
 }
 
 export class S3HeatmapLimitDto {

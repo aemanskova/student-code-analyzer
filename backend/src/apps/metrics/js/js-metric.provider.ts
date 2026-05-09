@@ -165,7 +165,7 @@ const KNOWN_GLOBALS = new Set([
   "window"
 ]);
 
-const JS_METRICS = [
+export const JS_METRICS = [
   "lines_of_code",
   "functions_count_user",
   "functions_count_all",
@@ -223,7 +223,6 @@ export class JsMetricProvider implements DirectionMetricProvider {
   private readonly execFileAsync = promisify(execFile);
   private readonly sonarAnalysisCache = new Map<string, Promise<string | null>>();
   private readonly eslintReportCache = new Map<string, Promise<EslintFileReport[]>>();
-  private readonly eslintDependencyInstallCache = new Map<string, Promise<void>>();
 
   constructor(private readonly config: ConfigService) {}
 
@@ -918,7 +917,9 @@ export class JsMetricProvider implements DirectionMetricProvider {
       return { errors: 0, warnings: 0 };
     }
 
-    const rootPath = context.rootAbsolutePath || context.absolutePath;
+    const rootPath = hasExplicitConfig
+      ? context.absolutePath
+      : context.rootAbsolutePath || context.absolutePath;
     const report = await this.getEslintRootReport(rootPath, context.eslintConfigPath);
     const folderPath = path.resolve(context.absolutePath);
     return this.sumEslintReportForFolder(report, folderPath);
@@ -949,9 +950,13 @@ export class JsMetricProvider implements DirectionMetricProvider {
       return [];
     }
 
-    if (configPath) {
+    const effectiveConfigPath = configPath
+      ? await this.prepareEslintConfigForRoot(rootPath, configPath)
+      : undefined;
+
+    if (effectiveConfigPath) {
       try {
-        await this.ensureEslintConfigDependencies(configPath);
+        await this.ensureEslintConfigDependencies(effectiveConfigPath);
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         this.logger.warn(`ESLint skipped: failed to prepare config dependencies: ${message}`);
@@ -959,9 +964,31 @@ export class JsMetricProvider implements DirectionMetricProvider {
       }
     }
 
-    const args = [".", "--format", "json"];
-    if (configPath) {
-      args.push("--config", configPath, "--no-config-lookup");
+    const args = [
+      ".",
+      "--format",
+      "json",
+      "--ignore-pattern",
+      "node_modules/**",
+      "--ignore-pattern",
+      "dist/**",
+      "--ignore-pattern",
+      "build/**",
+      "--ignore-pattern",
+      "coverage/**",
+      "--ignore-pattern",
+      ".git/**",
+      "--ignore-pattern",
+      ".next/**",
+      "--ignore-pattern",
+      "out/**",
+      "--ignore-pattern",
+      ".analysis-eslint/**",
+      "--ignore-pattern",
+      ".analysis-eslint.config.*"
+    ];
+    if (effectiveConfigPath) {
+      args.push("--config", effectiveConfigPath, "--no-config-lookup");
     }
 
     try {
@@ -981,6 +1008,21 @@ export class JsMetricProvider implements DirectionMetricProvider {
       this.logger.warn(`ESLint did not produce JSON report for ${rootPath}: ${details}`);
       return [];
     }
+  }
+
+  private async prepareEslintConfigForRoot(rootPath: string, configPath: string): Promise<string> {
+    const resolvedRoot = path.resolve(rootPath);
+    const resolvedConfig = path.resolve(configPath);
+    const relative = path.relative(resolvedRoot, resolvedConfig);
+    if (relative && !relative.startsWith("..") && !path.isAbsolute(relative)) {
+      return resolvedConfig;
+    }
+
+    const extension = path.extname(resolvedConfig) || ".mjs";
+    const localConfigPath = path.join(resolvedRoot, `.analysis-eslint.config${extension}`);
+    const configText = await fs.readFile(resolvedConfig, "utf8");
+    await fs.writeFile(localConfigPath, configText, "utf8");
+    return localConfigPath;
   }
 
   private resolveEslintBin(): string | null {
@@ -1021,10 +1063,7 @@ export class JsMetricProvider implements DirectionMetricProvider {
       return;
     }
 
-    const installDir = path.dirname(configPath);
-    await Promise.all(
-      missingPackages.map((packageName) => this.installEslintDependency(packageName, installDir))
-    );
+    throw new Error(`missing packages in backend dependencies: ${missingPackages.join(", ")}`);
   }
 
   private async linkBackendNodeModulesToConfigDir(configPath: string): Promise<void> {
@@ -1106,31 +1145,6 @@ export class JsMetricProvider implements DirectionMetricProvider {
     return builtinModules.includes(normalized);
   }
 
-  private async installEslintDependency(packageName: string, installDir: string): Promise<void> {
-    const cacheKey = `${path.resolve(installDir)}|${packageName}`;
-    const cached = this.eslintDependencyInstallCache.get(cacheKey);
-    if (cached) {
-      return cached;
-    }
-
-    const promise = this.installEslintDependencyUncached(packageName, installDir);
-    this.eslintDependencyInstallCache.set(cacheKey, promise);
-    return promise;
-  }
-
-  private async installEslintDependencyUncached(
-    packageName: string,
-    installDir: string
-  ): Promise<void> {
-    this.logger.log(`Installing ESLint config dependency: ${packageName}`);
-    await fs.mkdir(installDir, { recursive: true });
-    await this.execFileAsync("npm", ["install", "--no-save", "--no-package-lock", packageName], {
-      cwd: installDir,
-      maxBuffer: 20 * 1024 * 1024,
-      windowsHide: true
-    });
-  }
-
   private parseEslintJsonReport(output: string): EslintFileReport[] {
     try {
       const report = JSON.parse(output) as EslintFileReport[];
@@ -1167,7 +1181,11 @@ export class JsMetricProvider implements DirectionMetricProvider {
   }
 
   private isInternalAnalysisFile(filePath: string): boolean {
-    return filePath.split(path.sep).includes(".analysis-eslint");
+    const segments = filePath.split(path.sep);
+    return (
+      segments.includes(".analysis-eslint") ||
+      path.basename(filePath).startsWith(".analysis-eslint.config")
+    );
   }
 
   private createScope(type: Scope["type"], parent: Scope | null): Scope {

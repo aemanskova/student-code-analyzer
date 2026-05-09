@@ -4,7 +4,7 @@ import { AnalysisResultsWidget } from "@widgets/analysisResults"
 import { useParams, useSearchParams } from "react-router"
 
 const parseDirection = (value: string | null): Direction | undefined =>
-  value === "js" || value === "html_css" ? value : undefined
+  value === "js" || value === "html_css" || value === "typescript" ? value : undefined
 
 export function ArchiveDetailsPage() {
   const { encodedPath = "" } = useParams()

@@ -526,7 +526,7 @@ export class ClusteringService {
   }
 
   private normalizeMetrics(
-    metrics: Record<string, string | number | null>
+    metrics: Record<string, ClusteringMetricValue>
   ): Record<string, ClusteringMetricValue> {
     const normalized: Record<string, ClusteringMetricValue> = {};
     for (const [key, value] of Object.entries(metrics || {})) {
