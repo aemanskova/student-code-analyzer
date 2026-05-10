@@ -1,5 +1,6 @@
 import type { AnalysisRow } from "@entities/analysis/api"
 import { getMetricLabel } from "@entities/glossary"
+import { toDisplayValue } from "@shared/lib"
 import { DataTable, type VirtualizedColumn } from "@shared/ui/table"
 
 type Props = {
@@ -19,7 +20,7 @@ export function AnalysisTable({ rows, metrics }: Props) {
       key: metric,
       title: getMetricLabel(metric),
       minWidth: 140,
-      render: (row: AnalysisRow) => String(row[metric] ?? "")
+      render: (row: AnalysisRow) => toDisplayValue(row[metric])
     }))
   ]
 

@@ -5,7 +5,7 @@ import {
   NotFoundException,
   OnModuleInit
 } from "@nestjs/common";
-import { createReadStream, createWriteStream } from "node:fs";
+import { constants as fsConstants, createReadStream, createWriteStream } from "node:fs";
 import { Agent as HttpAgent } from "node:http";
 import { Agent as HttpsAgent } from "node:https";
 import * as fs from "node:fs/promises";
@@ -38,7 +38,6 @@ import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { NodeHttpHandler } from "@smithy/node-http-handler";
 import { InjectRepository } from "@nestjs/typeorm";
 import { In, Like, Repository } from "typeorm";
-import { DuckdbService } from "../database/duckdb/duckdb.service";
 import { MetricsService } from "../metrics/metrics.service";
 import { PathParserService } from "../utils/path-parser/path-parser.service";
 import { PathOutsideRootError, resolvePathUnderRoot } from "../../common/path-security";
@@ -74,7 +73,6 @@ interface ZipAnalysisInput {
   r?: boolean;
   depth?: number;
   includeGitMetrics?: boolean;
-  includePlagiarismHeatmap?: boolean;
 }
 
 interface QueuedZipJob {
@@ -93,14 +91,14 @@ interface QueuedS3Job {
     metrics?: string[];
     eslintConfigText?: string;
     eslintConfigFormat?: "js" | "mjs" | "cjs";
-    group?: string;
-    student?: string;
     r?: boolean;
     depth?: number;
     includeGitMetrics?: boolean;
-    includePlagiarismHeatmap?: boolean;
   };
 }
+
+const COGNITIVE_COMPLEXITY_PROGRESS_PATH = "__analysis_cognitive_complexity__";
+const COGNITIVE_COMPLEXITY_PROGRESS_STAGE = "Запуск подсчета анализа когнитивной сложности";
 
 const JAVASCRIPT_METRIC_ORDER = [
   "lines_of_code",
@@ -137,6 +135,35 @@ const ESLINT_METRICS = new Set(["eslint_errors_count", "eslint_warnings_count"])
 
 const JAVASCRIPT_METRIC_ORDER_INDEX = new Map(
   JAVASCRIPT_METRIC_ORDER.map((metric, index) => [metric, index])
+);
+
+const TYPESCRIPT_METRIC_ORDER = [
+  ...JAVASCRIPT_METRIC_ORDER,
+  "LOC",
+  "MLOC avg",
+  "MLOC max",
+  "ADI",
+  "AESI (typed throws ratio)",
+  "AMGI",
+  "AMNOI (перегрузки функций)",
+  "APLCI",
+  "APXI",
+  "ASYNC_USAGE total (async function + await + then/catch/finally + new Promise)",
+  "ASYNC_USAGE per LOC",
+  "CHAIN_LENGTH max (длинные цепочки вызовов/обращений)",
+  "Discriminated Unions share (Tagged Union)",
+  "explicit any count",
+  "explicit unknown count",
+  "Files count analyzed",
+  "Generic Precision score",
+  "implicit any count (diagnostics)",
+  "strict enabled",
+  "type assertions count (as/<T>)",
+  "Typed Error Handling score"
+];
+
+const TYPESCRIPT_METRIC_ORDER_INDEX = new Map(
+  TYPESCRIPT_METRIC_ORDER.map((metric, index) => [metric, index])
 );
 
 interface QueuedHeatmapJob {
@@ -193,7 +220,6 @@ const DEFAULT_S3_ZIP_TAIL_SIZES = [
 export class AnalysisService implements OnModuleInit {
   private readonly runExecFile = promisify(execFile);
   private readonly logger = new Logger(AnalysisService.name);
-  private readonly csvRoot = process.env.CSV_ROOT || "/app/csv";
   private readonly worksRoot = process.env.WORKS_ROOT || "/app/works";
   private readonly ignoredDirNames = new Set([
     ".git",
@@ -230,6 +256,10 @@ export class AnalysisService implements OnModuleInit {
   private readonly sourceArchiveTtlHours = Math.max(
     1,
     Number(process.env.ANALYSIS_SOURCE_ARCHIVE_TTL_HOURS || 24)
+  );
+  private readonly extractedWorkDirCleanupTtlMinutes = Math.max(
+    1,
+    Number(process.env.ANALYSIS_EXTRACTED_WORK_DIR_CLEANUP_TTL_MINUTES || 60)
   );
   private readonly heatmapMaxArchiveBytes = Math.max(
     1,
@@ -276,7 +306,6 @@ export class AnalysisService implements OnModuleInit {
   ]);
 
   constructor(
-    private readonly duckdbService: DuckdbService,
     private readonly metricsService: MetricsService,
     private readonly pathParserService: PathParserService,
     private readonly fullAnalyzer: HtmlCssFullAnalyzerService,
@@ -295,6 +324,13 @@ export class AnalysisService implements OnModuleInit {
 
   async onModuleInit(): Promise<void> {
     try {
+      await this.ensureWorksRoot();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.error(`Рабочий каталог анализа недоступен: ${message}`);
+    }
+
+    try {
       await this.recoverStaleJobsAfterRestart();
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -309,6 +345,13 @@ export class AnalysisService implements OnModuleInit {
     }
 
     try {
+      await this.cleanupStaleExtractedWorkDirs(0);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.error(`Не удалось очистить старые временные папки анализа: ${message}`);
+    }
+
+    try {
       await this.cleanupStaleS3Uploads();
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -320,7 +363,20 @@ export class AnalysisService implements OnModuleInit {
     return fullMetrics;
   }
 
-  async run(dto: RunAnalysisDto): Promise<AnalysisResponse> {
+  private async ensureWorksRoot(): Promise<string> {
+    const root = path.resolve(this.worksRoot);
+    await fs.mkdir(root, { recursive: true });
+
+    const stats = await fs.stat(root);
+    if (!stats.isDirectory()) {
+      throw new Error(`${root} is not a directory`);
+    }
+
+    await fs.access(root, fsConstants.R_OK | fsConstants.W_OK);
+    return root;
+  }
+
+  private async runExtractedRoot(dto: RunAnalysisDto): Promise<AnalysisResponse> {
     if (!this.metricsService.getSupportedDirections().includes(dto.direction)) {
       throw new BadRequestException(`Unsupported direction: ${dto.direction}`);
     }
@@ -329,15 +385,18 @@ export class AnalysisService implements OnModuleInit {
       throw new BadRequestException("depth must be >= 1");
     }
 
+    if (!dto.rootPath) {
+      throw new BadRequestException("rootPath is required");
+    }
+
     const basicMetrics = this.metricsService.getSupportedMetrics(dto.direction);
 
-    if (dto.rootPath && dto.direction === "html_css") {
+    if (dto.direction === "html_css") {
       const fullMetrics = this.fullAnalyzer.supportedMetrics;
       const selectedMetrics = dto.metrics?.length
         ? dto.metrics
         : this.getDefaultFullMetrics(fullMetrics);
       const allAllowed = new Set([...basicMetrics, ...fullMetrics]);
-
       const invalidMetrics = selectedMetrics.filter((metric) => !allAllowed.has(metric));
       if (invalidMetrics.length > 0) {
         throw new BadRequestException(
@@ -347,18 +406,13 @@ export class AnalysisService implements OnModuleInit {
 
       const useFullMetrics =
         !dto.metrics?.length || selectedMetrics.some((metric) => fullMetrics.includes(metric));
-
-      if (useFullMetrics) {
-        const fullResult = await this.runFromFolderFull(dto, selectedMetrics);
-        return this.withOptionalGitData(fullResult, dto);
-      }
-
-      const basicResult = await this.runFromFolderBasic(dto, selectedMetrics);
-      return this.withOptionalGitData(basicResult, dto);
+      const result = useFullMetrics
+        ? await this.runFromFolderFull(dto, selectedMetrics)
+        : await this.runFromFolderBasic(dto, selectedMetrics);
+      return this.withOptionalGitData(result, dto);
     }
 
     const selectedMetrics = dto.metrics !== undefined ? dto.metrics : basicMetrics;
-
     if (!selectedMetrics.length) {
       throw new BadRequestException("No available metrics for selected direction");
     }
@@ -370,21 +424,11 @@ export class AnalysisService implements OnModuleInit {
       );
     }
 
-    if (dto.rootPath) {
-      if (dto.direction === "js") {
-        const folderResult = await this.runFromFolderJs(dto, selectedMetrics);
-        return this.withOptionalGitData(folderResult, dto);
-      }
-      const folderResult = await this.runFromFolderBasic(dto, selectedMetrics);
-      return this.withOptionalGitData(folderResult, dto);
-    }
-
-    return this.runFromCsv(dto, selectedMetrics);
-  }
-
-  async runAsCsv(dto: RunAnalysisDto): Promise<string> {
-    const result = await this.run(dto);
-    return this.toCsv(result.data, result.metrics);
+    const result =
+      dto.direction === "js" || dto.direction === "typescript"
+        ? await this.runFromFolderJs(dto, selectedMetrics)
+        : await this.runFromFolderBasic(dto, selectedMetrics);
+    return this.withOptionalGitData(result, dto);
   }
 
   async runFromZip(input: ZipAnalysisInput): Promise<AnalysisResponse> {
@@ -420,9 +464,10 @@ export class AnalysisService implements OnModuleInit {
       input.eslintConfigText
     );
     // Временный каталог должен быть внутри worksRoot, иначе не пройдёт security-проверку
-    // `requirePathUnderRoot` в `run()` (см. SECURITY_FIXES §10 и resolveRootPath).
-    await fs.mkdir(this.worksRoot, { recursive: true });
-    const tempRoot = await fs.mkdtemp(path.join(this.worksRoot, "analysis-zip-"));
+    // `requirePathUnderRoot` в `runExtractedRoot()` (см. SECURITY_FIXES §10 и resolveRootPath).
+    const worksRoot = await this.ensureWorksRoot();
+    await this.cleanupStaleExtractedWorkDirs();
+    const tempRoot = await fs.mkdtemp(path.join(worksRoot, "analysis-zip-"));
     let archivePath = input.archive.path;
     try {
       await input.onProgress?.("Подготовка данных", 3);
@@ -477,22 +522,10 @@ export class AnalysisService implements OnModuleInit {
       if (!extractedFiles) {
         throw new BadRequestException("zip archive is empty");
       }
-      if (this.resolveIncludePlagiarismHeatmap(input.includePlagiarismHeatmap)) {
-        await input.onProgress?.("Проверяем лимиты тепловой карты", 36);
-        const heatmapFoldersCount = await this.plagiarismHeatmapService.countFromRoot(
-          tempRoot,
-          Boolean(input.r),
-          input.depth
-        );
-        if (heatmapFoldersCount > HEATMAP_MAX_WORKS) {
-          throw new BadRequestException(HEATMAP_LIMIT_MESSAGE);
-        }
-      }
-
       const eslintConfigPath = await this.writeEslintConfigIfNeeded(tempRoot, input);
 
       await input.onProgress?.("Запуск проверки работ", 40);
-      const result = await this.run({
+      const result = await this.runExtractedRoot({
         runId: cacheKey,
         direction: input.direction,
         metrics: selectedMetrics,
@@ -508,6 +541,10 @@ export class AnalysisService implements OnModuleInit {
             return;
           }
           const safeTotal = Math.max(1, total);
+          if (currentPath === COGNITIVE_COMPLEXITY_PROGRESS_PATH) {
+            await input.onProgress(COGNITIVE_COMPLEXITY_PROGRESS_STAGE, 40);
+            return;
+          }
           const progress = this.mapProgressRange(40, 78, completed, safeTotal);
           const workLabel = this.extractWorkLabel(currentPath);
           await input.onProgress(
@@ -528,8 +565,6 @@ export class AnalysisService implements OnModuleInit {
           );
         }
       });
-      await input.onProgress?.("Подготавливаем тепловую карту", 91);
-      result.plagiarismHeatmap = await this.buildPlagiarismHeatmapIfNeeded(tempRoot, input);
       await input.onProgress?.("Сохраняем результаты", 98);
       const runId = await this.saveResultsForUser(input.userId, result, cacheKey);
       await input.onProgress?.("Готово", 100);
@@ -552,6 +587,7 @@ export class AnalysisService implements OnModuleInit {
         const message = error instanceof Error ? error.message : String(error);
         this.logger.warn(`Не удалось удалить временную папку ${tempRoot}: ${message}`);
       }
+      void this.cleanupStaleExtractedWorkDirs();
     }
   }
 
@@ -578,10 +614,7 @@ export class AnalysisService implements OnModuleInit {
         eslintConfigFormat: this.resolveEslintConfigFormat(input.eslintConfigFormat),
         r: Boolean(input.r),
         depth: input.depth ?? null,
-        includeGitMetrics: this.resolveIncludeGitMetrics(input.includeGitMetrics),
-        includePlagiarismHeatmap: this.resolveIncludePlagiarismHeatmap(
-          input.includePlagiarismHeatmap
-        )
+        includeGitMetrics: this.resolveIncludeGitMetrics(input.includeGitMetrics)
       },
       resultPayload: null,
       startedAt: null,
@@ -649,12 +682,9 @@ export class AnalysisService implements OnModuleInit {
     metrics?: string[];
     eslintConfigText?: string;
     eslintConfigFormat?: "js" | "mjs" | "cjs";
-    group?: string;
-    student?: string;
     r?: boolean;
     depth?: number;
     includeGitMetrics?: boolean;
-    includePlagiarismHeatmap?: boolean;
   }) {
     const uploadId = String(input.uploadId || "").trim();
     if (!uploadId) {
@@ -690,12 +720,9 @@ export class AnalysisService implements OnModuleInit {
         metrics: input.metrics,
         eslintConfigText: input.eslintConfigText,
         eslintConfigFormat: input.eslintConfigFormat,
-        group: input.group,
-        student: input.student,
         r: input.r,
         depth: input.depth,
-        includeGitMetrics: input.includeGitMetrics,
-        includePlagiarismHeatmap: input.includePlagiarismHeatmap
+        includeGitMetrics: input.includeGitMetrics
       },
       {
         onSuccess: async () => {
@@ -946,12 +973,9 @@ export class AnalysisService implements OnModuleInit {
     metrics?: string[];
     eslintConfigText?: string;
     eslintConfigFormat?: "js" | "mjs" | "cjs";
-    group?: string;
-    student?: string;
     r?: boolean;
     depth?: number;
     includeGitMetrics?: boolean;
-    includePlagiarismHeatmap?: boolean;
   }) {
     await this.ensureS3BucketExists();
     const key = String(input.key || "").trim();
@@ -977,10 +1001,7 @@ export class AnalysisService implements OnModuleInit {
         eslintConfigFormat: this.resolveEslintConfigFormat(input.eslintConfigFormat),
         r: Boolean(input.r),
         depth: input.depth ?? null,
-        includeGitMetrics: this.resolveIncludeGitMetrics(input.includeGitMetrics),
-        includePlagiarismHeatmap: this.resolveIncludePlagiarismHeatmap(
-          input.includePlagiarismHeatmap
-        )
+        includeGitMetrics: this.resolveIncludeGitMetrics(input.includeGitMetrics)
       },
       resultPayload: null,
       startedAt: null,
@@ -998,12 +1019,9 @@ export class AnalysisService implements OnModuleInit {
         metrics: input.metrics,
         eslintConfigText: input.eslintConfigText,
         eslintConfigFormat: input.eslintConfigFormat,
-        group: input.group,
-        student: input.student,
         r: input.r,
         depth: input.depth,
-        includeGitMetrics: input.includeGitMetrics,
-        includePlagiarismHeatmap: input.includePlagiarismHeatmap
+        includeGitMetrics: input.includeGitMetrics
       }
     });
     void this.processQueue();
@@ -1350,7 +1368,6 @@ export class AnalysisService implements OnModuleInit {
     r?: boolean;
     depth?: number;
     includeGitMetrics?: boolean;
-    includePlagiarismHeatmap?: boolean;
   }) {
     const zipPathRaw = String(input.zipPath || "").trim();
     if (!zipPathRaw) {
@@ -1375,8 +1392,7 @@ export class AnalysisService implements OnModuleInit {
       student: input.student,
       r: input.r,
       depth: input.depth,
-      includeGitMetrics: input.includeGitMetrics,
-      includePlagiarismHeatmap: input.includePlagiarismHeatmap
+      includeGitMetrics: input.includeGitMetrics
     });
   }
 
@@ -1499,10 +1515,6 @@ export class AnalysisService implements OnModuleInit {
       startedAt: job.startedAt,
       finishedAt: job.finishedAt
     }));
-  }
-
-  resultToCsv(result: AnalysisResponse): string {
-    return this.toCsv(result.data, result.metrics);
   }
 
   async getSavedResults(userId: number, direction: string, pathValue: string) {
@@ -2565,64 +2577,6 @@ export class AnalysisService implements OnModuleInit {
     return String(stdout || "").trimEnd();
   }
 
-  private async runFromCsv(
-    dto: RunAnalysisDto,
-    selectedMetrics: string[]
-  ): Promise<AnalysisResponse> {
-    const csvAbsolutePath = this.resolveCsvPath(dto.csvFile);
-    await this.ensureFileExists(csvAbsolutePath);
-
-    const whereClauses: string[] = [];
-    const queryParams: unknown[] = [csvAbsolutePath];
-    if (dto.group) {
-      whereClauses.push("split_part(path, '/', 1) = ?");
-      queryParams.push(dto.group);
-    }
-    if (dto.student) {
-      whereClauses.push("split_part(path, '/', 2) = ?");
-      queryParams.push(dto.student);
-    }
-
-    const query = `
-      SELECT path
-      FROM read_csv_auto(?, header = true)
-      ${whereClauses.length > 0 ? `WHERE ${whereClauses.join(" AND ")}` : ""}
-      ORDER BY path;
-    `;
-
-    const rows = await this.duckdbService.all<{ path: string }>(query, queryParams);
-    const data: AnalysisRow[] = [];
-
-    for (const row of rows) {
-      const parsed = this.pathParserService.parse(row.path);
-      const absoluteSubmissionPath = this.requirePathUnderRoot(
-        this.csvRoot,
-        parsed.path,
-        "CSV path"
-      );
-
-      const metricValues = await this.safeComputeMetrics(
-        dto.direction,
-        selectedMetrics,
-        absoluteSubmissionPath,
-        parsed.path
-      );
-
-      data.push({
-        path: parsed.path,
-        group: parsed.group,
-        student: parsed.student,
-        ...metricValues
-      });
-    }
-
-    return {
-      direction: dto.direction,
-      metrics: selectedMetrics,
-      data
-    };
-  }
-
   private async runFromFolderFull(
     dto: RunAnalysisDto,
     selectedMetrics: string[]
@@ -2650,7 +2604,7 @@ export class AnalysisService implements OnModuleInit {
         continue;
       }
 
-      const filteredMetrics: Record<string, string | number | null> = {};
+      const filteredMetrics: Record<string, string | number | boolean | null> = {};
       for (const metric of selectedMetrics) {
         const raw = row[metric];
         filteredMetrics[metric] =
@@ -2691,7 +2645,17 @@ export class AnalysisService implements OnModuleInit {
     const rootDisplayLabel = await this.inferRootDisplayLabel(rootAbsolutePath);
     await this.ensureDirectoryExists(rootAbsolutePath);
 
-    const units = await this.collectJsMetricUnits(rootAbsolutePath, rootDisplayLabel, dto);
+    const units =
+      dto.direction === "typescript"
+        ? await this.collectTypeScriptMetricUnits(rootAbsolutePath, rootDisplayLabel, dto)
+        : await this.collectJsMetricUnits(rootAbsolutePath, rootDisplayLabel, dto);
+    if (selectedMetrics.includes("cognitive_complexity")) {
+      await dto.onAnalyzeProgress?.(
+        0,
+        Math.max(1, units.length),
+        COGNITIVE_COMPLEXITY_PROGRESS_PATH
+      );
+    }
     return this.runFromFolderMetricUnits(dto, selectedMetrics, rootAbsolutePath, units);
   }
 
@@ -2793,11 +2757,6 @@ export class AnalysisService implements OnModuleInit {
       }
       throw error;
     }
-  }
-
-  private resolveCsvPath(csvFile?: string): string {
-    const relative = (csvFile || "submissions.csv").trim();
-    return this.requirePathUnderRoot(this.csvRoot, relative, "csvFile");
   }
 
   private resolveRootPath(rootPath: string): string {
@@ -2907,16 +2866,80 @@ export class AnalysisService implements OnModuleInit {
     });
   }
 
+  private async collectTypeScriptMetricUnits(
+    rootAbsolutePath: string,
+    rootDisplayLabel: string,
+    dto: RunAnalysisDto
+  ): Promise<FolderMetricUnit[]> {
+    const depth =
+      typeof dto.depth === "number" ? dto.depth : Boolean(dto.r) ? Number.POSITIVE_INFINITY : 0;
+    const workDirs = await this.collectTypeScriptWorkDirs(rootAbsolutePath, depth);
+
+    return workDirs.map((absolutePath) => {
+      const relativePathRaw =
+        this.normalizePath(path.relative(rootAbsolutePath, absolutePath)) || ".";
+      return {
+        absolutePath,
+        relativePath: this.normalizeResultPath(relativePathRaw, rootDisplayLabel),
+        targetKind: "directory" as const
+      };
+    });
+  }
+
   private async collectJsWorkDirs(rootAbsolutePath: string, maxDepth: number): Promise<string[]> {
     if (maxDepth === 0) {
-      return [rootAbsolutePath];
+      return [
+        await this.resolveSingleChildWorkDir(rootAbsolutePath, [
+          ".js",
+          ".mjs",
+          ".cjs",
+          ".jsx",
+          ".ts",
+          ".tsx"
+        ])
+      ];
     }
 
+    return this.collectCodeWorkDirsAtDepth(rootAbsolutePath, maxDepth, [
+      ".js",
+      ".mjs",
+      ".cjs",
+      ".jsx",
+      ".ts",
+      ".tsx"
+    ]);
+  }
+
+  private async hasJsFiles(directoryPath: string): Promise<boolean> {
+    const files = await this.collectFilesByExtension(
+      directoryPath,
+      [".js", ".mjs", ".cjs", ".jsx", ".ts", ".tsx"],
+      1
+    );
+    return files.length > 0;
+  }
+
+  private async collectTypeScriptWorkDirs(
+    rootAbsolutePath: string,
+    maxDepth: number
+  ): Promise<string[]> {
+    if (maxDepth === 0) {
+      return [await this.resolveSingleChildWorkDir(rootAbsolutePath, [".ts", ".tsx"])];
+    }
+
+    return this.collectCodeWorkDirsAtDepth(rootAbsolutePath, maxDepth, [".ts", ".tsx"]);
+  }
+
+  private async collectCodeWorkDirsAtDepth(
+    rootAbsolutePath: string,
+    maxDepth: number,
+    extensions: string[]
+  ): Promise<string[]> {
     const result: string[] = [];
 
     const walk = async (directoryPath: string, depth: number) => {
       if (depth === maxDepth) {
-        if (await this.hasJsFiles(directoryPath)) {
+        if (await this.hasFilesByExtensionDeep(directoryPath, extensions)) {
           result.push(directoryPath);
         }
         return;
@@ -2929,7 +2952,7 @@ export class AnalysisService implements OnModuleInit {
         .filter((entry) => !this.ignoredDirNames.has(entry.name));
 
       if (!subdirs.length) {
-        if (await this.hasJsFiles(directoryPath)) {
+        if (await this.hasFilesByExtensionDeep(directoryPath, extensions)) {
           result.push(directoryPath);
         }
         return;
@@ -2944,12 +2967,54 @@ export class AnalysisService implements OnModuleInit {
     return Array.from(new Set(result)).sort((a, b) => a.localeCompare(b));
   }
 
-  private async hasJsFiles(directoryPath: string): Promise<boolean> {
-    const files = await this.collectFilesByExtension(
-      directoryPath,
-      [".js", ".mjs", ".cjs", ".jsx", ".ts", ".tsx"],
-      1
+  private async hasTypeScriptFiles(directoryPath: string): Promise<boolean> {
+    const files = await this.collectFilesByExtension(directoryPath, [".ts", ".tsx"], 1);
+    return files.length > 0;
+  }
+
+  private async resolveSingleChildWorkDir(
+    rootAbsolutePath: string,
+    extensions: string[]
+  ): Promise<string> {
+    if (await this.hasDirectFilesByExtension(rootAbsolutePath, extensions)) {
+      return rootAbsolutePath;
+    }
+
+    const entries = await fs.readdir(rootAbsolutePath, { withFileTypes: true }).catch(() => []);
+    const subdirs = entries
+      .filter((entry) => entry.isDirectory())
+      .filter((entry) => !entry.name.startsWith("."))
+      .filter((entry) => !this.ignoredDirNames.has(entry.name));
+
+    if (subdirs.length !== 1) {
+      return rootAbsolutePath;
+    }
+
+    const childPath = path.join(rootAbsolutePath, subdirs[0].name);
+    return (await this.hasFilesByExtension(childPath, extensions)) ? childPath : rootAbsolutePath;
+  }
+
+  private async hasDirectFilesByExtension(
+    directoryPath: string,
+    extensions: string[]
+  ): Promise<boolean> {
+    const extensionSet = new Set(extensions.map((ext) => ext.toLowerCase()));
+    const entries = await fs.readdir(directoryPath, { withFileTypes: true }).catch(() => []);
+    return entries.some(
+      (entry) => entry.isFile() && extensionSet.has(path.extname(entry.name).toLowerCase())
     );
+  }
+
+  private async hasFilesByExtension(directoryPath: string, extensions: string[]): Promise<boolean> {
+    const files = await this.collectFilesByExtension(directoryPath, extensions, 1);
+    return files.length > 0;
+  }
+
+  private async hasFilesByExtensionDeep(
+    directoryPath: string,
+    extensions: string[]
+  ): Promise<boolean> {
+    const files = await this.collectFilesByExtension(directoryPath, extensions);
     return files.length > 0;
   }
 
@@ -3012,13 +3077,16 @@ export class AnalysisService implements OnModuleInit {
   }
 
   private sortMetricsForDirection(direction: string, metrics: string[]): string[] {
-    if (direction !== "js") {
+    if (direction !== "js" && direction !== "typescript") {
       return [...metrics].sort((a, b) => a.localeCompare(b));
     }
 
+    const orderIndex =
+      direction === "typescript" ? TYPESCRIPT_METRIC_ORDER_INDEX : JAVASCRIPT_METRIC_ORDER_INDEX;
+
     return [...metrics].sort((a, b) => {
-      const aIndex = JAVASCRIPT_METRIC_ORDER_INDEX.get(a);
-      const bIndex = JAVASCRIPT_METRIC_ORDER_INDEX.get(b);
+      const aIndex = orderIndex.get(a);
+      const bIndex = orderIndex.get(b);
       if (aIndex !== undefined && bIndex !== undefined) return aIndex - bIndex;
       if (aIndex !== undefined) return -1;
       if (bIndex !== undefined) return 1;
@@ -3041,7 +3109,7 @@ export class AnalysisService implements OnModuleInit {
     return `${rows.join("\n")}\n`;
   }
 
-  private escapeCsvValue(value: string | number | null | undefined): string {
+  private escapeCsvValue(value: string | number | boolean | null | undefined): string {
     if (value === null || value === undefined) {
       return "";
     }
@@ -3109,10 +3177,6 @@ export class AnalysisService implements OnModuleInit {
   }
 
   private resolveIncludeGitMetrics(value: boolean | undefined): boolean {
-    return value !== false;
-  }
-
-  private resolveIncludePlagiarismHeatmap(value: boolean | undefined): boolean {
     return value !== false;
   }
 
@@ -3622,7 +3686,7 @@ export class AnalysisService implements OnModuleInit {
   private async getRunRequestedFeatures(
     userId: number,
     runId: string
-  ): Promise<{ includeGitMetrics: boolean; includePlagiarismHeatmap: boolean } | null> {
+  ): Promise<{ includeGitMetrics: boolean } | null> {
     const job = await this.findSuccessfulJobByRunId(userId, runId, { requireSourceKey: true });
 
     if (!job) {
@@ -3630,53 +3694,8 @@ export class AnalysisService implements OnModuleInit {
     }
 
     return {
-      includeGitMetrics: this.normalizeFeatureFlag(job.requestPayload?.includeGitMetrics),
-      includePlagiarismHeatmap: this.normalizeFeatureFlag(
-        job.requestPayload?.includePlagiarismHeatmap
-      )
+      includeGitMetrics: this.normalizeFeatureFlag(job.requestPayload?.includeGitMetrics)
     };
-  }
-
-  private async buildPlagiarismHeatmapIfNeeded(
-    rootAbsolutePath: string,
-    input: Pick<ZipAnalysisInput, "includePlagiarismHeatmap" | "r" | "depth" | "onProgress">
-  ) {
-    if (!this.resolveIncludePlagiarismHeatmap(input.includePlagiarismHeatmap)) {
-      return null;
-    }
-
-    try {
-      const raw = await this.plagiarismHeatmapService.buildFromRoot(
-        rootAbsolutePath,
-        Boolean(input.r),
-        input.depth,
-        async (completedPairs, totalPairs, folder1, folder2) => {
-          if (!input.onProgress) {
-            return;
-          }
-          const safeTotal = Math.max(1, totalPairs);
-          const progress = this.mapProgressRange(92, 97, completedPairs, safeTotal);
-          const pairLabel = [folder1, folder2]
-            .map((value) => this.extractWorkLabel(String(value || "")))
-            .filter(Boolean)
-            .join(" ↔ ");
-          await input.onProgress(
-            pairLabel
-              ? `Считаем тепловую карту: ${pairLabel} (${completedPairs}/${safeTotal})`
-              : `Считаем тепловую карту: пары ${completedPairs}/${safeTotal}`,
-            progress
-          );
-        }
-      );
-      if (!raw) {
-        return null;
-      }
-      return this.normalizePlagiarismHeatmapPayload(raw, rootAbsolutePath, input.depth);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Unknown plagiarism heatmap error";
-      this.logger.warn(`Plagiarism heatmap calculation failed: ${message}`);
-      return null;
-    }
   }
 
   private async buildStandaloneHeatmapFromS3(input: {
@@ -3837,7 +3856,7 @@ export class AnalysisService implements OnModuleInit {
   }
 
   private extractYearValue(
-    metrics: Record<string, string | number | null>,
+    metrics: Record<string, string | number | boolean | null>,
     pathValue: string
   ): string | null {
     const directYear = this.parseYearValue(metrics.year);
@@ -4570,10 +4589,11 @@ export class AnalysisService implements OnModuleInit {
     const runId = randomUUID();
     if (result.data?.length) {
       const entities = result.data.map((row) => {
-        const metrics: Record<string, string | number | null> = {};
+        const metrics: Record<string, string | number | boolean | null> = {};
         for (const metric of result.metrics) {
           const value = row[metric];
-          metrics[metric] = value === undefined ? null : (value as string | number | null);
+          metrics[metric] =
+            value === undefined ? null : (value as string | number | boolean | null);
         }
         return this.analysisResultRepo.create({
           userId,
@@ -4614,16 +4634,6 @@ export class AnalysisService implements OnModuleInit {
       await this.analysisGitResultRepo.save(gitEntities);
     }
 
-    if (result.plagiarismHeatmap) {
-      const plagiarismEntity = this.analysisPlagiarismRepo.create({
-        userId,
-        runId,
-        direction: result.direction,
-        payload: result.plagiarismHeatmap
-      });
-      await this.analysisPlagiarismRepo.save(plagiarismEntity);
-    }
-
     return runId;
   }
 
@@ -4661,7 +4671,7 @@ export class AnalysisService implements OnModuleInit {
     selectedMetrics: string[],
     eslintConfigText?: string
   ): string[] {
-    if (direction !== "js" || this.hasEslintConfigText(eslintConfigText)) {
+    if (!this.supportsEslintMetrics(direction) || this.hasEslintConfigText(eslintConfigText)) {
       return selectedMetrics;
     }
 
@@ -4670,10 +4680,10 @@ export class AnalysisService implements OnModuleInit {
 
   private sanitizeReturnedMetrics(
     direction: string,
-    metrics: Record<string, string | number | null>,
+    metrics: Record<string, string | number | boolean | null>,
     cacheKey?: string | null
-  ): Record<string, string | number | null> {
-    if (direction !== "js" || this.cacheKeyHasEslintConfig(cacheKey)) {
+  ): Record<string, string | number | boolean | null> {
+    if (!this.supportsEslintMetrics(direction) || this.cacheKeyHasEslintConfig(cacheKey)) {
       return metrics || {};
     }
 
@@ -4691,11 +4701,15 @@ export class AnalysisService implements OnModuleInit {
     return String(text || "").trim().length > 0;
   }
 
+  private supportsEslintMetrics(direction: string): boolean {
+    return direction === "js" || direction === "typescript";
+  }
+
   private async writeEslintConfigIfNeeded(
     tempRoot: string,
     input: ZipAnalysisInput
   ): Promise<string | undefined> {
-    if (input.direction !== "js") {
+    if (!this.supportsEslintMetrics(input.direction)) {
       return undefined;
     }
 
@@ -4742,8 +4756,7 @@ export class AnalysisService implements OnModuleInit {
       `eslintRunner=v3`,
       `r=${input.r ? "1" : "0"}`,
       `depth=${input.depth ?? ""}`,
-      `includeGitMetrics=${this.resolveIncludeGitMetrics(input.includeGitMetrics) ? "1" : "0"}`,
-      `includePlagiarismHeatmap=${this.resolveIncludePlagiarismHeatmap(input.includePlagiarismHeatmap) ? "1" : "0"}`
+      `includeGitMetrics=${this.resolveIncludeGitMetrics(input.includeGitMetrics) ? "1" : "0"}`
     ].join("|");
 
     if (input.sourceFingerprint) {
@@ -4920,6 +4933,57 @@ export class AnalysisService implements OnModuleInit {
 
     await this.analysisUploadRepo.delete(staleUploads.map((upload) => upload.id));
     this.logger.log(`Удалено старых локальных upload-архивов: ${staleUploads.length}`);
+  }
+
+  private async cleanupStaleExtractedWorkDirs(
+    minAgeMinutes = this.extractedWorkDirCleanupTtlMinutes
+  ): Promise<void> {
+    const worksRoot = await this.ensureWorksRoot();
+    const cutoffMs = Date.now() - Math.max(0, minAgeMinutes) * 60 * 1000;
+    let entries: Array<{
+      name: string;
+      isDirectory: () => boolean;
+    }>;
+
+    try {
+      entries = await fs.readdir(worksRoot, { withFileTypes: true });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.warn(`Не удалось прочитать ${worksRoot} для очистки: ${message}`);
+      return;
+    }
+
+    let deleted = 0;
+    for (const entry of entries) {
+      if (!entry.isDirectory() || !entry.name.startsWith("analysis-zip-")) {
+        continue;
+      }
+
+      const dirPath = path.join(worksRoot, entry.name);
+      let stat;
+      try {
+        stat = await fs.stat(dirPath);
+      } catch {
+        continue;
+      }
+      if (stat.mtimeMs >= cutoffMs) {
+        continue;
+      }
+
+      try {
+        await fs.rm(dirPath, { recursive: true, force: true });
+        deleted += 1;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        this.logger.warn(`Не удалось удалить старую временную папку ${dirPath}: ${message}`);
+      }
+    }
+
+    if (deleted > 0) {
+      this.logger.log(
+        `Удалено старых временных папок анализа: ${deleted}. TTL: ${minAgeMinutes} мин.`
+      );
+    }
   }
 
   private extractS3KeyFromRequestPayload(payload: unknown): string | null {
@@ -5131,12 +5195,9 @@ export class AnalysisService implements OnModuleInit {
           metrics: job.input.metrics,
           eslintConfigText: job.input.eslintConfigText,
           eslintConfigFormat: job.input.eslintConfigFormat,
-          group: job.input.group,
-          student: job.input.student,
           r: job.input.r,
           depth: job.input.depth,
           includeGitMetrics: job.input.includeGitMetrics,
-          includePlagiarismHeatmap: job.input.includePlagiarismHeatmap,
           onProgress: writeProgress
         });
       } else if ("key" in job.input) {
@@ -5322,9 +5383,8 @@ export class AnalysisService implements OnModuleInit {
         ? ""
         : String(requestPayload.depth);
     const includeGitMetrics = requestPayload?.includeGitMetrics === false ? "0" : "1";
-    const includePlagiarismHeatmap = requestPayload?.includePlagiarismHeatmap === false ? "0" : "1";
 
-    return `${direction}|metrics=${metrics}|r=${recursive}|depth=${depth}|git=${includeGitMetrics}|plag=${includePlagiarismHeatmap}`;
+    return `${direction}|metrics=${metrics}|r=${recursive}|depth=${depth}|git=${includeGitMetrics}`;
   }
 
   private getS3Bucket(): string {

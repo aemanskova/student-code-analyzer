@@ -64,7 +64,6 @@ export function AnalysisResultsWidget({ runId, analysisDepth, direction }: Props
       <ResultsTabs
         activeTab={activeTab}
         analysisDepth={analysisDepth}
-        direction={direction}
         hasGitTab={hasGitTab}
         runId={runId}
         selectedLevels={selectedLevels}

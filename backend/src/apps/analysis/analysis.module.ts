@@ -2,7 +2,6 @@ import { Module } from "@nestjs/common";
 import { TypeOrmModule } from "@nestjs/typeorm";
 import { AnalysisController } from "./analysis.controller";
 import { AnalysisService } from "./analysis.service";
-import { DuckdbModule } from "../database/duckdb/duckdb.module";
 import { MetricsModule } from "../metrics/metrics.module";
 import { PathParserModule } from "../utils/path-parser/path-parser.module";
 import { HtmlCssFullAnalyzerService } from "./html-css-full-analyzer.service";
@@ -18,7 +17,6 @@ import { S3UploadController } from "./s3-upload.controller";
 
 @Module({
   imports: [
-    DuckdbModule,
     MetricsModule,
     PathParserModule,
     TypeOrmModule.forFeature([

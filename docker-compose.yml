@@ -20,8 +20,6 @@ services:
       AXE_CONCURRENCY: 1
       JWT_SECRET: super_secret_jwt_for_development
       SQLITE_DB_PATH: /app/data/sqlite/app.db
-      DUCKDB_PATH: /app/data/duckdb/analysis.duckdb
-      CSV_ROOT: /app/csv
       WORKS_ROOT: /app/works
       PATH_GROUP_INDEX: 0
       PATH_STUDENT_INDEX: 1
@@ -39,7 +37,6 @@ services:
       S3_FORCE_PATH_STYLE: "true"
     volumes:
       - ./data:/app/data
-      - ./csv:/app/csv
       - ./works:/app/works
     ports:
       - "3000:3000"

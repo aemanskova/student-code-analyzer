@@ -23,10 +23,6 @@ export class RunAnalysisDto {
 
   @IsOptional()
   @IsString()
-  csvFile?: string;
-
-  @IsOptional()
-  @IsString()
   rootPath?: string;
 
   @IsOptional()
@@ -41,10 +37,6 @@ export class RunAnalysisDto {
   @IsOptional()
   @IsBoolean()
   includeGitMetrics?: boolean;
-
-  @IsOptional()
-  @IsBoolean()
-  includePlagiarismHeatmap?: boolean;
 
   // Internal path to a generated ESLint config file. Not intended for request body.
   eslintConfigPath?: string;

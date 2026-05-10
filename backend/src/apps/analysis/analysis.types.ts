@@ -2,7 +2,7 @@ export interface AnalysisRow {
   path: string;
   group: string | null;
   student: string | null;
-  [key: string]: string | number | null;
+  [key: string]: string | number | boolean | null;
 }
 
 export interface GitAnalysisRow {

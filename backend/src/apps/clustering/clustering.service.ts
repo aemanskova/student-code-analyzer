@@ -59,10 +59,6 @@ interface RunMetadata {
   sourcePath: string;
 }
 
-interface BuildClusteringOptions {
-  eps?: number;
-}
-
 interface GitAggregateMetrics {
   active_days: number;
   churn_ratio: number;
@@ -96,8 +92,8 @@ export class ClusteringService {
     };
   }
 
-  async buildClusterization(userId: number, runId: string, options: BuildClusteringOptions = {}) {
-    const result = await this.buildClustering(userId, runId, options);
+  async buildClusterization(userId: number, runId: string) {
+    const result = await this.buildClustering(userId, runId);
     const job = this.analysisJobRepo.create({
       id: randomUUID(),
       userId,
@@ -110,8 +106,7 @@ export class ClusteringService {
       requestPayload: {
         kind: "clusterizing",
         sourceRunId: result.runId,
-        depth: result.depth,
-        eps: options.eps ?? null
+        depth: result.depth
       },
       resultPayload: result,
       startedAt: new Date(),
@@ -191,11 +186,7 @@ export class ClusteringService {
     };
   }
 
-  private async buildClustering(
-    userId: number,
-    runId: string,
-    options: BuildClusteringOptions = {}
-  ) {
+  private async buildClustering(userId: number, runId: string) {
     const normalizedRunId = String(runId || "").trim();
     if (!normalizedRunId) {
       throw new BadRequestException("runId path parameter is required");
@@ -241,23 +232,15 @@ export class ClusteringService {
       await scaler.init(py);
       const scaled = await scaler.fit_transform({ X: transformed });
 
-      let eps = this.resolveEps(options.eps);
-      let labels: number[];
-      if (eps === null) {
-        neighbors = new sklearn.NearestNeighbors({ n_neighbors: this.minSamples });
-        await neighbors.init(py);
-        await neighbors.fit({ X: scaled });
-        const neighborResult = await neighbors.kneighbors({
-          n_neighbors: this.minSamples,
-          return_distance: true
-        });
-        const kDistances = this.extractKDistances(neighborResult);
-        const targeted = await this.pickEpsForTargetClusters(sklearn, py, scaled, kDistances);
-        eps = targeted.eps;
-        labels = targeted.labels;
-      } else {
-        labels = await this.fitDbscan(sklearn, py, scaled, eps);
-      }
+      neighbors = new sklearn.NearestNeighbors({ n_neighbors: this.minSamples });
+      await neighbors.init(py);
+      await neighbors.fit({ X: scaled });
+      const neighborResult = await neighbors.kneighbors({
+        n_neighbors: this.minSamples,
+        return_distance: true
+      });
+      const kDistances = this.extractKDistances(neighborResult);
+      const { eps, labels } = await this.pickEpsForTargetClusters(sklearn, py, scaled, kDistances);
 
       const clusteredRows = this.toClusteredRows(preparedRows, labels);
       const clusters = this.getClustersList(clusteredRows);
@@ -526,7 +509,7 @@ export class ClusteringService {
   }
 
   private normalizeMetrics(
-    metrics: Record<string, string | number | null>
+    metrics: Record<string, ClusteringMetricValue>
   ): Record<string, ClusteringMetricValue> {
     const normalized: Record<string, ClusteringMetricValue> = {};
     for (const [key, value] of Object.entries(metrics || {})) {
@@ -785,16 +768,6 @@ export class ClusteringService {
       return candidate.noiseCount < current.noiseCount;
     }
     return candidate.fallbackDistance < current.fallbackDistance;
-  }
-
-  private resolveEps(inputEps: number | undefined): number | null {
-    if (inputEps === undefined) {
-      return null;
-    }
-    if (!Number.isFinite(inputEps) || inputEps <= 0) {
-      throw new BadRequestException("eps должен быть положительным числом");
-    }
-    return inputEps;
   }
 
   private toClusteredRows(preparedRows: PreparedRow[], labels: number[]): ClusteredMetricRow[] {

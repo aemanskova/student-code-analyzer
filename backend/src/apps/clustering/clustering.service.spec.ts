@@ -303,22 +303,6 @@ describe("ClusteringService", () => {
     expect(captured.scaledInput?.[0]?.[15]).toBe(50);
   });
 
-  it("uses custom eps for saved clusterization builds", async () => {
-    const captured: { dbscanOptions?: Record<string, unknown> } = {};
-    const rows = [
-      makeRow(1, "g1/s1/work1"),
-      makeRow(2, "g1/s1/work2"),
-      makeRow(3, "g1/s2/work3"),
-      makeRow(4, "g2/s3/work4"),
-      makeRow(5, "g2/s3/work5")
-    ];
-    const service = createService(rows, makeJob(3), [0, 0, 1, 1, -1], captured);
-
-    await service.buildClusterization(1, "run-1", { eps: 0.75 });
-
-    expect(captured.dbscanOptions).toMatchObject({ eps: 0.75, min_samples: 5 });
-  });
-
   it("selects automatic eps that produces three clusters when possible", async () => {
     const rows = [
       makeRow(1, "g1/s1/work1"),

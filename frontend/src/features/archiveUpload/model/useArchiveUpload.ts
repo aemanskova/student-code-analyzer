@@ -340,7 +340,7 @@ export const useArchiveUpload = ({ file, disabled, onUploaded }: Params) => {
 
   useEffect(() => {
     if (!isUploading) {
-      setDisplayProgressPercent(progressPercent)
+      setDisplayProgressPercent(progressPercentRef.current)
       return
     }
 

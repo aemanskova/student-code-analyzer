@@ -30,7 +30,6 @@ const ProtectedClusterizingPage = withProtection(ClusterizingPage)
 const ProtectedClusterizingCreatePage = withProtection(ClusterizingCreatePage)
 const ProtectedClusterizingDetailsPage = withProtection(ClusterizingDetailsPage)
 const ProtectedClusterizingMetricChartPage = withProtection(ClusterizingMetricChartPage)
-const ProtectedGlossaryPage = withProtection(GlossaryPage)
 const ProtectedProfilePage = withProtection(ProfilePage)
 
 export function Router() {
@@ -64,7 +63,7 @@ export function Router() {
           path={routes.clusterizingMetricChartPath}
           element={<ProtectedClusterizingMetricChartPage />}
         />
-        <Route path={routes.glossary} element={<ProtectedGlossaryPage />} />
+        <Route path={routes.glossary} element={<GlossaryPage />} />
         <Route path="*" element={<NotFoundPage />} />
       </Route>
     </Routes>

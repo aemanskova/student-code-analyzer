@@ -6,7 +6,7 @@ export interface MetricComputeContext {
   rootAbsolutePath?: string;
 }
 
-export type MetricValues = Record<string, number | string | null>;
+export type MetricValues = Record<string, number | string | boolean | null>;
 
 export interface DirectionMetricProvider {
   readonly direction: string;

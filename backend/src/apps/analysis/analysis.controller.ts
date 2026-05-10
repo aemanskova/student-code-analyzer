@@ -29,12 +29,9 @@ export class AnalysisController {
       metrics: body.metrics,
       eslintConfigText: body.eslintConfigText,
       eslintConfigFormat: body.eslintConfigFormat,
-      group: body.group,
-      student: body.student,
       r: body.r,
       depth: body.depth,
-      includeGitMetrics: body.includeGitMetrics ?? true,
-      includePlagiarismHeatmap: body.includePlagiarismHeatmap ?? true
+      includeGitMetrics: body.includeGitMetrics ?? true
     });
   }
 

@@ -40,7 +40,7 @@ export class AnalysisResult {
   studentValue!: string | null;
 
   @Column("simple-json")
-  metrics!: Record<string, string | number | null>;
+  metrics!: Record<string, string | number | boolean | null>;
 
   @CreateDateColumn()
   createdAt!: Date;
