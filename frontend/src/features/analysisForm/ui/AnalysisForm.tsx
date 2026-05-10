@@ -49,7 +49,7 @@ export function AnalysisForm({
   const depth = useWatch({ control: form.control, name: "depth" })
   const includeGitMetrics = useWatch({ control: form.control, name: "includeGitMetrics" })
   const eslintConfigText = useWatch({ control: form.control, name: "eslintConfigText" })
-  const selectedMetrics = useWatch({ control: form.control, name: "metrics" }) || []
+  const selectedMetrics = useWatch({ control: form.control, name: "metrics" })
   const controlsDisabled = locked || isAnalyzing
   const canUseEslintConfig = supportsEslintConfig(direction)
   const hasEslintConfig = canUseEslintConfig && Boolean(eslintConfigText?.trim())
@@ -70,13 +70,14 @@ export function AnalysisForm({
   }, [depth, direction, includeGitMetrics, onQueryStateChange, recursive])
 
   useEffect(() => {
-    const unavailableSelectedMetrics = selectedMetrics.filter(
+    const currentMetrics = selectedMetrics || []
+    const unavailableSelectedMetrics = currentMetrics.filter(
       (metric) => !metricsOptions.includes(metric)
     )
     if (unavailableSelectedMetrics.length) {
       form.setValue(
         "metrics",
-        selectedMetrics.filter((metric) => metricsOptions.includes(metric)),
+        currentMetrics.filter((metric) => metricsOptions.includes(metric)),
         { shouldDirty: true }
       )
     }

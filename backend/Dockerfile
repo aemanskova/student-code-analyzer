@@ -25,14 +25,12 @@ COPY src ./src
 RUN NODE_OPTIONS="--max-old-space-size=4096" npm run build
 
 # Не делаем chown -R /app — обход node_modules очень долгий на VPS. node читает dist и node_modules с правами «другие».
-RUN mkdir -p /app/data/sqlite /app/data/duckdb /app/csv /app/works
+RUN mkdir -p /app/data/sqlite /app/works
 
 USER node
 
 ENV PORT=3000
 ENV SQLITE_DB_PATH=/app/data/sqlite/app.db
-ENV DUCKDB_PATH=/app/data/duckdb/analysis.duckdb
-ENV CSV_ROOT=/app/csv
 ENV WORKS_ROOT=/app/works
 ENV CHROME_PATH=/usr/bin/chromium
 ENV PLAYWRIGHT_CHROMIUM_PATH=/usr/bin/chromium

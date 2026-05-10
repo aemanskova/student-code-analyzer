@@ -1,9 +1,6 @@
 import { useGetStandaloneHeatmapDetailsQuery } from "@entities/analysis/api"
-import {
-  HeatmapSvg,
-  sortPairs,
-  toShortPath
-} from "@features/plagiarismHeatmap/ui/PlagiarismHeatmapSection"
+import { sortPairs, toShortPath } from "@features/plagiarismHeatmap"
+import { HeatmapSvg } from "@features/plagiarismHeatmap/ui/PlagiarismHeatmapSection"
 import {
   Card,
   Container,

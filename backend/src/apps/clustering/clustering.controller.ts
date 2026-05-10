@@ -1,9 +1,8 @@
-import { Body, Controller, Get, Param, Post, UseGuards } from "@nestjs/common";
+import { Controller, Get, Param, Post, UseGuards } from "@nestjs/common";
 import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
 import { CurrentUserId } from "../auth/current-user-id.decorator";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { ClusteringService } from "./clustering.service";
-import { BuildClusterizationDto } from "./dto/build-clusterization.dto";
 
 @Controller("clustering")
 @UseGuards(JwtAuthGuard)
@@ -26,12 +25,8 @@ export class ClusteringController {
 
   @Post("run/:runId/build")
   @ApiOperation({ summary: "Выполнить и сохранить DBSCAN-кластеризацию для html_css runId" })
-  async buildClusterization(
-    @Param("runId") runId: string,
-    @CurrentUserId() userId: number,
-    @Body() body: BuildClusterizationDto
-  ) {
-    return this.clusteringService.buildClusterization(userId, runId, body);
+  async buildClusterization(@Param("runId") runId: string, @CurrentUserId() userId: number) {
+    return this.clusteringService.buildClusterization(userId, runId);
   }
 
   @Get("run/:runId")

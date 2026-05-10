@@ -73,6 +73,7 @@ export const usePlagiarismRunView = ({ runId, analysisDepth, selectedLevels }: P
       refetchOnFocus: true
     }
   )
+  const refetchHeatmapHistory = historyQuery.refetch
 
   useEffect(() => {
     setBuildError(null)
@@ -120,7 +121,7 @@ export const usePlagiarismRunView = ({ runId, analysisDepth, selectedLevels }: P
 
       setHideCurrentWhileBuilding(false)
       setHeatmapJobId("")
-      void historyQuery.refetch()
+      void refetchHeatmapHistory()
       return
     }
 
@@ -130,13 +131,13 @@ export const usePlagiarismRunView = ({ runId, analysisDepth, selectedLevels }: P
       )
       setHideCurrentWhileBuilding(false)
       setHeatmapJobId("")
-      void historyQuery.refetch()
+      void refetchHeatmapHistory()
     }
   }, [
     buildJobStatusQuery.data?.errorMessage,
     buildJobStatusQuery.data?.result,
     buildJobStatusQuery.data?.status,
-    historyQuery.refetch,
+    refetchHeatmapHistory,
     setHeatmapJobId
   ])
 

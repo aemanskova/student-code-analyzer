@@ -23,10 +23,6 @@ export class RunAnalysisDto {
 
   @IsOptional()
   @IsString()
-  csvFile?: string;
-
-  @IsOptional()
-  @IsString()
   rootPath?: string;
 
   @IsOptional()

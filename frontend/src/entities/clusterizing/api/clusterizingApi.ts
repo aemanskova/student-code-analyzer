@@ -14,12 +14,9 @@ export const clusterizingApi = baseApi.injectEndpoints({
       }),
       providesTags: [clusterizationListTag]
     }),
-    buildClusterization: build.mutation<
-      ClusterizationDetailsResponse,
-      { runId: string; eps?: number }
-    >({
-      query: ({ eps, runId }) => ({
-        body: eps === undefined ? {} : { eps },
+    buildClusterization: build.mutation<ClusterizationDetailsResponse, { runId: string }>({
+      query: ({ runId }) => ({
+        body: {},
         url: `/clustering/run/${encodeURIComponent(runId)}/build`,
         method: "POST"
       }),
