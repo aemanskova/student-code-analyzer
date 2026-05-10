@@ -16,13 +16,15 @@ describe("MetricsService", () => {
     const htmlCssProvider = createProvider("html_css", ["tag_count"]);
     const jsProvider = createProvider("js", ["lines_of_code"]);
     const tsProvider = createProvider("typescript", ["LOC"]);
+    const vueProvider = createProvider("vue", ["TS_ANY_VUE"]);
     const service = new MetricsService(
       htmlCssProvider as never,
       jsProvider as never,
-      tsProvider as never
+      tsProvider as never,
+      vueProvider as never
     );
 
-    expect(service.getSupportedDirections()).toEqual(["html_css", "js", "typescript"]);
+    expect(service.getSupportedDirections()).toEqual(["html_css", "js", "typescript", "vue"]);
     expect(service.getSupportedMetrics("js")).toEqual(["lines_of_code"]);
     expect(service.getSupportedMetrics("unknown")).toEqual([]);
   });
@@ -31,10 +33,12 @@ describe("MetricsService", () => {
     const htmlCssProvider = createProvider("html_css", ["tag_count"], { tag_count: 3 });
     const jsProvider = createProvider("js", ["lines_of_code"]);
     const tsProvider = createProvider("typescript", ["LOC"]);
+    const vueProvider = createProvider("vue", ["TS_ANY_VUE"]);
     const service = new MetricsService(
       htmlCssProvider as never,
       jsProvider as never,
-      tsProvider as never
+      tsProvider as never,
+      vueProvider as never
     );
 
     await expect(
@@ -53,7 +57,8 @@ describe("MetricsService", () => {
     const service = new MetricsService(
       htmlCssProvider as never,
       createProvider("js", []) as never,
-      createProvider("typescript", []) as never
+      createProvider("typescript", []) as never,
+      createProvider("vue", []) as never
     );
 
     await expect(

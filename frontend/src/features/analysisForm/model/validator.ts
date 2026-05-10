@@ -3,7 +3,7 @@ import { z } from "zod"
 export const analysisSchema = z
   .object({
     archive: z.instanceof(File).nullable(),
-    direction: z.enum(["html_css", "js", "typescript"]).nullable(),
+    direction: z.enum(["html_css", "js", "typescript", "vue"]).nullable(),
     metrics: z.array(z.string()),
     eslintConfigText: z.string().max(200_000),
     eslintConfigFormat: z.enum(["js", "mjs", "cjs"]).optional(),
