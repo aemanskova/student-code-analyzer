@@ -1,4 +1,4 @@
-export type Direction = "html_css" | "js" | "typescript"
+export type Direction = "html_css" | "js" | "typescript" | "vue"
 export type EslintConfigFormat = "js" | "mjs" | "cjs"
 
 export interface AnalysisRow {

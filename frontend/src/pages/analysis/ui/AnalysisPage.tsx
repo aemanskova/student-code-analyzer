@@ -43,7 +43,9 @@ const formatDuration = (seconds: number | null | undefined): string | null => {
 }
 
 const parseDirection = (value: string | null): Direction | undefined =>
-  value === "js" || value === "html_css" || value === "typescript" ? value : undefined
+  value === "js" || value === "html_css" || value === "typescript" || value === "vue"
+    ? value
+    : undefined
 
 const parseBooleanParam = (value: string | null, fallback: boolean): boolean => {
   if (value === "true") {

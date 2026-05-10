@@ -743,377 +743,370 @@ export const VUE_GLOSSARY_METRICS: GlossaryMetric[] = [
   },
   {
     order: 5,
-    metric: "COG_COMPLEX_VUE",
-    translation: "Когнитивная сложность.",
-    description:
-      "Оценка сложности понимания кода с учётом ветвлений, вложенности и переходов, аналогично метрике Cognitive Complexity в Sonar."
-  },
-  {
-    order: 6,
     metric: "SMELL_VFOR_NOKEY",
     translation: "v-for без key.",
     description:
       "Количество случаев, где в директиве v-for отсутствует :key. Такое нарушение может приводить к некорректному обновлению списков."
   },
   {
-    order: 7,
+    order: 6,
     metric: "SMELL_VHTML",
     translation: "Использование v-html.",
     description:
       "Количество случаев использования директивы v-html, которая вставляет HTML-код в страницу и может создавать риск XSS при работе с непроверенными данными."
   },
   {
-    order: 8,
+    order: 7,
     metric: "SMELL_MUT_PROPS",
     translation: "Мутация props.",
     description:
       "Количество случаев, где входные параметры props изменяются напрямую в дочернем компоненте, что нарушает однонаправленный поток данных."
   },
   {
-    order: 9,
+    order: 8,
     metric: "SMELL_PROPS_REACT_LOSS",
     translation: "Потеря реактивности props.",
     description:
       "Количество случаев, где из-за деструктурирования или копирования теряется реактивность props, и данные перестают обновляться автоматически."
   },
   {
-    order: 10,
+    order: 9,
     metric: "VMD_TOTAL_ISSUES",
     translation: "Всего проблем VMD.",
     description:
       "Общее число проблем и нарушений, найденных инструментом Vue Mess Detector по набору правил анализа."
   },
   {
-    order: 11,
+    order: 10,
     metric: "VMD_NO_TS_LANG",
     translation: "Отсутствие TypeScript.",
     description:
       'Количество файлов или компонентов, где скрипт не использует TypeScript, например отсутствует lang="ts".'
   },
   {
-    order: 12,
+    order: 11,
     metric: "VMD_PLAIN_SCRIPT",
     translation: "Обычный script без TypeScript.",
     description: "Количество случаев использования блока <script> без указания TypeScript."
   },
   {
-    order: 13,
+    order: 12,
     metric: "VMD_HTML_LINKS",
     translation: "HTML-ссылки.",
     description:
       "Количество HTML-ссылок в шаблоне или связанная с ними проверка, выполняемая инструментом VMD."
   },
   {
-    order: 14,
+    order: 13,
     metric: "VMD_NO_INLINE_STYLES",
     translation: "Inline-стили.",
     description: 'Проверка или счётчик случаев использования inline-стилей style="..." в шаблоне.'
   },
   {
-    order: 15,
+    order: 14,
     metric: "VMD_SHORT_VAR",
     translation: "Слишком короткие имена.",
     description:
       "Количество случаев, где имена переменных слишком короткие и могут снижать читаемость кода."
   },
   {
-    order: 16,
+    order: 15,
     metric: "VMD_COMMENTS",
     translation: "Количество комментариев.",
     description:
       "Число комментариев или их доля, используемая как индикатор документированности либо избыточной зашумлённости кода."
   },
   {
-    order: 17,
+    order: 16,
     metric: "VMD_BIG_VIF",
     translation: "Большие условия v-if.",
     description:
       "Количество сложных или длинных условий в директиве v-if, которые ухудшают читаемость шаблона."
   },
   {
-    order: 18,
+    order: 17,
     metric: "VMD_BIG_VSHOW",
     translation: "Большие условия v-show.",
     description: "Количество сложных или длинных условий в директиве v-show."
   },
   {
-    order: 19,
+    order: 18,
     metric: "VMD_COMPL_COND",
     translation: "Сложные условия.",
     description:
       "Количество сложных логических условий в шаблоне или скрипте, которые трудны для понимания и тестирования."
   },
   {
-    order: 20,
+    order: 19,
     metric: "VMD_CC",
     translation: "Цикломатическая сложность.",
     description: "Оценка цикломатической сложности по правилам или подходу Vue Mess Detector."
   },
   {
-    order: 21,
+    order: 20,
     metric: "VMD_COMP_SIDEFX",
     translation: "Побочные эффекты в computed.",
     description:
       "Количество computed-свойств с побочными эффектами, например мутациями или вызовами функций, что нарушает ожидаемую чистоту computed."
   },
   {
-    order: 22,
+    order: 21,
     metric: "VMD_DEEP_INDENT",
     translation: "Глубокая вложенность.",
     description:
       "Количество случаев слишком глубокой вложенности, которая ухудшает читаемость кода."
   },
   {
-    order: 23,
+    order: 22,
     metric: "VMD_ELSE",
     translation: "Проблемные else-ветвления.",
     description:
       "Проверка или счётчик сложных else-ветвлений, влияющих на читаемость и простоту понимания логики."
   },
   {
-    order: 24,
+    order: 23,
     metric: "VMD_FN_SIZE",
     translation: "Размер функций.",
     description:
       "Количество функций, превышающих заданный порог размера. Может указывать на недостаточную декомпозицию логики."
   },
   {
-    order: 25,
+    order: 24,
     metric: "VMD_IMG_ELEMS",
     translation: "HTML-изображения.",
     description:
       "Количество элементов img или связанных с ними проверок, например наличия атрибута alt."
   },
   {
-    order: 26,
+    order: 25,
     metric: "VMD_HUGE_FILES",
     translation: "Большие файлы.",
     description:
       "Количество файлов, превышающих порог размера. Может указывать на слишком крупные компоненты или слабую декомпозицию."
   },
   {
-    order: 27,
+    order: 26,
     metric: "VMD_IF_NO_CURLY",
     translation: "if без фигурных скобок.",
     description:
       "Количество случаев использования if без фигурных скобок, что может повышать риск ошибок при последующих изменениях кода."
   },
   {
-    order: 28,
+    order: 27,
     metric: "VMD_MAGIC_NUM",
     translation: "Магические числа.",
     description:
       "Количество числовых литералов, использованных без именованных констант и пояснения смысла."
   },
   {
-    order: 29,
+    order: 28,
     metric: "VMD_NESTED_TERN",
     translation: "Вложенный тернарный оператор.",
     description: "Количество случаев вложенных тернарных выражений, ухудшающих читаемость кода."
   },
   {
-    order: 30,
+    order: 29,
     metric: "VMD_NO_IMPORTANT",
     translation: "Использование !important.",
     description: "Проверка или счётчик случаев использования !important в стилях."
   },
   {
-    order: 31,
+    order: 30,
     metric: "VMD_NO_DOM",
     translation: "Прямой доступ к DOM.",
     description:
       "Количество нарушений правила, запрещающего прямое обращение к DOM внутри компонентов."
   },
   {
-    order: 32,
+    order: 31,
     metric: "VMD_NO_PROP_DESTR",
     translation: "Деструктурирование props.",
     description:
       "Количество нарушений правила, предотвращающего потерю реактивности при деструктурировании props."
   },
   {
-    order: 33,
+    order: 32,
     metric: "VMD_NO_SKIP_TESTS",
     translation: "Пропущенные тесты.",
     description: "Проверка или счётчик пропущенных тестов, например случаев использования .skip."
   },
   {
-    order: 34,
+    order: 33,
     metric: "VMD_NO_VAR",
     translation: "Использование var.",
     description: "Количество случаев использования var вместо let или const."
   },
   {
-    order: 35,
+    order: 34,
     metric: "VMD_PARAM_COUNT",
     translation: "Число параметров.",
     description: "Количество функций, превышающих заданный порог по числу параметров."
   },
   {
-    order: 36,
+    order: 35,
     metric: "VMD_PROPS_DRILL",
     translation: "Проброс props через цепочку компонентов.",
     description:
       "Количество случаев чрезмерной передачи данных через цепочку вложенных компонентов."
   },
   {
-    order: 37,
+    order: 36,
     metric: "VMD_REPEAT_CSS",
     translation: "Повторяющийся CSS.",
     description: "Количество повторяющихся CSS-правил или фрагментов стилей."
   },
   {
-    order: 38,
+    order: 37,
     metric: "VMD_SCRIPT_LEN",
     translation: "Длина script-блока.",
     description:
       "Размер части <script> в компоненте. Большое значение может указывать на крупный компонент или низкую связность."
   },
   {
-    order: 39,
+    order: 38,
     metric: "VMD_TOO_MANY_PROPS",
     translation: "Слишком много props.",
     description:
       "Количество компонентов, превышающих порог по числу props, что может указывать на рост связанности и сложности API компонента."
   },
   {
-    order: 40,
+    order: 39,
     metric: "VMD_VFOR_EXPR",
     translation: "Сложные выражения в v-for.",
     description: "Количество сложных или потенциально проблемных выражений внутри директивы v-for."
   },
   {
-    order: 41,
+    order: 40,
     metric: "VMD_VFOR_IDX_KEY",
     translation: "Индекс как key в v-for.",
     description:
       "Количество случаев, где в v-for значение :key задано индексом, что может нарушать корректность обновления списка."
   },
   {
-    order: 42,
+    order: 41,
     metric: "VMD_ZERO_LEN_CMP",
     translation: "Сравнение с нулевой длиной.",
     description:
       "Количество проверок вида arr.length == 0 или аналогичных выражений, если такое правило фиксируется инструментом."
   },
   {
-    order: 43,
+    order: 42,
     metric: "VUEX_LOC",
     translation: "Строки кода Vuex.",
     description:
       "Количество строк кода, относящихся к Vuex: store, modules, actions, mutations, getters и другим связанным частям."
   },
   {
-    order: 44,
+    order: 43,
     metric: "VUEX_FNS_USER",
     translation: "Пользовательские функции Vuex.",
     description:
       "Количество пользовательских функций во Vuex-части проекта, например actions, mutations и getters."
   },
   {
-    order: 45,
+    order: 44,
     metric: "VUEX_FNS_ALL",
     translation: "Все функции Vuex.",
     description:
       "Общее количество функций во Vuex, включая пользовательские функции и встроенные функции JavaScript, используемые в анализируемом коде, если они учитываются инструментом."
   },
   {
-    order: 46,
+    order: 45,
     metric: "VUEX_AVG_FN_SIZE",
     translation: "Средний размер функции Vuex.",
     description: "Среднее количество строк кода на одну функцию во Vuex-части проекта."
   },
   {
-    order: 47,
+    order: 46,
     metric: "VUEX_FILES",
     translation: "Файлы Vuex.",
     description: "Количество файлов, относящихся к Vuex."
   },
   {
-    order: 48,
+    order: 47,
     metric: "VUEX_CC_AVG",
     translation: "Средняя цикломатическая сложность Vuex.",
     description: "Среднее значение цикломатической сложности по функциям или файлам Vuex."
   },
   {
-    order: 49,
+    order: 48,
     metric: "VUEX_CC_SUM",
     translation: "Суммарная цикломатическая сложность Vuex.",
     description: "Суммарное значение цикломатической сложности во Vuex-части проекта."
   },
   {
-    order: 50,
+    order: 49,
     metric: "VUEX_NEST_MAX",
     translation: "Максимальная глубина вложенности Vuex.",
     description:
       "Максимальная глубина вложенных конструкций, например if, loops или try, во Vuex-коде."
   },
   {
-    order: 51,
+    order: 50,
     metric: "VUEX_PARAMS_MAX",
     translation: "Максимальное число параметров Vuex.",
     description: "Максимальное количество параметров у одной функции во Vuex."
   },
   {
-    order: 52,
+    order: 51,
     metric: "VUEX_HAL_VOL",
     translation: "Объём Холстеда Vuex.",
     description:
       "Метрика Холстеда, отражающая объём Vuex-кода на основе количества операторов и операндов."
   },
   {
-    order: 53,
+    order: 52,
     metric: "VUEX_HAL_DIFF",
     translation: "Трудность Холстеда Vuex.",
     description: "Метрика Холстеда, оценивающая сложность понимания или реализации Vuex-кода."
   },
   {
-    order: 54,
+    order: 53,
     metric: "VUEX_HAL_EFF",
     translation: "Усилие Холстеда Vuex.",
     description: "Метрика Холстеда, оценивающая трудозатраты на понимание или реализацию Vuex-кода."
   },
   {
-    order: 55,
+    order: 54,
     metric: "VUEX_SIM_INT",
     translation: "Внутреннее сходство Vuex.",
     description: "Процент внутреннего сходства или дублирования внутри Vuex-кода."
   },
   {
-    order: 56,
+    order: 55,
     metric: "VUEX_MAINT",
     translation: "Сопровождаемость Vuex.",
     description:
       "Индекс или оценка сопровождаемости Vuex-части проекта, агрегирующая размер, сложность и другие показатели."
   },
   {
-    order: 57,
+    order: 56,
     metric: "VUEX_TS_ANY",
     translation: "Тип any в TypeScript-коде Vuex.",
     description: "Количество использований типа any внутри Vuex-кода."
   },
   {
-    order: 58,
+    order: 57,
     metric: "VUEX_FORCE_UPDATE",
     translation: "Принудительные обновления Vuex.",
     description:
       "Количество вызовов принудительного обновления, обнаруженных в логике, связанной с Vuex."
   },
   {
-    order: 59,
+    order: 58,
     metric: "VUEX_REF_OBJARR",
     translation: "ref для object или array во Vuex.",
     description:
       "Количество случаев использования ref для object или array в участках кода, отнесённых к Vuex."
   },
   {
-    order: 60,
+    order: 59,
     metric: "VUEX_DOM_CALLS",
     translation: "Прямые обращения к DOM во Vuex.",
     description: "Количество прямых обращений к DOM внутри Vuex-кода или связанной логики."
   },
   {
-    order: 61,
+    order: 60,
     metric: "VUEX_COG_COMPLEX",
     translation: "Когнитивная сложность Vuex.",
     description: "Оценка сложности понимания Vuex-кода по метрике Cognitive Complexity."

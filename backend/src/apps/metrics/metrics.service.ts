@@ -3,6 +3,7 @@ import { DirectionMetricProvider, MetricComputeContext, MetricValues } from "./m
 import { HtmlCssMetricProvider } from "./html-css/html-css-metric.provider";
 import { JsMetricProvider } from "./js/js-metric.provider";
 import { TypeScriptMetricProvider } from "./typescript/typescript-metric.provider";
+import { VueMetricProvider } from "./vue/vue-metric.provider";
 
 @Injectable()
 export class MetricsService {
@@ -11,11 +12,13 @@ export class MetricsService {
   constructor(
     htmlCssProvider: HtmlCssMetricProvider,
     jsProvider: JsMetricProvider,
-    typeScriptProvider: TypeScriptMetricProvider
+    typeScriptProvider: TypeScriptMetricProvider,
+    vueProvider: VueMetricProvider
   ) {
     this.providers.set(htmlCssProvider.direction, htmlCssProvider);
     this.providers.set(jsProvider.direction, jsProvider);
     this.providers.set(typeScriptProvider.direction, typeScriptProvider);
+    this.providers.set(vueProvider.direction, vueProvider);
   }
 
   getSupportedDirections() {

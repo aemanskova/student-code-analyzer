@@ -39,6 +39,7 @@ import { NodeHttpHandler } from "@smithy/node-http-handler";
 import { InjectRepository } from "@nestjs/typeorm";
 import { In, Like, Repository } from "typeorm";
 import { MetricsService } from "../metrics/metrics.service";
+import { VUE_METRICS } from "../metrics/vue/vue-metric.provider";
 import { PathParserService } from "../utils/path-parser/path-parser.service";
 import { PathOutsideRootError, resolvePathUnderRoot } from "../../common/path-security";
 import { RunAnalysisDto } from "./dto/run-analysis.dto";
@@ -165,6 +166,8 @@ const TYPESCRIPT_METRIC_ORDER = [
 const TYPESCRIPT_METRIC_ORDER_INDEX = new Map(
   TYPESCRIPT_METRIC_ORDER.map((metric, index) => [metric, index])
 );
+
+const VUE_METRIC_ORDER_INDEX = new Map(VUE_METRICS.map((metric, index) => [metric, index]));
 
 interface QueuedHeatmapJob {
   jobId: string;
@@ -425,7 +428,7 @@ export class AnalysisService implements OnModuleInit {
     }
 
     const result =
-      dto.direction === "js" || dto.direction === "typescript"
+      dto.direction === "js" || dto.direction === "typescript" || dto.direction === "vue"
         ? await this.runFromFolderJs(dto, selectedMetrics)
         : await this.runFromFolderBasic(dto, selectedMetrics);
     return this.withOptionalGitData(result, dto);
@@ -2648,8 +2651,14 @@ export class AnalysisService implements OnModuleInit {
     const units =
       dto.direction === "typescript"
         ? await this.collectTypeScriptMetricUnits(rootAbsolutePath, rootDisplayLabel, dto)
-        : await this.collectJsMetricUnits(rootAbsolutePath, rootDisplayLabel, dto);
-    if (selectedMetrics.includes("cognitive_complexity")) {
+        : dto.direction === "vue"
+          ? await this.collectVueMetricUnits(rootAbsolutePath, rootDisplayLabel, dto)
+          : await this.collectJsMetricUnits(rootAbsolutePath, rootDisplayLabel, dto);
+    if (
+      selectedMetrics.includes("cognitive_complexity") ||
+      selectedMetrics.includes("COG_COMPLEX_VUE") ||
+      selectedMetrics.includes("VUEX_COG_COMPLEX")
+    ) {
       await dto.onAnalyzeProgress?.(
         0,
         Math.max(1, units.length),
@@ -2886,6 +2895,26 @@ export class AnalysisService implements OnModuleInit {
     });
   }
 
+  private async collectVueMetricUnits(
+    rootAbsolutePath: string,
+    rootDisplayLabel: string,
+    dto: RunAnalysisDto
+  ): Promise<FolderMetricUnit[]> {
+    const depth =
+      typeof dto.depth === "number" ? dto.depth : Boolean(dto.r) ? Number.POSITIVE_INFINITY : 0;
+    const workDirs = await this.collectVueWorkDirs(rootAbsolutePath, depth);
+
+    return workDirs.map((absolutePath) => {
+      const relativePathRaw =
+        this.normalizePath(path.relative(rootAbsolutePath, absolutePath)) || ".";
+      return {
+        absolutePath,
+        relativePath: this.normalizeResultPath(relativePathRaw, rootDisplayLabel),
+        targetKind: "directory" as const
+      };
+    });
+  }
+
   private async collectJsWorkDirs(rootAbsolutePath: string, maxDepth: number): Promise<string[]> {
     if (maxDepth === 0) {
       return [
@@ -2928,6 +2957,15 @@ export class AnalysisService implements OnModuleInit {
     }
 
     return this.collectCodeWorkDirsAtDepth(rootAbsolutePath, maxDepth, [".ts", ".tsx"]);
+  }
+
+  private async collectVueWorkDirs(rootAbsolutePath: string, maxDepth: number): Promise<string[]> {
+    const extensions = [".js", ".mjs", ".cjs", ".jsx", ".ts", ".tsx", ".vue"];
+    if (maxDepth === 0) {
+      return [await this.resolveSingleChildWorkDir(rootAbsolutePath, extensions)];
+    }
+
+    return this.collectCodeWorkDirsAtDepth(rootAbsolutePath, maxDepth, extensions);
   }
 
   private async collectCodeWorkDirsAtDepth(
@@ -3077,12 +3115,16 @@ export class AnalysisService implements OnModuleInit {
   }
 
   private sortMetricsForDirection(direction: string, metrics: string[]): string[] {
-    if (direction !== "js" && direction !== "typescript") {
+    if (direction !== "js" && direction !== "typescript" && direction !== "vue") {
       return [...metrics].sort((a, b) => a.localeCompare(b));
     }
 
     const orderIndex =
-      direction === "typescript" ? TYPESCRIPT_METRIC_ORDER_INDEX : JAVASCRIPT_METRIC_ORDER_INDEX;
+      direction === "typescript"
+        ? TYPESCRIPT_METRIC_ORDER_INDEX
+        : direction === "vue"
+          ? VUE_METRIC_ORDER_INDEX
+          : JAVASCRIPT_METRIC_ORDER_INDEX;
 
     return [...metrics].sort((a, b) => {
       const aIndex = orderIndex.get(a);

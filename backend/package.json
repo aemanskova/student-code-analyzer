@@ -32,6 +32,7 @@
     "css-tree": "^3.1.0",
     "eslint": "^10.3.0",
     "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-vue": "^10.9.1",
     "fast-glob": "^3.3.3",
     "fast-levenshtein": "^2.0.6",
     "get-port": "^7.1.0",
@@ -50,6 +51,8 @@
     "typhonjs-escomplex": "^0.1.0",
     "unzipper": "^0.12.3",
     "vnu-jar": "^24.10.17",
+    "vue-eslint-parser": "^10.4.0",
+    "vue-mess-detector": "^0.68.1",
     "yauzl": "^2.10.0"
   },
   "devDependencies": {

@@ -113,6 +113,70 @@ const TYPESCRIPT_METRICS = [
   "Typed Error Handling score"
 ]
 
+const VUE_METRICS = [
+  "TS_ANY_VUE",
+  "FORCE_UPDATE_VUE",
+  "REF_OBJARR_VUE",
+  "DOM_CALLS_VUE",
+  "COG_COMPLEX_VUE",
+  "SMELL_VFOR_NOKEY",
+  "SMELL_VHTML",
+  "SMELL_MUT_PROPS",
+  "SMELL_PROPS_REACT_LOSS",
+  "VMD_TOTAL_ISSUES",
+  "VMD_NO_TS_LANG",
+  "VMD_PLAIN_SCRIPT",
+  "VMD_HTML_LINKS",
+  "VMD_NO_INLINE_STYLES",
+  "VMD_SHORT_VAR",
+  "VMD_COMMENTS",
+  "VMD_BIG_VIF",
+  "VMD_BIG_VSHOW",
+  "VMD_COMPL_COND",
+  "VMD_CC",
+  "VMD_COMP_SIDEFX",
+  "VMD_DEEP_INDENT",
+  "VMD_ELSE",
+  "VMD_FN_SIZE",
+  "VMD_IMG_ELEMS",
+  "VMD_HUGE_FILES",
+  "VMD_IF_NO_CURLY",
+  "VMD_MAGIC_NUM",
+  "VMD_NESTED_TERN",
+  "VMD_NO_IMPORTANT",
+  "VMD_NO_DOM",
+  "VMD_NO_PROP_DESTR",
+  "VMD_NO_SKIP_TESTS",
+  "VMD_NO_VAR",
+  "VMD_PARAM_COUNT",
+  "VMD_PROPS_DRILL",
+  "VMD_REPEAT_CSS",
+  "VMD_SCRIPT_LEN",
+  "VMD_TOO_MANY_PROPS",
+  "VMD_VFOR_EXPR",
+  "VMD_VFOR_IDX_KEY",
+  "VMD_ZERO_LEN_CMP",
+  "VUEX_LOC",
+  "VUEX_FNS_USER",
+  "VUEX_FNS_ALL",
+  "VUEX_AVG_FN_SIZE",
+  "VUEX_FILES",
+  "VUEX_CC_AVG",
+  "VUEX_CC_SUM",
+  "VUEX_NEST_MAX",
+  "VUEX_PARAMS_MAX",
+  "VUEX_HAL_VOL",
+  "VUEX_HAL_DIFF",
+  "VUEX_HAL_EFF",
+  "VUEX_SIM_INT",
+  "VUEX_MAINT",
+  "VUEX_TS_ANY",
+  "VUEX_FORCE_UPDATE",
+  "VUEX_REF_OBJARR",
+  "VUEX_DOM_CALLS",
+  "VUEX_COG_COMPLEX"
+]
+
 export const ESLINT_METRICS = ["eslint_errors_count", "eslint_warnings_count"] as const
 export const ESLINT_METRIC_SET = new Set<string>(ESLINT_METRICS)
 
@@ -157,5 +221,6 @@ export const DEFAULT_JS_ESLINT_CONFIG = `export default [
 export const METRICS_BY_DIRECTION: Record<Direction, string[]> = {
   html_css: HTML_CSS_METRICS,
   js: JS_METRICS,
-  typescript: [...JS_METRICS, ...TYPESCRIPT_METRICS]
+  typescript: [...JS_METRICS, ...TYPESCRIPT_METRICS],
+  vue: VUE_METRICS
 }
