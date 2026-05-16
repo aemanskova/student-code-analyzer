@@ -73,3 +73,7 @@ export interface ClusterizationListItem {
 export interface ClusterizationListResponse {
   data: ClusterizationListItem[]
 }
+
+export interface DeleteClusterizationResponse {
+  deleted: boolean
+}

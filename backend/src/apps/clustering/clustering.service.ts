@@ -173,6 +173,31 @@ export class ClusteringService {
     );
   }
 
+  async deleteClusterization(userId: number, jobId: string) {
+    const normalizedJobId = String(jobId || "").trim();
+    if (!normalizedJobId) {
+      throw new BadRequestException("jobId path parameter is required");
+    }
+
+    const job = await this.analysisJobRepo.findOne({
+      where: {
+        id: normalizedJobId,
+        userId,
+        direction: CLUSTERING_DIRECTION,
+        status: "success"
+      }
+    });
+    if (!job || job.requestPayload?.kind !== "clusterizing") {
+      throw new NotFoundException("Кластеризация не найдена");
+    }
+
+    await this.analysisJobRepo.delete({ id: normalizedJobId, userId });
+
+    return {
+      deleted: true
+    };
+  }
+
   async getOutliers(userId: number, runId: string) {
     const result = await this.buildClustering(userId, runId);
     return {

@@ -1,4 +1,4 @@
-import { Controller, Get, Param, Post, UseGuards } from "@nestjs/common";
+import { Controller, Delete, Get, Param, Post, UseGuards } from "@nestjs/common";
 import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
 import { CurrentUserId } from "../auth/current-user-id.decorator";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
@@ -21,6 +21,12 @@ export class ClusteringController {
   @ApiOperation({ summary: "Получить сохраненную кластеризацию" })
   async getClusterizationDetails(@Param("jobId") jobId: string, @CurrentUserId() userId: number) {
     return this.clusteringService.getClusterizationDetails(userId, jobId);
+  }
+
+  @Delete("jobs/:jobId")
+  @ApiOperation({ summary: "Удалить сохраненную кластеризацию" })
+  async deleteClusterization(@Param("jobId") jobId: string, @CurrentUserId() userId: number) {
+    return this.clusteringService.deleteClusterization(userId, jobId);
   }
 
   @Post("run/:runId/build")
