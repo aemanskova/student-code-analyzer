@@ -1,8 +1,12 @@
 import { DIRECTION_OPTIONS } from "@features/analysisForm/model"
-import { Checkbox, MultiSelect, NumberInput, Select } from "@mantine/core"
+import { getMetricLabel } from "@entities/glossary"
+import { Checkbox, NumberInput, Select } from "@mantine/core"
+import { AllOptionsMultiSelect } from "@shared/ui"
 import { Controller, type UseFormReturn } from "react-hook-form"
 
 import type { AnalysisFormValues } from "../model"
+
+const ALL_ANALYSIS_METRICS_VALUE = "__all_analysis_metrics__"
 
 type Props = {
   disabled: boolean
@@ -46,15 +50,22 @@ export function AnalysisSettingsFields({
         control={form.control}
         name="metrics"
         render={({ field }) => (
-          <MultiSelect
+          <AllOptionsMultiSelect
+            allLabel="Все метрики"
+            allValue={ALL_ANALYSIS_METRICS_VALUE}
             clearable
-            data={metricsOptions}
+            options={metricsOptions.map((metric) => ({
+              label: getMetricLabel(metric),
+              value: metric
+            }))}
             disabled={disabled || !direction}
             label="Метрики"
             placeholder={direction ? "Выберите метрики" : "Сначала выберите направление"}
             searchable
-            value={field.value}
-            onChange={field.onChange}
+            value={direction && field.value.length ? field.value : [ALL_ANALYSIS_METRICS_VALUE]}
+            onChange={(value) => {
+              field.onChange(value.includes(ALL_ANALYSIS_METRICS_VALUE) ? [] : value)
+            }}
           />
         )}
       />
