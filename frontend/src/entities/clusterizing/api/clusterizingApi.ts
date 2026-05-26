@@ -1,6 +1,10 @@
 import { baseApi } from "@shared/api/baseApi"
 
-import type { ClusterizationDetailsResponse, ClusterizationListResponse } from "./types"
+import type {
+  ClusterizationDetailsResponse,
+  ClusterizationListResponse,
+  DeleteClusterizationResponse
+} from "./types"
 
 const clusterizationListTag = { type: "ClusterizationList" as const, id: "LIST" }
 const clusterizationTag = (jobId: string) => ({ type: "Clusterization" as const, id: jobId })
@@ -28,12 +32,23 @@ export const clusterizingApi = baseApi.injectEndpoints({
         method: "GET"
       }),
       providesTags: (_result, _error, jobId) => [clusterizationTag(jobId)]
+    }),
+    deleteClusterization: build.mutation<DeleteClusterizationResponse, { jobId: string }>({
+      query: ({ jobId }) => ({
+        url: `/clustering/jobs/${encodeURIComponent(jobId)}`,
+        method: "DELETE"
+      }),
+      invalidatesTags: (_result, _error, { jobId }) => [
+        clusterizationListTag,
+        clusterizationTag(jobId)
+      ]
     })
   })
 })
 
 export const {
   useBuildClusterizationMutation,
+  useDeleteClusterizationMutation,
   useGetClusterizationDetailsQuery,
   useGetClusterizationListQuery
 } = clusterizingApi

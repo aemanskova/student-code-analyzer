@@ -3,8 +3,9 @@ import {
   getAnalysisDirectionLabel
 } from "@entities/analysis/model/direction"
 import { type ClusterizationListItem, formatClusterDate } from "@entities/clusterizing"
-import { Anchor } from "@mantine/core"
+import { ActionIcon, Anchor, Tooltip } from "@mantine/core"
 import { useDebouncedValue } from "@mantine/hooks"
+import { Trash } from "@phosphor-icons/react"
 import { routes } from "@shared/config/routes"
 import type { VirtualizedColumn } from "@shared/ui"
 import { useEffect, useMemo } from "react"
@@ -24,7 +25,10 @@ export type ClusterizingListFiltersForm = {
   pathFilter: string
 }
 
-export const useClusterizingList = (rows: ClusterizationListItem[]) => {
+export const useClusterizingList = (
+  rows: ClusterizationListItem[],
+  onDeleteClusterization: (jobId: string, sourcePath: string) => void
+) => {
   const form = useForm<ClusterizingListFiltersForm>({
     defaultValues: {
       dateFrom: null,
@@ -120,9 +124,25 @@ export const useClusterizingList = (rows: ClusterizationListItem[]) => {
         minWidth: 220,
         render: (row) => formatClusterDate(row.finishedAt),
         title: "Выполнено"
+      },
+      {
+        key: "actions",
+        minWidth: 72,
+        render: (row) => (
+          <Tooltip label="Удалить кластеризацию">
+            <ActionIcon
+              color="red"
+              variant="subtle"
+              onClick={() => onDeleteClusterization(row.jobId, row.sourcePath || row.runId)}
+            >
+              <Trash size={16} />
+            </ActionIcon>
+          </Tooltip>
+        ),
+        title: ""
       }
     ],
-    []
+    [onDeleteClusterization]
   )
 
   return { columns, filteredRows, form, pageRows, safePage, totalPages }

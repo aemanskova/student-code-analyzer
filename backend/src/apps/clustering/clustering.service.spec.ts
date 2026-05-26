@@ -1,4 +1,4 @@
-import { BadRequestException } from "@nestjs/common";
+import { BadRequestException, NotFoundException } from "@nestjs/common";
 import { AnalysisGitResult } from "../analysis/entities/analysis-git-result.entity";
 import { AnalysisJob } from "../analysis/entities/analysis-job.entity";
 import { AnalysisResult } from "../analysis/entities/analysis-result.entity";
@@ -6,8 +6,10 @@ import { ClusteringService } from "./clustering.service";
 
 type RepositoryMock<T> = {
   find: jest.Mock<Promise<T[]>, unknown[]>;
+  findOne?: jest.Mock;
   create?: jest.Mock;
   save?: jest.Mock;
+  delete?: jest.Mock;
   createQueryBuilder?: jest.Mock;
 };
 
@@ -63,6 +65,17 @@ const makeRow = (
 
 const makeJob = (depth: number): AnalysisJob =>
   ({ requestPayload: { depth } }) as unknown as AnalysisJob;
+
+const makeClusterizingJob = (overrides: Partial<AnalysisJob> = {}): AnalysisJob =>
+  ({
+    id: "cluster-job-1",
+    userId: 1,
+    direction: "html_css",
+    status: "success",
+    requestPayload: { kind: "clusterizing", sourceRunId: "run-1", depth: 3 },
+    resultPayload: {},
+    ...overrides
+  }) as unknown as AnalysisJob;
 
 const makeGitRow = (
   id: number,
@@ -202,11 +215,13 @@ const createService = (
   };
   const jobRepo: RepositoryMock<AnalysisJob> = {
     find: jest.fn(),
+    findOne: jest.fn(),
     create: jest.fn((payload) => ({
       ...payload,
       createdAt: new Date("2026-05-03T00:00:00.000Z")
     })),
     save: jest.fn().mockImplementation((payload) => Promise.resolve(payload)),
+    delete: jest.fn().mockResolvedValue({ affected: 1 }),
     createQueryBuilder: jest.fn().mockReturnValue(createJobQueryBuilder(job))
   };
   const service = new ClusteringService(
@@ -383,5 +398,53 @@ describe("ClusteringService", () => {
       groupPath: "g2/s3",
       cluster: -1
     });
+  });
+
+  it("deletes only saved clusterization jobs owned by the current user", async () => {
+    const resultRepo: RepositoryMock<AnalysisResult> = {
+      find: jest.fn()
+    };
+    const gitResultRepo: RepositoryMock<AnalysisGitResult> = {
+      find: jest.fn()
+    };
+    const jobRepo: RepositoryMock<AnalysisJob> = {
+      find: jest.fn(),
+      findOne: jest.fn().mockResolvedValue(makeClusterizingJob()),
+      delete: jest.fn().mockResolvedValue({ affected: 1 })
+    };
+    const service = new ClusteringService(
+      resultRepo as never,
+      gitResultRepo as never,
+      jobRepo as never
+    );
+
+    await expect(service.deleteClusterization(1, "cluster-job-1")).resolves.toEqual({
+      deleted: true
+    });
+    expect(jobRepo.findOne).toHaveBeenCalledWith({
+      where: {
+        id: "cluster-job-1",
+        userId: 1,
+        direction: "html_css",
+        status: "success"
+      }
+    });
+    expect(jobRepo.delete).toHaveBeenCalledWith({ id: "cluster-job-1", userId: 1 });
+  });
+
+  it("rejects deletion when the saved job is not a clusterization", async () => {
+    const service = new ClusteringService(
+      { find: jest.fn() } as never,
+      { find: jest.fn() } as never,
+      {
+        findOne: jest
+          .fn()
+          .mockResolvedValue(makeClusterizingJob({ requestPayload: { kind: "analysis" } }))
+      } as never
+    );
+
+    await expect(service.deleteClusterization(1, "analysis-job-1")).rejects.toBeInstanceOf(
+      NotFoundException
+    );
   });
 });
